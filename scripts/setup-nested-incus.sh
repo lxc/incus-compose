@@ -13,6 +13,19 @@ IMAGE="images:debian/trixie"
 INCUS_REPO="stable" # stable or lts
 FORCE="false"
 
+# Track whether we created the container so we can cleanup on failure if desired
+CONTAINER_CREATED="false"
+
+cleanup() {
+    local rc=$?
+    if [[ "${CONTAINER_CREATED}" == "true" && "${FORCE}" == "true" ]]; then
+        echo "Cleaning up created container ${CONTAINER_NAME} due to error (exit ${rc})..."
+        incus delete --force "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+    fi
+    return $rc
+}
+trap cleanup EXIT
+
 # Usage information
 usage() {
     cat <<EOF
@@ -21,25 +34,25 @@ Usage: $(basename "$0") -c CERT [OPTIONS]
 Setup a nested Incus container for testing incus-compose.
 
 REQUIRED:
-    -c CERT         Path to client certificate to inject into trust store
+-c CERT         Path to client certificate to inject into trust store
 
 OPTIONS:
-    -n NAME         Container name (default: ${CONTAINER_NAME})
-                    Note: Dots will be replaced with hyphens (DNS-safe)
-    -i IMAGE        Base image (default: ${IMAGE})
-    -r REPO         Incus repository: stable or lts (default: ${INCUS_REPO})
-    -f              Force delete any existing container (default: false)
-    -h              Show this help message
+-n NAME         Container name (default: ${CONTAINER_NAME})
+                Note: Dots will be replaced with hyphens (DNS-safe)
+-i IMAGE        Base image (default: ${IMAGE})
+-r REPO         Incus repository: stable or lts (default: ${INCUS_REPO})
+-f              Force delete any existing container (default: false)
+-h              Show this help message
 
 EXAMPLES:
-    # Create with defaults (stable version)
-    $(basename "$0") -c test/certs/incuscompose-test.crt
+# Create with defaults (stable version)
+$(basename "$0") -c test/certs/incuscompose-test.crt
 
-    # Create with LTS version
-    $(basename "$0") -c test/certs/incuscompose-test.crt -r lts
+# Create with LTS version
+$(basename "$0") -c test/certs/incuscompose-test.crt -r lts
 
-    # Create with custom name
-    $(basename "$0") -c test/certs/my-test.crt -n my-test -r lts
+# Create with custom name
+$(basename "$0") -c test/certs/my-test.crt -n my-test -r lts
 
 EOF
     exit 0
@@ -90,9 +103,12 @@ if [[ ! -f "${CLIENT_CERT}" ]]; then
     exit 1
 fi
 
+# Sanitize container name to be DNS-safe
+CONTAINER_NAME="${CONTAINER_NAME//./-}"
+
 shift $((OPTIND - 1))
 
-# Determine repository URL
+# Validate repository selection early
 case "${INCUS_REPO}" in
 stable)
     REPO_URL="https://pkgs.zabbly.com/incus/stable"
@@ -107,6 +123,12 @@ lts)
     ;;
 esac
 
+# Ensure incus CLI is available
+if ! command -v incus >/dev/null 2>&1; then
+    echo "Error: 'incus' CLI not found in PATH. Please install/incus or adjust PATH." >&2
+    exit 1
+fi
+
 echo "==> Configuration:"
 echo "    Container name: ${CONTAINER_NAME}"
 echo "    Base image: ${IMAGE}"
@@ -117,6 +139,7 @@ echo ""
 
 if incus info "${CONTAINER_NAME}" >/dev/null 2>&1; then
     if [[ $FORCE == "true" ]]; then
+        echo "Deleting existing container ${CONTAINER_NAME} (force)"
         incus delete --force "${CONTAINER_NAME}"
     else
         echo "Error: Container ${CONTAINER_NAME} already exists."
@@ -131,6 +154,8 @@ echo "==> Creating nested Incus container: ${CONTAINER_NAME}"
 incus launch "${IMAGE}" "${CONTAINER_NAME}" \
     -c security.nesting=true \
     -c security.privileged=true
+
+CONTAINER_CREATED="true"
 
 INSTALL_SCRIPT=$(
     cat <<'EOF'
@@ -166,7 +191,8 @@ EOF
 )
 
 echo "==> Executing installation script"
-printf "%s" "${INSTALL_SCRIPT}" | sed "s|REPO_URL_PLACEHOLDER|${REPO_URL}|g" | incus exec "${CONTAINER_NAME}" -- bash "-"
+# Keep your variable-based pipe approach; replace placeholder and stream into container
+printf "%s" "${INSTALL_SCRIPT}" | sed "s|REPO_URL_PLACEHOLDER|${REPO_URL}|g" | incus exec "${CONTAINER_NAME}" -- bash -s
 
 echo "==> Executing Incus init script"
 
@@ -176,10 +202,21 @@ CONFIGURE_SCRIPT=$(
 set -euo pipefail
 
 echo "Starting Incus daemon..."
-systemctl enable --now incus.socket
+systemctl enable --now incus.socket || true
 
 echo "Waiting for Incus to be ready..."
-incus admin waitready --timeout=60
+# incus admin waitready exists on newer installs; fall back to a small loop if necessary.
+if incus admin waitready --timeout=60 >/dev/null 2>&1; then
+    echo "Incus admin reports ready"
+else
+    echo "Waiting for Incus socket by polling..."
+    for i in {1..30}; do
+        if incus info >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+    done
+fi
 
 echo "Initializing Incus..."
 cat <<PRESEED_EOF | incus admin init --preseed
@@ -208,18 +245,19 @@ profiles:
 PRESEED_EOF
 
 echo "Incus configuration complete!"
-echo "Version: $(incus version)"
-echo "Listening on: $(incus config get core.https_address)"
+echo "Version: $(incus version || true)"
+echo "Listening on: $(incus config get core.https_address || true)"
 EOF
 )
 
-printf "%s" "${CONFIGURE_SCRIPT}" | incus exec "${CONTAINER_NAME}" -- bash "-"
+# Stream the configure script as well (no temp files)
+printf "%s" "${CONFIGURE_SCRIPT}" | incus exec "${CONTAINER_NAME}" -- bash -s
 
 # Inject client certificate into trust store
 echo "==> Adding client certificate to nested Incus trust store"
-incus file push "${CLIENT_CERT}" "${CONTAINER_NAME}/root/client.crt"
+incus file push -- "${CLIENT_CERT}" "${CONTAINER_NAME}/root/client.crt"
 incus exec "${CONTAINER_NAME}" -- incus config trust add-certificate /root/client.crt --restricted=false
-incus exec "${CONTAINER_NAME}" -- rm /root/client.crt
+incus exec "${CONTAINER_NAME}" -- rm -f /root/client.crt
 echo "    Certificate added with unrestricted access"
 echo ""
 echo -e "==> Container ready:\n\n"
