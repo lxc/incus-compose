@@ -1,0 +1,155 @@
+# incus-compose development commands
+#
+# Quick start:
+#   just dev-install    # Set up nested Incus for testing
+#   just run <args>     # Run incus-compose against nested Incus
+#   just test           # Run tests against nested Incus
+#
+# Local development (uses your real Incus - be careful!):
+#   just run-local <args>
+#   just test-local
+
+[private]
+default:
+    @just --list
+
+set dotenv-load := true
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+# Run `incus-compose` via `go run` against your local incus (ignores .env)
+run-local *args:
+    env -u INCUS_COMPOSE_URL -u INCUS_COMPOSE_CERT -u INCUS_COMPOSE_KEY go run ./cmd/incus-compose -v -v -v {{ args }}
+
+# Run local unit-tests, incus-facing tests are skipped.
+test-local:
+    env -u INCUS_COMPOSE_URL -u INCUS_COMPOSE_CERT -u INCUS_COMPOSE_KEY go test ./... -v
+
+# Lint all files.
+lint:
+    golangci-lint run
+
+# Update snapshot test files
+update-snapshots:
+    UPDATE_SNAPSHOTS=true go test ./...
+    CI=1 UPDATE_SNAPSHOTS=true go test ./...
+
+# Dev install creates your dev environment: `just dev-install [project] [container] [image]`
+dev-install incus_project="default" container_name="incus-compose-test" image='images:debian/trixie':
+    just make-nested "{{ incus_project }}" "{{ container_name }}" "{{ image }}"
+
+# Run commands in the nested incus.
+incus *args:
+    incus exec "${INCUS_CONTAINER}" -- incus {{ args }}
+
+# Remove generated data
+clean:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    rm -rf build/*
+
+    if [[ -f .env ]]; then
+        # Delete container
+        echo "Trying to delete the container ${INCUS_CONTAINER}"
+        INCUS_PROJECT="${INCUS_PROJECT}" incus delete -f "${INCUS_CONTAINER}"
+
+        echo "Cleaned up '${INCUS_CONTAINER}' in incus project: ${INCUS_PROJECT}"
+    fi
+
+    rm -f "./.env"
+    rm -rf "./run"
+
+    echo "Cleanup complete"
+
+# Build the binary
+build:
+    go build -o bin/incus-compose ./cmd/incus-compose
+
+# Usage: just run -f test/fixtures/hello_world/compose.yaml config
+run *args:
+    @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
+    @go run ./cmd/incus-compose {{ args }}
+
+# Usage: just run-debug -f test/fixtures/hello_world/compose.yaml config
+run-debug *args:
+    @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
+    @go run ./cmd/incus-compose -v -v -v {{ args }}
+
+# Run all tests against nested Incus
+test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ ! -f .env ]]; then
+        echo "Error: .env not found. Run 'just dev-install' first."
+        exit 1
+    fi
+    go test ./... -v -coverprofile=coverage.out -covermode=atomic
+
+# Run tests with coverage report
+test-coverage:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ ! -f .env ]]; then
+        echo "Error: .env not found. Run 'just dev-install' first."
+        exit 1
+    fi
+    go test ./... -v -coverprofile=coverage.out -covermode=atomic
+    go tool cover -func=coverage.out
+    echo ""
+    echo "For detailed HTML report, run: go tool cover -html=coverage.out"
+
+# Run tests for a specific package with coverage
+test-pkg pkg:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ ! -f .env ]]; then
+        echo "Error: .env not found. Run 'just dev-install' first."
+        exit 1
+    fi
+    go test {{ pkg }} -v -coverprofile=coverage.out -covermode=atomic
+    go tool cover -func=coverage.out | grep {{ pkg }}
+
+[private]
+make-nested incus_project='default' name='incus-compose-test' image='images:debian/trixie':
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    name="{{ name }}"
+    incus_project="{{ incus_project }}"
+
+    key_file="./run/certs/${name}.key.pem"
+    cert_file="./run/certs/${name}.key.crt"
+
+    mkdir -p "$(dirname "$cert_file")"
+
+    if [[ ! -f "${key_file}" ]] || [[ ! -f "${cert_file}" ]]; then
+        echo "Generating client certificate..."
+        openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:secp384r1 \
+            -sha384 -keyout "${key_file}" -out "${cert_file}" \
+            -nodes -days 3650 \
+            -subj "/CN=incus-compose_${name}"
+        chmod 600 "${key_file}"
+        echo "Generated: ${cert_file}"
+    fi
+
+    # Run setup script (certificate injection is handled by the script)
+    INCUS_PROJECT="{{ incus_project }}" ./scripts/setup-nested-incus.sh -c "${cert_file}" -n "$name" -i {{ image }} -r stable
+
+    container_ip=$(incus list "${name}" -c4 --format json 2>/dev/null | jq -r '.[0].state.network // {} | [ .[].addresses[]? | select(.family == "inet") | .address ] | .[0] // empty' 2>/dev/null)
+
+    if [ -z "${container_ip}" ]; then
+        echo "Error: Could not get container IP"
+        echo "This scripts requires you to setup the nested incus instance first, use 'just make-nested' to create it."
+        exit 1
+    fi
+
+    printf '%s\n' \
+        "# Generated by 'just dev-install', next run will overwrite it." \
+        "INCUS_PROJECT=${incus_project}" \
+        "INCUS_CONTAINER=${name}" \
+        "INCUS_COMPOSE_URL=https://${container_ip}:8443" \
+        "INCUS_COMPOSE_CERT=${cert_file}" \
+        "INCUS_COMPOSE_KEY=${key_file}" \
+        > ./.env
+
+    echo "Created .env with nested Incus configuration"

@@ -1,0 +1,23 @@
+services:
+  app:
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: debug
+      HOT_RELOAD: "true"
+    ports:
+      - "3000:3000"
+      - "9229:9229"
+    command: npm run dev
+
+  db:
+    environment:
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5432:5432"
+
+  adminer:
+    image: docker.io/library/adminer:latest
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db

@@ -1,0 +1,42 @@
+services:
+  nginx:
+    image: docker.io/library/nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - backend1
+      - backend2
+    networks:
+      - frontend
+      - backend
+
+  backend1:
+    image: docker.io/library/python:3.11-slim
+    command: python -m http.server 8000
+    expose:
+      - "8000"
+    environment:
+      SERVICE_NAME: backend1
+    networks:
+      - backend
+
+  backend2:
+    image: docker.io/library/python:3.11-slim
+    command: python -m http.server 8000
+    expose:
+      - "8000"
+    environment:
+      SERVICE_NAME: backend2
+    networks:
+      - backend
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true

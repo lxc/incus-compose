@@ -1,0 +1,67 @@
+name: with_profiles
+services:
+  adminer:
+    profiles:
+      - debug
+      - dev
+    image: docker.io/library/adminer:latest
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 8080
+        published: "8080"
+        protocol: tcp
+  hot-reload:
+    profiles:
+      - dev
+    command:
+      - npm
+      - run
+      - hot-reload
+    image: docker.io/library/node:20-alpine
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 3000
+        published: "3000"
+        protocol: tcp
+  web:
+    image: docker.io/library/nginx:alpine
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 80
+        published: "80"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: $FIXTURE_PATH/html
+        target: /usr/share/nginx/html
+        read_only: true
+        bind: {}
+  webpack:
+    profiles:
+      - dev
+    command:
+      - npm
+      - run
+      - watch
+    image: docker.io/library/node:20-alpine
+    networks:
+      default: null
+    volumes:
+      - type: bind
+        source: $FIXTURE_PATH/src
+        target: /app/src
+        bind: {}
+      - type: bind
+        source: $FIXTURE_PATH/dist
+        target: /app/dist
+        bind: {}
+    working_dir: /app
+networks:
+  default:
+    name: with_profiles_default

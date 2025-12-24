@@ -1,0 +1,24 @@
+services:
+  app:
+    image: docker.io/library/node:20-alpine
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: info
+    volumes:
+      - ./app:/usr/src/app
+    working_dir: /usr/src/app
+    command: node server.js
+
+  db:
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_DB: appdb
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: prodpassword
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+volumes:
+  db_data:

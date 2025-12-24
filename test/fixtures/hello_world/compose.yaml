@@ -1,0 +1,3 @@
+services:
+  hello_world:
+    image: docker.io/hello-world:latest

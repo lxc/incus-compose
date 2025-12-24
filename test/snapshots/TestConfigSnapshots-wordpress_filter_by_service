@@ -1,0 +1,34 @@
+name: wordpress
+services:
+  wordpress:
+    depends_on:
+      db:
+        condition: service_started
+        required: true
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_USER: wordpress
+    image: docker.io/library/wordpress:latest
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 80
+        published: "8000"
+        protocol: tcp
+    restart: always
+    volumes:
+      - type: volume
+        source: wordpress_data
+        target: /var/www/html
+        volume: {}
+networks:
+  default:
+    name: wordpress_default
+volumes:
+  db_data:
+    name: wordpress_db_data
+  wordpress_data:
+    name: wordpress_wordpress_data

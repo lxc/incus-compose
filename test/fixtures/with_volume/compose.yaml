@@ -1,0 +1,10 @@
+services:
+  app:
+    image: simple-shifting
+    volumes:
+      - type: volume
+        source: appdata
+        target: /data/vol
+
+volumes:
+  appdata:

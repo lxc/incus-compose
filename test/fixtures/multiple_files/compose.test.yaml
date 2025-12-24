@@ -1,0 +1,23 @@
+services:
+  app:
+    environment:
+      NODE_ENV: test
+      LOG_LEVEL: error
+      CI: "true"
+    command: npm test
+
+  db:
+    environment:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpass
+
+  test-runner:
+    image: docker.io/library/node:20-alpine
+    depends_on:
+      - app
+      - db
+    volumes:
+      - ./tests:/usr/src/tests
+    working_dir: /usr/src/tests
+    command: npm run test:integration

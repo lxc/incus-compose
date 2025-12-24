@@ -1,0 +1,138 @@
+services:
+  gateway:
+    image: docker.io/nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./gateway.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - auth-service
+      - user-service
+      - order-service
+    networks:
+      - frontend
+      - backend
+
+  auth-service:
+    image: docker.io/golang:1.21-alpine
+    command: /app/auth-service
+    environment:
+      SERVICE_NAME: auth-service
+      DB_HOST: auth-db
+      REDIS_HOST: redis
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      - auth-db
+      - redis
+    networks:
+      - backend
+      - auth-net
+    restart: unless-stopped
+
+  auth-db:
+    image: docker.io/postgres:16-alpine
+    environment:
+      POSTGRES_DB: auth
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD}
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    networks:
+      - auth-net
+
+  user-service:
+    image: docker.io/python:3.11-slim
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    environment:
+      SERVICE_NAME: user-service
+      DB_HOST: user-db
+      REDIS_HOST: redis
+    depends_on:
+      - user-db
+      - redis
+    networks:
+      - backend
+      - user-net
+
+  user-db:
+    image: docker.io/mysql:8.0
+    environment:
+      MYSQL_DATABASE: users
+      MYSQL_USER: user_svc
+      MYSQL_PASSWORD: ${USER_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${USER_DB_ROOT_PASSWORD}
+    volumes:
+      - user_db_data:/var/lib/mysql
+    networks:
+      - user-net
+
+  order-service:
+    image: docker.io/node:20-alpine
+    command: node dist/server.js
+    environment:
+      SERVICE_NAME: order-service
+      DB_HOST: order-db
+      KAFKA_BROKERS: kafka:9092
+      REDIS_HOST: redis
+    depends_on:
+      - order-db
+      - kafka
+      - redis
+    networks:
+      - backend
+      - order-net
+
+  order-db:
+    image: docker.io/mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${ORDER_DB_PASSWORD}
+      MONGO_INITDB_DATABASE: orders
+    volumes:
+      - order_db_data:/data/db
+    networks:
+      - order-net
+
+  redis:
+    image: docker.io/redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+
+  kafka:
+    image: docker.io/apache/kafka:latest
+    environment:
+      KAFKA_CFG_NODE_ID: 0
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    volumes:
+      - kafka_data:/apache/kafka
+    networks:
+      - backend
+
+volumes:
+  auth_db_data:
+  user_db_data:
+  order_db_data:
+  redis_data:
+  kafka_data:
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+  auth-net:
+    driver: bridge
+    internal: true
+  user-net:
+    driver: bridge
+    internal: true
+  order-net:
+    driver: bridge
+    internal: true

@@ -1,0 +1,64 @@
+services:
+  web:
+    image: docker.io/library/nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./html:/usr/share/nginx/html:ro
+
+  webpack:
+    image: docker.io/library/node:20-alpine
+    profiles:
+      - dev
+    command: npm run watch
+    volumes:
+      - ./src:/app/src
+      - ./dist:/app/dist
+    working_dir: /app
+
+  hot-reload:
+    image: docker.io/library/node:20-alpine
+    profiles:
+      - dev
+    command: npm run hot-reload
+    ports:
+      - "3000:3000"
+
+  selenium:
+    image: docker.io/selenium/standalone-chrome:latest
+    profiles:
+      - test
+    ports:
+      - "4444:4444"
+    shm_size: 2gb
+
+  test-db:
+    image: docker.io/library/postgres:16-alpine
+    profiles:
+      - test
+    environment:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+
+  redis:
+    image: docker.io/library/redis:7-alpine
+    profiles:
+      - prod
+    command: redis-server --appendonly yes
+
+  prometheus:
+    image: docker.io/prom/prometheus:latest
+    profiles:
+      - monitoring
+      - prod
+    ports:
+      - "9090:9090"
+
+  adminer:
+    image: docker.io/library/adminer:latest
+    profiles:
+      - debug
+      - dev
+    ports:
+      - "8080:8080"

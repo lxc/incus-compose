@@ -1,0 +1,10 @@
+services:
+  invalid-service:
+    environment:
+      TEST: value
+
+  syntax-error:
+    image: docker.io/library/alpine
+    ports:
+      - "not:a:valid:port"
+    depends_on: invalid-service-string

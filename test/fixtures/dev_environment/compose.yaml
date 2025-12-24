@@ -1,0 +1,77 @@
+services:
+  app:
+    image: docker.io/library/node:20-alpine
+    volumes:
+      - ./src:/app
+      - node_modules:/app/node_modules
+    working_dir: /app
+    command: npm run dev
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+    depends_on:
+      - db
+
+  db:
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: devpass
+      POSTGRES_USER: devuser
+      POSTGRES_DB: devdb
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  pgadmin:
+    image: docker.io/dpage/pgadmin4:latest
+    profiles:
+      - debug
+      - tools
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+
+  mailhog:
+    image: docker.io/mailhog/mailhog:latest
+    profiles:
+      - debug
+      - mail
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  redis:
+    image: docker.io/library/redis:7-alpine
+    profiles:
+      - cache
+      - production
+    ports:
+      - "6379:6379"
+
+  prometheus:
+    image: docker.io/prom/prometheus:latest
+    profiles:
+      - monitoring
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: docker.io/grafana/grafana:latest
+    profiles:
+      - monitoring
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  db_data:
+  node_modules:

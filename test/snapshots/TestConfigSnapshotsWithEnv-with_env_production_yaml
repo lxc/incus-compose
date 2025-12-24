@@ -1,0 +1,19 @@
+name: with_env
+services:
+  app:
+    environment:
+      API_KEY: prod-api-key-xyz789
+      API_URL: https://api.production.example.com
+      APP_ENV: development
+      DB_HOST: prod-db.example.com
+      DB_NAME: production_db
+      DB_PORT: "5432"
+      DEBUG: "true"
+      HOME: /home/testuser
+      USER: testuser
+    image: docker.io/library/alpine:latest
+    networks:
+      default: null
+networks:
+  default:
+    name: with_env_default

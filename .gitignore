@@ -1,0 +1,47 @@
+# Its generated with random host only data, still no need to commit.
+.env
+
+# My AI rules not sure if commit them or not.
+.rules
+
+# AI only docs, maybe will publish.
+docs/AI/
+
+# Development files exclusively for this host.
+run/
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Go workspace file
+go.work
+go.work.sum
+
+# IDE files
+.zed/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

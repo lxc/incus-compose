@@ -1,0 +1,13 @@
+services:
+  app:
+    image: docker.io/library/alpine:latest
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      API_KEY: ${API_KEY:-default-api-key}
+      API_URL: ${API_URL:-http://localhost}
+      APP_ENV: development
+      DEBUG: "true"
+      USER: ${USER}
+      HOME: ${HOME}

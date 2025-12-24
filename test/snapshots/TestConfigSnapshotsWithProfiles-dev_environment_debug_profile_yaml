@@ -1,0 +1,92 @@
+name: dev_environment
+services:
+  app:
+    command:
+      - npm
+      - run
+      - dev
+    depends_on:
+      db:
+        condition: service_started
+        required: true
+    environment:
+      NODE_ENV: development
+    image: docker.io/library/node:20-alpine
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 3000
+        published: "3000"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: $FIXTURE_PATH/src
+        target: /app
+        bind: {}
+      - type: volume
+        source: node_modules
+        target: /app/node_modules
+        volume: {}
+    working_dir: /app
+  db:
+    environment:
+      POSTGRES_DB: devdb
+      POSTGRES_PASSWORD: devpass
+      POSTGRES_USER: devuser
+    image: docker.io/library/postgres:16-alpine
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 5432
+        published: "5432"
+        protocol: tcp
+    volumes:
+      - type: volume
+        source: db_data
+        target: /var/lib/postgresql/data
+        volume: {}
+  mailhog:
+    profiles:
+      - debug
+      - mail
+    image: docker.io/mailhog/mailhog:latest
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 1025
+        published: "1025"
+        protocol: tcp
+      - mode: ingress
+        target: 8025
+        published: "8025"
+        protocol: tcp
+  pgadmin:
+    profiles:
+      - debug
+      - tools
+    depends_on:
+      db:
+        condition: service_started
+        required: true
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+    image: docker.io/dpage/pgadmin4:latest
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 80
+        published: "5050"
+        protocol: tcp
+networks:
+  default:
+    name: dev_environment_default
+volumes:
+  db_data:
+    name: dev_environment_db_data
+  node_modules:
+    name: dev_environment_node_modules

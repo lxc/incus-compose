@@ -1,0 +1,19 @@
+name: with_env
+services:
+  app:
+    environment:
+      API_KEY: default-api-key
+      API_URL: http://localhost
+      APP_ENV: development
+      DB_HOST: localhost
+      DB_NAME: testdb
+      DB_PORT: "5432"
+      DEBUG: "true"
+      HOME: /home/testuser
+      USER: testuser
+    image: docker.io/library/alpine:latest
+    networks:
+      default: null
+networks:
+  default:
+    name: with_env_default
