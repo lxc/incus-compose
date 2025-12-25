@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Copyright (c) 2025 René Jochum <rene@jochum.dev>
+# This script is released into the public domain or under CC0-1.0.
+# Use it however you want, no restrictions.
 
 # Required: path to client certificate to inject
 CLIENT_CERT=""

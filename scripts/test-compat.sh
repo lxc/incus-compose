@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Copyright (c) 2025 René Jochum <rene@jochum.dev>
+# This script is released into the public domain or under CC0-1.0.
+# Use it however you want, no restrictions.
 
 docker_compose_path=${1:-/usr/lib/docker/cli-plugins/docker-compose}
 
@@ -27,7 +30,7 @@ failed=-1
 total=${#checks[@]}
 
 for check in "${checks[@]}"; do
-    IFS=':' read -r snapshot_file fixture format <<< "$check"
+    IFS=':' read -r snapshot_file fixture format <<<"$check"
 
     echo -n "Testing $snapshot_file: "
 
