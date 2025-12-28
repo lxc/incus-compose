@@ -13,6 +13,22 @@ Thank you for your interest in contributing! This document outlines the conventi
 - Simple solutions over clever ones
 - No non-ASCII characters in code and docs
 
+## Architecture and design rules
+
+incus-compose is intentionally opinionated. Its core design principles are
+documented in [docs/architecture.md](docs/architecture.md).
+
+Before contributing, you **must** read and understand this document.
+It defines non-negotiable boundaries, including:
+
+- What incus-compose will and will not implement
+- Where Compose semantics must remain untouched
+- How mapping to Incus is structured
+- Which layers are allowed to change behavior
+
+Contributions that violate these principles will be rejected, regardless of
+feature completeness or test coverage.
+
 ## Project Structure
 
 ```
@@ -155,7 +171,6 @@ Output should match `docker compose config` where possible.
 
 - Keep user docs minimal and practical
 - All exported functions/types must have doc comments ending with a period
-- See [docs/architecture.md](docs/architecture.md) for technical architecture details
 
 ## Questions?
 
