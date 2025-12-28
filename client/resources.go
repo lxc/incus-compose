@@ -89,7 +89,7 @@ type Profile struct {
 
 // Profile returns an existing or creates a new Profile resource.
 func (c *ClientProject) Profile(name string, config ProfileConfig) (*Profile, error) {
-	if r, ok := c.profiles.Get(name); ok {
+	if r, ok := c.Profiles.Get(name); ok {
 		return r, nil
 	}
 
@@ -98,7 +98,7 @@ func (c *ClientProject) Profile(name string, config ProfileConfig) (*Profile, er
 		config.SourceProfile = "default"
 	}
 
-	return c.profiles.Add(&Profile{Resource: newResource("profile", c, name), Config: config, Operation: ProfileOperation{}}), nil
+	return c.Profiles.Add(&Profile{Resource: newResource("profile", c, name), Config: config, Operation: ProfileOperation{}}), nil
 }
 
 // Priority returns the deletion priority for Profile resources.
@@ -275,7 +275,7 @@ type Image struct {
 
 // Image returns an existing or creates a new Image resource.
 func (c *ClientProject) Image(name string, options ImageConfig) (*Image, error) {
-	if r, ok := c.images.Get(name); ok {
+	if r, ok := c.Images.Get(name); ok {
 		return r, nil
 	}
 
@@ -284,7 +284,7 @@ func (c *ClientProject) Image(name string, options ImageConfig) (*Image, error) 
 		return nil, err
 	}
 
-	return c.images.Add(r), nil
+	return c.Images.Add(r), nil
 }
 
 // Priority returns the deletion priority for Image resources.
@@ -476,7 +476,7 @@ type PoolVolume struct {
 
 // PoolVolume returns an existing or creates a new PoolVolume resource.
 func (c *ClientProject) PoolVolume(name string, config PoolVolumeConfig) (*PoolVolume, error) {
-	if r, ok := c.poolVolumes.Get(name); ok {
+	if r, ok := c.PoolVolumes.Get(name); ok {
 		return r, nil
 	}
 
@@ -489,7 +489,7 @@ func (c *ClientProject) PoolVolume(name string, config PoolVolumeConfig) (*PoolV
 		return nil, err
 	}
 
-	return c.poolVolumes.Add(r), nil
+	return c.PoolVolumes.Add(r), nil
 }
 
 // Priority returns the deletion priority for PoolVolume resources.
@@ -647,7 +647,7 @@ type Network struct {
 
 // Network returns an existing or creates a new Network resource.
 func (c *ClientProject) Network(name string) (*Network, error) {
-	if r, ok := c.networks.Get(name); ok {
+	if r, ok := c.Networks.Get(name); ok {
 		return r, nil
 	}
 
@@ -656,7 +656,7 @@ func (c *ClientProject) Network(name string) (*Network, error) {
 		return nil, err
 	}
 
-	return c.networks.Add(r), nil
+	return c.Networks.Add(r), nil
 }
 
 // Priority returns the deletion priority for Network resources.
@@ -830,7 +830,7 @@ type Instance struct {
 
 // Instance returns an existing or creates a new Instance resource.
 func (c *ClientProject) Instance(name string, options InstanceConfig) (*Instance, error) {
-	if r, ok := c.instances.Get(name); ok {
+	if r, ok := c.Instances.Get(name); ok {
 		return r, nil
 	}
 
@@ -859,7 +859,7 @@ func (c *ClientProject) Instance(name string, options InstanceConfig) (*Instance
 		return nil, err
 	}
 
-	return c.instances.Add(r), nil
+	return c.Instances.Add(r), nil
 }
 
 // Priority returns the deletion priority for Instance resources.
@@ -964,11 +964,20 @@ func (r *Instance) create() error {
 		if hostIP == "" {
 			hostIP = "0.0.0.0"
 		}
-		devName := fmt.Sprintf("proxy-%s-%s", hostIP, port.Listen)
+
+		protocol := port.Protocol
+		if protocol == "" {
+			protocol = "tcp"
+		}
+
+		devName := fmt.Sprintf("proxy-%s-%d", hostIP, port.Listen)
+
+		r.project.LogTrace("Adding", "port", port, "dev-name", devName, "host-ip", hostIP, "protocol", protocol)
+
 		devices[devName] = map[string]string{
 			"type":    "proxy",
-			"listen":  fmt.Sprintf("%s:%s:%s", port.Protocol, hostIP, port.Listen),
-			"connect": fmt.Sprintf("%s:127.0.0.1:%d", port.Protocol, port.Connect),
+			"listen":  fmt.Sprintf("%s:%s:%d", protocol, hostIP, port.Listen),
+			"connect": fmt.Sprintf("%s:127.0.0.1:%d", protocol, port.Connect),
 		}
 	}
 

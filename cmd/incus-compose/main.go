@@ -166,6 +166,13 @@ var upCommand = &cli.Command{
 			return err
 		}
 
+		// Create profiles first.
+		for _, profile := range clientProject.Profiles.All() {
+			if err := profile.Ensure(true); err != nil {
+				return err
+			}
+		}
+
 		// Create and start in order
 		for _, name := range order {
 			instance := instances[name]

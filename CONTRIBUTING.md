@@ -67,7 +67,7 @@ just update-snapshots   # Update test snapshots
 **Development workflow**:
 
 1. `just dev-install` - Set up nested Incus (first time only)
-2. `just run -f test/fixtures/hello_world/compose.yaml config` - Test a command
+2. `just run -f test/fixtures/simple-nginx/compose.yaml config` - Test a command
 3. `just test` - Run full test suite
 4. `just clean` - Clean up when done
 
@@ -126,6 +126,35 @@ if errors.Is(err, ErrNotFound) { }
 - Group: stdlib, external, internal
 
 ## Testing
+
+We use `testify/suite` for all tests. No mocking - tests run against real nested Incus instances.
+
+### Test Organization
+
+Tests live alongside the code they test:
+
+```
+client/
+  ├── client.go
+  ├── client_test.go      # Tests for client.go
+  ├── resources.go
+  └── resources_test.go   # Tests for resources.go
+project/
+  ├── project.go
+  └── project_test.go     # Tests for project.go
+```
+
+**Don't create**:
+
+- Shared test base suites or abstractions
+- Mock objects for Incus API
+- Test helper packages
+
+**Do**:
+
+- Use `testify/suite` pattern for each `_test.go` file
+- Copy-paste setup code between test files (KISS over DRY)
+- Keep each test suite self-contained
 
 ### Test Fixtures
 

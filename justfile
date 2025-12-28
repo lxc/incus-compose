@@ -65,12 +65,12 @@ clean:
 build:
     go build -o bin/incus-compose ./cmd/incus-compose
 
-# Usage: just run -f test/fixtures/hello_world/compose.yaml config
+# Usage: just run -f test/fixtures/simple-nginx/compose.yaml config
 run *args:
     @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
     @go run ./cmd/incus-compose {{ args }}
 
-# Usage: just run-debug -f test/fixtures/hello_world/compose.yaml config
+# Usage: just run-debug -f test/fixtures/simple-nginx/compose.yaml config
 run-debug *args:
     @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
     @go run ./cmd/incus-compose -v -v -v {{ args }}

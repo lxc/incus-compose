@@ -24,7 +24,10 @@
     "deny": ["Bash(incus:*)", "Bash(incus-compose:*)"],
     "defaultMode": "acceptEdits"
   },
-  "env": {
-    "INCUS_COMPOSE_PROJECT": "incus-compose"
-  }
+  "rules": [
+    "IMPORTANT: Always use 'just test' or 'just test-local' to run tests. NEVER use 'go test' directly.",
+    "Use 'just test' for tests with nested Incus (loads .env automatically)",
+    "Use 'just test-local' for tests without Incus (explicitly unsets env vars)",
+    "The justfile configures the correct environment and flags"
+  ]
 }

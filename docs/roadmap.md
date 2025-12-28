@@ -9,7 +9,12 @@ up/down/ps works without all the specials other compose solutions provide.
 
 ## Planned Improvements
 
-### 1. Remote Handling with Custom Config
+### Move Up/Down logic to client/
+
+- **Status:** Planned
+- **Goal:** Move that logic to the client using Priorities
+
+### Remote Handling with Custom Config
 
 - **Status:** Planned
 - **Goal:** Add own remote/server configuration management
@@ -22,7 +27,7 @@ up/down/ps works without all the specials other compose solutions provide.
   - Cert management
   - Default remote selection
 
-### 2. Worker Pool for Images and Tasks
+### Worker Pool
 
 - **Status:** Planned
 - **Goal:** Implement concurrent worker pool for resource-intensive operations
@@ -35,9 +40,9 @@ up/down/ps works without all the specials other compose solutions provide.
   - Better resource utilization
   - Rate limiting/throttling control
 
-### 3. Progress Reporting to CLI
+### Progress Reporting to CLI
 
-- **Status:** Planned (depends on #2)
+- **Status:** Planned (depends on "Worker Pool")
 - **Goal:** Add real-time progress feedback for long-running operations
 - **Features:**
   - Progress bars for image downloads
@@ -45,18 +50,7 @@ up/down/ps works without all the specials other compose solutions provide.
   - ETA calculations
   - Detailed operation logs
 
-### 4. Various Output Formats
-
-- **Status:** Planned
-- **Goal:** Support multiple output formats for CLI commands
-- **Formats:**
-  - JSON
-  - YAML
-  - Table (current)
-  - Custom templates?
-- **Commands:** ps, config, inspect, etc.
-
-### 5. Complete Compose Feature Parity
+### Complete Compose Feature Parity
 
 - **Status:** Planned
 - **Goal:** Reach 50%+ feature completeness compared to Docker Compose

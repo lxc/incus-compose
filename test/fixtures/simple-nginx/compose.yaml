@@ -1,0 +1,5 @@
+services:
+  web:
+    image: docker.io/nginx:alpine
+    ports:
+      - "8080:80"

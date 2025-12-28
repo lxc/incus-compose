@@ -279,6 +279,11 @@ type Images = map[string]*client.Image
 // ToInstances converts compose services to Incus instances.
 // Creates networks and translates service configs to instance configs.
 func ToInstances(clientProject *client.ClientProject, images Images, project *types.Project, services []string) (map[string]*client.Instance, error) {
+	_, err := clientProject.Profile("default", client.ProfileConfig{})
+	if err != nil {
+		return nil, err
+	}
+
 	// Configure Networks
 	iNetworks := make(map[string]*client.Network, len(project.Networks))
 	for networkName := range project.Networks {

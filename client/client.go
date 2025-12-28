@@ -236,7 +236,7 @@ func (c *Client) Connect() error {
 
 		incus, err = incusClient.ConnectIncusWithContext(c.Ctx, c.Config.URL, args)
 		if err != nil {
-			return fmt.Errorf("%w: failed to connect to Incus URL: %w", ErrConnectionFailed, c.Config.URL, err)
+			return fmt.Errorf("%w: failed to connect to Incus URL %s: %w", ErrConnectionFailed, c.Config.URL, err)
 		}
 
 		c.unix = false
@@ -298,7 +298,7 @@ func (c *Client) EnsureProject(project string, create bool) (*ClientProject, err
 
 	// Already known?
 	for _, p := range c.projects {
-		if p.Name() == project {
+		if p != nil && p.Name() == project {
 			return p, nil
 		}
 	}
@@ -383,7 +383,9 @@ func (c *Client) Rollback(timeout int) error {
 
 	// Remove deleted projects
 	for _, n := range deleted {
-		idx := slices.IndexFunc(c.projects, func(p *ClientProject) bool { return p.Name() == n })
+		idx := slices.IndexFunc(c.projects, func(p *ClientProject) bool {
+			return p != nil && p.Name() == n
+		})
 		if idx != -1 {
 			c.projects[idx] = nil
 		}
@@ -407,6 +409,11 @@ type StoreAble interface {
 // ResourceStore provides a generic store for named resources.
 type ResourceStore[T StoreAble] struct {
 	resources []T
+}
+
+// All returns a copy of the internal resources.
+func (s *ResourceStore[T]) All() []T {
+	return s.resources[:]
 }
 
 // Add appends a resource to the store and returns it.
@@ -452,11 +459,11 @@ type ClientProject struct {
 	// image cache server from Client
 	imageCache incusClient.InstanceServer
 
-	profiles    ResourceStore[*Profile]
-	images      ResourceStore[*Image]
-	poolVolumes ResourceStore[*PoolVolume]
-	networks    ResourceStore[*Network]
-	instances   ResourceStore[*Instance]
+	Profiles    ResourceStore[*Profile]
+	Images      ResourceStore[*Image]
+	PoolVolumes ResourceStore[*PoolVolume]
+	Networks    ResourceStore[*Network]
+	Instances   ResourceStore[*Instance]
 }
 
 func newClientProject(client *Client, name string, incusName string) (*ClientProject, error) {
@@ -477,11 +484,11 @@ func newClientProject(client *Client, name string, incusName string) (*ClientPro
 		incus:      pIncus,
 		imageCache: client.imageCache,
 
-		profiles:    ResourceStore[*Profile]{},
-		images:      ResourceStore[*Image]{},
-		poolVolumes: ResourceStore[*PoolVolume]{},
-		networks:    ResourceStore[*Network]{},
-		instances:   ResourceStore[*Instance]{},
+		Profiles:    ResourceStore[*Profile]{},
+		Images:      ResourceStore[*Image]{},
+		PoolVolumes: ResourceStore[*PoolVolume]{},
+		Networks:    ResourceStore[*Network]{},
+		Instances:   ResourceStore[*Instance]{},
 	}
 
 	if client.IsDebugging() {
@@ -489,6 +496,11 @@ func newClientProject(client *Client, name string, incusName string) (*ClientPro
 	}
 
 	return p, nil
+}
+
+// Config returns a copy of the projects config.
+func (c *ClientProject) Config() Config {
+	return c.config
 }
 
 // Name returns the unsanitized project name.
@@ -509,6 +521,11 @@ func (c *ClientProject) Kind() string {
 // Logger returns the project-scoped logger.
 func (c *ClientProject) Logger() *slog.Logger {
 	return c.logger
+}
+
+// LogTrace is a helper to log something with trace level and the current context.
+func (c *ClientProject) LogTrace(msg string, args ...any) {
+	c.logger.Log(c.Ctx, c.config.TraceLevel, msg, args...)
 }
 
 // Incus returns the project-scoped Incus client.
