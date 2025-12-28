@@ -155,7 +155,7 @@ Output should match `docker compose config` where possible.
 
 - Keep user docs minimal and practical
 - All exported functions/types must have doc comments ending with a period
-- See `docs/ARCHITECTURE.md` for technical architecture details
+- See [docs/architecture.md](docs/architecture.md) for technical architecture details
 
 ## Questions?
 
