@@ -2,6 +2,15 @@
 
 Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` implements the Compose specification for the Incus ecosystem, allowing you to define and run multi-container applications using the same `docker-compose.yml` files you already know.
 
+## Quick Links
+
+- **[Getting Started](docs/getting-started.md)** - Install and run your first compose project
+- **[Compose Compatibility](docs/compose-compatibility.md)** - What works and what doesn't
+- **[Environment Variables](docs/environment-variables.md)** - How env vars work
+- **[Why Incus?](docs/why_incus.md)** - Benefits over Docker
+
+📖 [Full Documentation](docs/) | 🗺️ [Roadmap](docs/roadmap.md)
+
 ## Status
 
 **Early Development** - This project is in its initial phase. APIs and behavior may change. Contributions and feedback are welcome!
@@ -60,27 +69,45 @@ No specials included (caps and so on).
 - Enable embedding in other tools and workflows
 - **API is unstable** - will change without notice until this message is gone
 
-## Usage
+## Quick Start
 
-### docker.io and ghcr.io images
+### Prerequisites
 
-Simply add the remote as `docker.io` or `ghcr.io` to your incus server:
-
-```sh
+```bash
+# Add OCI image remotes to Incus
 incus remote add --protocol oci docker.io https://docker.io
 incus remote add --protocol oci ghcr.io https://ghcr.io
 ```
 
-Now you can use `incus-compose` to pull and run images from those remotes, e.g.:
+### Usage
 
-```yaml
+```bash
+# Build incus-compose
+just build
+
+# Create a compose.yaml
+cat > compose.yaml <<EOF
 services:
-  hello-world:
-    image: docker.io/hello-world:latest
+  web:
+    image: docker.io/nginx:alpine
+    ports:
+      - "8080:80"
+EOF
+
+# Start services
+./incus-compose up
+
+# Check status
+./incus-compose ps
+
+# Stop and remove
+./incus-compose down
 ```
+
+See [Getting Started](docs/getting-started.md) for detailed examples.
 
 ## Credits
 
-This is based on work done by [@bketelsen](https://github.com/bketelsen)
-Some parts are replicated or copied from [docker compose](https://github.com/docker/compose).
-Im using AI to generate tests and to help me with reviews, real code is 90% hand written.
+This project builds on work by [@bketelsen](https://github.com/bketelsen).
+Some components are adapted from [docker compose](https://github.com/docker/compose).
+AI tools assist with test generation, code reviews and docs; core implementation is hand-written.

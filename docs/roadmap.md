@@ -9,33 +9,7 @@ up/down/ps works without all the specials other compose solutions provide.
 
 ## Planned Improvements
 
-### 1. Better Error Handling
-
-- **Status:** Planned
-- **Goal:** Implement custom error types and better error catching patterns
-- **Details:**
-  - Replace `errors.New()` with custom error types
-  - Add error wrapping with context
-  - Implement `errors.Is()` and `errors.As()` patterns
-  - Better error recovery strategies
-- **Example:**
-
-  ```go
-  type DisconnectedError struct {
-      URL string
-      Cause error
-  }
-
-  func (e *DisconnectedError) Error() string { ... }
-  func (e *DisconnectedError) Unwrap() error { return e.Cause }
-  ```
-
-### 2. Move icclient Package
-
-- **Status:** Planned
-- **Goal:** Restructure icclient package location/organization
-
-### 3. Remote Handling with Custom Config
+### 1. Remote Handling with Custom Config
 
 - **Status:** Planned
 - **Goal:** Add own remote/server configuration management
@@ -48,7 +22,7 @@ up/down/ps works without all the specials other compose solutions provide.
   - Cert management
   - Default remote selection
 
-### 4. Worker Pool for Images and Tasks
+### 2. Worker Pool for Images and Tasks
 
 - **Status:** Planned
 - **Goal:** Implement concurrent worker pool for resource-intensive operations
@@ -61,7 +35,7 @@ up/down/ps works without all the specials other compose solutions provide.
   - Better resource utilization
   - Rate limiting/throttling control
 
-### 5. Progress Reporting to CLI
+### 3. Progress Reporting to CLI
 
 - **Status:** Planned (depends on #5)
 - **Goal:** Add real-time progress feedback for long-running operations
@@ -71,7 +45,7 @@ up/down/ps works without all the specials other compose solutions provide.
   - ETA calculations
   - Detailed operation logs
 
-### 6. Various Output Formats
+### 4. Various Output Formats
 
 - **Status:** Planned
 - **Goal:** Support multiple output formats for CLI commands
@@ -82,7 +56,7 @@ up/down/ps works without all the specials other compose solutions provide.
   - Custom templates?
 - **Commands:** ps, config, inspect, etc.
 
-### 7. Complete Compose Feature Parity
+### 5. Complete Compose Feature Parity
 
 - **Status:** Planned
 - **Goal:** Reach 50%+ feature completeness compared to Docker Compose

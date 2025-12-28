@@ -43,19 +43,21 @@ This includes all OS environment variables directly, matching docker-compose beh
 
 ### Using .env files (recommended)
 
-```bash
+```env
 # .env
 DATABASE_URL=postgres://localhost/mydb
 API_KEY=your-api-key
 USER=${USER}
+```
 
+```yaml
 # compose.yaml
 services:
-app:
-  environment:
-    DATABASE_URL: ${DATABASE_URL}
-    API_KEY: ${API_KEY}
-    DEPLOYED_BY: ${USER}
+  app:
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      API_KEY: ${API_KEY}
+      DEPLOYED_BY: ${USER}
 ```
 
 ```bash

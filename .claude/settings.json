@@ -1,0 +1,35 @@
+{
+  "customInstructions": {
+    "files": [".rules"]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(just:*)",
+      "Bash(git:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(find:*)",
+      "Bash(fd:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(diff:*)",
+      "Read(**)",
+      "Write(**)",
+      "Edit(**)"
+    ],
+    "ask": ["Bash(go:*)"],
+    "deny": ["Bash(incus:*)", "Bash(incus-compose:*)"],
+    "additionalDirectories": [
+      "~/vendor/go/incus/",
+      "~/vendor/go/docker/compose/",
+      "~/projects/go/bketelsen/incus-compose"
+    ],
+    "defaultMode": "acceptEdits"
+  },
+  "env": {
+    "INCUS_COMPOSE_PROJECT": "incus-compose"
+  }
+}
