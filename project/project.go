@@ -157,7 +157,7 @@ func ServiceToInstance(c *client.ClientProject, service types.ServiceConfig, ima
 	networks := make(map[string]*client.Network, len(service.Networks))
 	ethIdx := 0
 	for netName := range service.Networks {
-		net, err := c.Network(netName)
+		net, err := c.Network(netName, &client.NetworkConfig{})
 		if err != nil {
 			return nil, err
 		}
@@ -287,7 +287,7 @@ func ToInstances(clientProject *client.ClientProject, images Images, project *ty
 	// Configure Networks
 	iNetworks := make(map[string]*client.Network, len(project.Networks))
 	for networkName := range project.Networks {
-		net, err := clientProject.Network(networkName)
+		net, err := clientProject.Network(networkName, &client.NetworkConfig{})
 		if err != nil {
 			return nil, err
 		}

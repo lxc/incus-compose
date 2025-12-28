@@ -329,7 +329,7 @@ var downCommand = &cli.Command{
 		if networks {
 			for netName := range p.Networks {
 				clientProject.Logger().InfoContext(ctx, "Removing pool volume", "name", netName)
-				r, err := clientProject.Network(netName)
+				r, err := clientProject.Network(netName, &client.NetworkConfig{})
 				if err != nil {
 					continue
 				}

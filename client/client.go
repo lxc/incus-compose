@@ -24,6 +24,18 @@ import (
 	incusApi "github.com/lxc/incus/v6/shared/api"
 )
 
+// BasicResource defines a basic resource.
+// That interface is used everywhere in client.
+type BasicResource interface {
+	Name() string
+	Kind() string
+	Priority() int
+	Get() error
+	Create() error
+	Ensure(create bool) error
+	Delete(timeout int, force bool) error
+}
+
 // clientKey is a context key for storing the Client in context.Context.
 type clientKey struct{}
 
@@ -136,7 +148,6 @@ type Client struct {
 	// logger is the structured logger
 	logger *slog.Logger
 
-	t        *transaction
 	projects []*ClientProject
 
 	// global incus client
@@ -173,7 +184,6 @@ func New(ctx context.Context, logger *slog.Logger, opts ...Option) *Client {
 		Ctx:    ctx,
 		Config: config,
 		logger: logger,
-		t:      newTransaction(),
 	}
 
 	return c
@@ -312,7 +322,7 @@ func (c *Client) EnsureProject(project string, create bool) (*ClientProject, err
 		return nil, fmt.Errorf("fetching project names: %w", err)
 	}
 	if slices.Contains(projectNames, incusProject) {
-		p, err := newClientProject(c, project, incusProject)
+		p, err := newClientProject(c, project, incusProject, false)
 		if err != nil {
 			return nil, err
 		}
@@ -339,12 +349,11 @@ func (c *Client) EnsureProject(project string, create bool) (*ClientProject, err
 		return nil, fmt.Errorf("creating project %q sanitized to %q: %w", project, incusProject, err)
 	}
 
-	p, err := newClientProject(c, project, incusProject)
+	p, err := newClientProject(c, project, incusProject, true)
 	if err != nil {
 		return nil, err
 	}
 
-	c.t.Add(p)
 	c.projects = append(c.projects, p)
 
 	return p, nil
@@ -378,8 +387,13 @@ func (c *Client) Rollback(timeout int) error {
 	var jErr error
 
 	// Rollback created projects
-	deleted, err := c.t.Rollback(timeout)
-	jErr = errors.Join(jErr, err)
+	deleted := []string{}
+	for _, p := range c.projects {
+		if p.created {
+			jErr = errors.Join(jErr, p.Delete(timeout, true))
+			deleted = append(deleted, p.name)
+		}
+	}
 
 	// Remove deleted projects
 	for _, n := range deleted {
@@ -401,13 +415,8 @@ func (c *Client) Rollback(timeout int) error {
 	return jErr
 }
 
-// StoreAble defines resources that can be stored in a ResourceStore.
-type StoreAble interface {
-	Name() string
-}
-
-// ResourceStore provides a generic store for named resources.
-type ResourceStore[T StoreAble] struct {
+// ResourceStore provides a generic store for resources.
+type ResourceStore[T BasicResource] struct {
 	resources []T
 }
 
@@ -440,6 +449,9 @@ type ClientProject struct {
 
 	config Config
 
+	// Tracks if the project has been created within the client.
+	created bool
+
 	name      string
 	incusName string
 
@@ -466,7 +478,7 @@ type ClientProject struct {
 	Instances   ResourceStore[*Instance]
 }
 
-func newClientProject(client *Client, name string, incusName string) (*ClientProject, error) {
+func newClientProject(client *Client, name string, incusName string, created bool) (*ClientProject, error) {
 	incus := client.incus.UseProject(incusName)
 	pIncus, ok := incus.(*incusClient.ProtocolIncus)
 	if !ok {
@@ -476,6 +488,7 @@ func newClientProject(client *Client, name string, incusName string) (*ClientPro
 	p := &ClientProject{
 		client:     client,
 		config:     client.Config,
+		created:    created,
 		name:       name,
 		incusName:  incusName,
 		t:          newTransaction(),
@@ -575,5 +588,3 @@ func (c *ClientProject) Rollback(timeout int) error {
 	_, err := c.t.Rollback(timeout)
 	return err
 }
-
-var _ (tDeleteAble) = (*ClientProject)(nil)

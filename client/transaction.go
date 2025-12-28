@@ -5,30 +5,22 @@ import (
 	"sort"
 )
 
-// tDeleteAble defines resources that can be tracked and deleted by a transaction.
-type tDeleteAble interface {
-	Name() string
-	Kind() string
-	Priority() int
-	Delete(timeout int, force bool) error
-}
-
 // transaction tracks created resources and accumulated errors for rollback support.
 type transaction struct {
 	jErr       error
 	createJErr error
 
-	resources []tDeleteAble
+	resources []BasicResource
 }
 
 func newTransaction() *transaction {
 	return &transaction{
-		resources: []tDeleteAble{},
+		resources: []BasicResource{},
 	}
 }
 
 // Add registers a resource with this transaction for potential rollback.
-func (t *transaction) Add(p tDeleteAble) {
+func (t *transaction) Add(p BasicResource) {
 	t.resources = append(t.resources, p)
 }
 

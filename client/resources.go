@@ -249,6 +249,9 @@ func (r *Profile) delete(_ int, _ bool) error {
 	return nil
 }
 
+// Makes sure it implements `BasicResource`
+var _ BasicResource = (*Profile)(nil)
+
 // ImageConfig is reserved for future use.
 type ImageConfig struct{}
 
@@ -274,12 +277,12 @@ type Image struct {
 }
 
 // Image returns an existing or creates a new Image resource.
-func (c *ClientProject) Image(name string, options ImageConfig) (*Image, error) {
+func (c *ClientProject) Image(name string, config ImageConfig) (*Image, error) {
 	if r, ok := c.Images.Get(name); ok {
 		return r, nil
 	}
 
-	r := &Image{Resource: newResource("image", c, name), Config: options, Operation: ImageOperation{}}
+	r := &Image{Resource: newResource("image", c, name), Config: config, Operation: ImageOperation{}}
 	if err := r.sanitize(); err != nil {
 		return nil, err
 	}
@@ -449,6 +452,9 @@ func (r *Image) delete(_ int, _ bool) error {
 
 	return nil
 }
+
+// Makes sure it implements `BasicResource`
+var _ BasicResource = (*Image)(nil)
 
 // PoolVolumeConfig configures storage volume creation.
 type PoolVolumeConfig struct {
@@ -632,6 +638,12 @@ func (r *PoolVolume) delete(_ int, _ bool) error {
 	return nil
 }
 
+// Makes sure it implements `BasicResource`
+var _ BasicResource = (*PoolVolume)(nil)
+
+// NetworkConfig is reserved for future use.
+type NetworkConfig struct{}
+
 // NetworkOperation tracks the current state of a network resource.
 type NetworkOperation struct {
 	ETag    string
@@ -646,7 +658,7 @@ type Network struct {
 }
 
 // Network returns an existing or creates a new Network resource.
-func (c *ClientProject) Network(name string) (*Network, error) {
+func (c *ClientProject) Network(name string, config *NetworkConfig) (*Network, error) {
 	if r, ok := c.Networks.Get(name); ok {
 		return r, nil
 	}
@@ -775,6 +787,9 @@ func (r *Network) delete(_ int, _ bool) error {
 	return nil
 }
 
+// Makes sure it implements `BasicResource`
+var _ BasicResource = (*Network)(nil)
+
 // InstancePoolVolume attaches a storage volume to an instance.
 type InstancePoolVolume struct {
 	Path     string
@@ -823,38 +838,38 @@ type InstanceOperation struct {
 type Instance struct {
 	Resource
 
-	Options InstanceConfig
+	Config InstanceConfig
 
 	Operation InstanceOperation
 }
 
 // Instance returns an existing or creates a new Instance resource.
-func (c *ClientProject) Instance(name string, options InstanceConfig) (*Instance, error) {
+func (c *ClientProject) Instance(name string, config InstanceConfig) (*Instance, error) {
 	if r, ok := c.Instances.Get(name); ok {
 		return r, nil
 	}
 
-	if options.Type == "" {
-		options.Type = incusApi.InstanceTypeContainer
+	if config.Type == "" {
+		config.Type = incusApi.InstanceTypeContainer
 	}
 
-	if options.Networks == nil {
-		options.Networks = map[string]*Network{}
+	if config.Networks == nil {
+		config.Networks = map[string]*Network{}
 	}
 
-	if options.PortProxies == nil {
-		options.PortProxies = []InstancePortProxy{}
+	if config.PortProxies == nil {
+		config.PortProxies = []InstancePortProxy{}
 	}
 
-	if options.PoolVolumes == nil {
-		options.PoolVolumes = []InstancePoolVolume{}
+	if config.PoolVolumes == nil {
+		config.PoolVolumes = []InstancePoolVolume{}
 	}
 
-	if options.BindMounts == nil {
-		options.BindMounts = []InstanceBindMount{}
+	if config.BindMounts == nil {
+		config.BindMounts = []InstanceBindMount{}
 	}
 
-	r := &Instance{Resource: newResource("instance", c, name), Options: options, Operation: InstanceOperation{}}
+	r := &Instance{Resource: newResource("instance", c, name), Config: config, Operation: InstanceOperation{}}
 	if err := r.sanitize(); err != nil {
 		return nil, err
 	}
@@ -922,7 +937,7 @@ func (r *Instance) sanitize() error {
 	}
 
 	// Bind mounts require local socket access to the host filesystem
-	if r.project.client.IsRemote() && len(r.Options.BindMounts) > 0 {
+	if r.project.client.IsRemote() && len(r.Config.BindMounts) > 0 {
 		return errors.New("bind mounts only locally supported")
 	}
 
@@ -936,17 +951,17 @@ func (r *Instance) create() error {
 		return nil
 	}
 
-	if r.Options.Image == nil {
+	if r.Config.Image == nil {
 		return errors.New("instances without an image are unsupported")
 	}
 
-	devices := r.Options.Devices
+	devices := r.Config.Devices
 	if devices == nil {
 		devices = make(map[string]map[string]string)
 	}
 
 	// Network devices
-	for devName, net := range r.Options.Networks {
+	for devName, net := range r.Config.Networks {
 		if err := net.Ensure(true); err != nil {
 			return err
 		}
@@ -959,7 +974,7 @@ func (r *Instance) create() error {
 	}
 
 	// Port proxies
-	for _, port := range r.Options.PortProxies {
+	for _, port := range r.Config.PortProxies {
 		hostIP := port.HostIP
 		if hostIP == "" {
 			hostIP = "0.0.0.0"
@@ -982,25 +997,25 @@ func (r *Instance) create() error {
 	}
 
 	// Image
-	if err := r.Options.Image.Ensure(true); err != nil {
+	if err := r.Config.Image.Ensure(true); err != nil {
 		return err
 	}
 
-	imageState := r.Options.Image.Operation
+	imageState := r.Config.Image.Operation
 
 	imgInfo, _, err := imageState.Cache.GetImage(imageState.Fingerprint)
 
 	// Build instance creation request
 	req := incusApi.InstancesPost{
 		Name: r.incusName,
-		Type: r.Options.Type,
+		Type: r.Config.Type,
 		Source: incusApi.InstanceSource{
 			Type:        "image",
 			Fingerprint: imageState.Fingerprint,
 		},
 		InstancePut: incusApi.InstancePut{
 			Description: fmt.Sprintf(r.project.config.DescriptionFormat, r.name),
-			Config:      r.Options.Config,
+			Config:      r.Config.Config,
 			Devices:     devices,
 		},
 	}
@@ -1026,7 +1041,7 @@ func (r *Instance) create() error {
 
 	// Create and attach volumes after instance exists so we can read oci.uid/oci.gid
 	// from the image config for proper ownership shifting
-	if len(r.Options.PoolVolumes) > 0 {
+	if len(r.Config.PoolVolumes) > 0 {
 		uid := instance.Config["oci.uid"]
 		if uid == "" {
 			uid = "0"
@@ -1036,7 +1051,7 @@ func (r *Instance) create() error {
 			gid = "0"
 		}
 
-		for _, iVol := range r.Options.PoolVolumes {
+		for _, iVol := range r.Config.PoolVolumes {
 			vol := iVol.Volume
 			if err := vol.configure(uid, gid); err != nil {
 				postErr = errors.Join(postErr, err)
@@ -1062,7 +1077,7 @@ func (r *Instance) create() error {
 			instance.Devices["vol-"+vol.incusName] = device
 		}
 
-		for _, vol := range r.Options.BindMounts {
+		for _, vol := range r.Config.BindMounts {
 			device := map[string]string{
 				"type":   "disk",
 				"source": vol.Source,
@@ -1216,3 +1231,6 @@ func (r *Instance) delete(_ int, force bool) error {
 
 	return err
 }
+
+// Makes sure it implements `BasicResource`
+var _ BasicResource = (*Instance)(nil)
