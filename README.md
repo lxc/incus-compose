@@ -65,7 +65,7 @@ No specials included (caps and so on).
 
 ### Library Support
 
-- Expose a Go API (`pkg/icclient/`) for programmatic use
+- Expose a Go API (`client/` and `project/`) for programmatic use
 - Enable embedding in other tools and workflows
 - **API is unstable** - will change without notice until this message is gone
 
