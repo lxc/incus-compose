@@ -25,6 +25,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/compose-spec/compose-go/v2/utils"
 	"github.com/dominikbraun/graph"
+
 	"gitlab.com/r3j0/incus-compose/client"
 )
 
@@ -155,7 +156,6 @@ func ServiceToInstance(c *client.Client, service types.ServiceConfig, full bool)
 	if err != nil {
 		errs = errors.Join(errs, err)
 	}
-	resources = append(resources, image)
 
 	// Networks
 	ethIdx := 0

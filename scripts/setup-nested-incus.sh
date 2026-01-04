@@ -15,6 +15,7 @@ CONTAINER_NAME="incus-compose-test"
 IMAGE="images:debian/trixie"
 INCUS_REPO="stable" # stable or lts
 FORCE="false"
+LISTEN=""
 
 # Track whether we created the container so we can cleanup on failure if desired
 CONTAINER_CREATED="false"
@@ -44,6 +45,7 @@ OPTIONS:
                 Note: Dots will be replaced with hyphens (DNS-safe)
 -i IMAGE        Base image (default: ${IMAGE})
 -r REPO         Incus repository: stable or lts (default: ${INCUS_REPO})
+-l ADDRESS      Add port proxy (example: 127.0.0.1:2443) (default: "")
 -f              Force delete any existing container (default: false)
 -h              Show this help message
 
@@ -62,7 +64,7 @@ EOF
 }
 
 # Parse arguments
-while getopts "c:n:i:r:fh" opt; do
+while getopts "c:n:i:r:l:fh" opt; do
     case ${opt} in
     c)
         CLIENT_CERT="${OPTARG}"
@@ -75,6 +77,9 @@ while getopts "c:n:i:r:fh" opt; do
         ;;
     r)
         INCUS_REPO="${OPTARG}"
+        ;;
+    l)
+        LISTEN="${OPTARG}"
         ;;
     f)
         FORCE="true"
@@ -135,6 +140,7 @@ fi
 echo "==> Configuration:"
 echo "    Container name: ${CONTAINER_NAME}"
 echo "    Base image: ${IMAGE}"
+echo "    Proxy listen: ${LISTEN}"
 echo "    Incus repository: ${INCUS_REPO}"
 echo "    Repository URL: ${REPO_URL}"
 echo "    Client certificate: ${CLIENT_CERT}"
@@ -202,7 +208,7 @@ EOF
 
 echo "==> Executing installation script"
 # Keep your variable-based pipe approach; replace placeholder and stream into container
-printf "%s" "${INSTALL_SCRIPT}" | sed "s|REPO_URL_PLACEHOLDER|${REPO_URL}|g" | incus exec "${CONTAINER_NAME}" -- bash -s
+echo "${INSTALL_SCRIPT}" | sed "s|REPO_URL_PLACEHOLDER|${REPO_URL}|g" | incus exec "${CONTAINER_NAME}" -- bash -s
 
 echo "==> Executing Incus init script"
 
@@ -254,14 +260,11 @@ profiles:
       type: nic
 PRESEED_EOF
 
-echo "Incus configuration complete!"
-echo "Version: $(incus version || true)"
-echo "Listening on: $(incus config get core.https_address || true)"
 EOF
 )
 
 # Stream the configure script as well (no temp files)
-printf "%s" "${CONFIGURE_SCRIPT}" | incus exec "${CONTAINER_NAME}" -- bash -s
+echo "${CONFIGURE_SCRIPT}" | incus exec "${CONTAINER_NAME}" -- bash -s
 
 # Inject client certificate into trust store
 echo "==> Adding client certificate to nested Incus trust store"
@@ -270,5 +273,20 @@ incus exec "${CONTAINER_NAME}" -- incus config trust add-certificate /root/clien
 incus exec "${CONTAINER_NAME}" -- rm -f /root/client.crt
 echo "    Certificate added with unrestricted access"
 echo ""
-echo -e "==> Container ready:\n\n"
-incus info "${CONTAINER_NAME}"
+
+nested_address="$(incus exec "${CONTAINER_NAME}" -- incus config get core.https_address || true)"
+if [[ -n "${LISTEN}" ]]; then
+    nested_port="${nested_address//[^0-9]/}"
+    echo ""
+    echo ""
+    echo "==> Adding a a proxy device to the nested container ${LISTEN} -> 12.7.0.0.1:${nested_port}"
+
+    set +e
+    incus config device add "${CONTAINER_NAME}" "proxy-${LISTEN}" proxy listen="tcp:${LISTEN}" connect="tcp:127.0.0.1:${nested_port}"
+    set -e
+fi
+
+echo ""
+echo ""
+echo "==> Nested container info:"
+incus exec "${CONTAINER_NAME}" -- incus info
