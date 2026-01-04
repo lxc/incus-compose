@@ -17,6 +17,10 @@ User documentation for incus-compose.
 - **[Why Incus?](why-incus.md)** - Benefits of Incus over OCI engines like Docker
 - **[Architecture](architecture.md)** - Package structure and design patterns
 
+## Contributing
+
+- **[Testing](testing.md)** - Testing patterns, fixtures, and best practices
+
 ## Planning and Development
 
 - **[Roadmap](roadmap.md)** - Planned features and improvements

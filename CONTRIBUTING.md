@@ -13,10 +13,30 @@ Thank you for your interest in contributing! This document outlines the conventi
 - Simple solutions over clever ones
 - No non-ASCII characters in code and docs
 
+## Working with Go code
+
+Make sure to follow these proverbs, they are partially copied from [go-proverbs](https://go-proverbs.github.io/).
+
+- Don't communicate by sharing memory, share memory by communicating.
+- Concurrency is not parallelism.
+- Channels orchestrate; mutexes serialize.
+- The bigger the interface, the weaker the abstraction.
+- Make the zero value useful.
+- interface{} says nothing.
+- Gofmt's style is no one's favorite, yet gofmt is everyone's favorite.
+- A little copying is better than a little dependency.
+- With the unsafe package there are no guarantees.
+- Clear is better than clever.
+- Reflection is never clear.
+- Errors are values.
+- Don't just check errors, handle them gracefully.
+- Design the architecture, name the components, document the details.
+- Documentation is for users.
+- Don't panic.
+
 ## Architecture and design rules
 
-incus-compose is intentionally opinionated. Its core design principles are
-documented in [docs/architecture.md](docs/architecture.md).
+Its core design principles are documented in [docs/architecture.md](docs/architecture.md).
 
 Before contributing, you **must** read and understand this document.
 It defines non-negotiable boundaries, including:
@@ -75,9 +95,13 @@ just update-snapshots   # Update test snapshots
 
 ### Comments
 
-- All exported functions need doc comments
-- Comments must end with a period (golangci-lint enforces this)
+- All exported functions and types need doc comments
 - No misleading comments - if code is self-explanatory, don't comment
+
+### Use of `any`
+
+Avoid using `any` (`interface{}`).
+Prefer a small, explicit interface. Use generics only if they clearly reduce duplication.
 
 ### Error Handling
 
@@ -98,7 +122,7 @@ for _, item := range items {
         errs = errors.Join(errs, err)
     }
 }
-return errs  // Returns all errors, not just the first
+return errs
 ```
 
 **Use sentinel errors**:
@@ -127,48 +151,9 @@ if errors.Is(err, ErrNotFound) { }
 
 ## Testing
 
-We use `testify/suite` for all tests. No mocking - tests run against real nested Incus instances.
+For comprehensive testing documentation including patterns, fixtures, and best practices, see [docs/testing.md](docs/testing.md).
 
-### Test Organization
-
-Tests live alongside the code they test:
-
-```
-client/
-  ├── client.go
-  ├── client_test.go      # Tests for client.go
-  ├── resources.go
-  └── resources_test.go   # Tests for resources.go
-project/
-  ├── project.go
-  └── project_test.go     # Tests for project.go
-```
-
-**Don't create**:
-
-- Shared test base suites or abstractions
-- Mock objects for Incus API
-- Test helper packages
-
-**Do**:
-
-- Use `testify/suite` pattern for each `_test.go` file
-- Copy-paste setup code between test files (KISS over DRY)
-- Keep each test suite self-contained
-
-### Test Fixtures
-
-Located in `test/fixtures/`. Each fixture is a minimal compose scenario.
-
-**Snapshot portability**: Normalize absolute paths to placeholders before snapshotting:
-
-```go
-output = strings.ReplaceAll(output, fixturePath, "$FIXTURE_PATH")
-```
-
-**Self-contained fixtures**: Define common env vars like `$USER` or `$HOME` in the fixture's `.env` file to avoid OS dependencies.
-
-**Pure YAML fixtures**: Compose files should be pure YAML without comments.
+We use `testify/suite` for all tests. Tests are categorized as unit tests (using mocks) or integration tests (using real Incus instances).
 
 ## Docker Compose Compatibility
 

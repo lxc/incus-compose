@@ -1,211 +1,204 @@
 # Architecture
 
-This document explains the high-level architecture of incus-compose and how the major components fit together.
+High-level architecture of incus-compose and how components fit together.
 
 ## Package Structure
 
 ```
 incus-compose/
 ├── cmd/incus-compose/  # CLI entry point
-├── client/             # Incus API wrapper with transactions
+├── client/             # Incus client with resources, stack, pool
 └── project/            # Compose-spec to Incus translation
 ```
 
 ### Package Responsibilities
 
 **cmd/incus-compose/**
-- Command-line interface and flag parsing
-- Wires together client and project packages
-- Handles commands: up, down, ps, etc.
+
+- CLI and flag parsing
+- Wires together client and project
+- Commands: up, down, ps, config
 
 **client/**
-- High-level wrapper around Incus API
-- Resource management (Profile, Image, Network, PoolVolume, Instance)
-- Transaction support with automatic rollback
-- Name sanitization for Incus compatibility
+
+- High-level Incus API wrapper
+- Resources: Profile, Image, Network, StorageVolume, Instance
+- Stack for task collection and ordering
+- WorkerPool for parallel execution
+- Hooks for action interception
 
 **project/**
-- Loads Docker Compose files using compose-go
-- Translates compose services to Incus instances
-- Handles environment variables and service dependencies
+
+- Loads Docker Compose files via compose-go
+- Translates compose services to Incus resources
+- Configures client resources based on compose definitions
+- Handles environment variables and dependencies
+
+### Package Dependencies
+
+```
+cmd/incus-compose
+    ├── client   (creates GlobalClient, runs Stack)
+    └── project  (loads compose, configures client resources)
+
+project
+    └── client   (calls client.Resource() to create resources)
+```
+
+The CLI creates a GlobalClient and loads the compose project. Then project takes over:
+it reads the compose definitions and configures resources on the client. The client
+owns the resources, but project drives what gets created.
+
+This means project is not a passive loader. It actively builds the resource graph
+by calling into client. The Stack returned by project contains all resources ready
+for execution.
 
 ## Resource Hierarchy
 
 ```
-Client
-  └── ClientProject (project-scoped operations)
+GlobalClient
+  └── Client (project-scoped)
         ├── Profile
         ├── Image
         ├── Network
-        ├── PoolVolume
+        ├── StorageVolume
         └── Instance
+              ├── Devices (pre-creation)
+              └── PostDevices (post-creation)
 ```
-
-All resources are created within a project context. Projects provide isolation between different compose applications.
 
 ## Two-Phase Resource Pattern
 
-Resources follow a two-phase lifecycle:
+1. **Configuration phase** - Resource created in memory
 
-1. **Go object created** - Resource exists in memory, tracked by client
-2. **Incus resource created** - Resource exists on Incus server
+   ```go
+   image, _ := client.Resource(KindImage, "docker.io/alpine", &ImageConfig{})
+   image.Config.Source = imageServer  // configure
+   ```
 
-This separation allows resources to be configured before creation and enables transaction tracking.
+2. **Execution phase** - Resource created on Incus
+   ```go
+   image.Ensure(OptionCreate())  // blocks, creates on server
+   ```
 
-## Transaction and Rollback
+## Stack and WorkerPool
 
-Every operation tracks created resources and supports automatic rollback on errors.
+### Stack
 
-### Resource Priorities
-
-Resources are created and deleted in priority order:
+Collects resources for ordered execution:
 
 ```go
-Project  → Profile → Image → Network → Volume → Instance → Snapshot
-(256)      (512)     (512)   (512)     (1024)   (2048)     (4096)
+stack := client.NewStack(project)
+stack.Add(profile, image, network, instance)
+stack.Run(ActionEnsure, OptionCreate())
 ```
 
-Deletion happens in reverse order (instances deleted before networks, etc.) to respect dependencies.
+### WorkerPool
 
-### Error Handling
+Executes tasks in parallel:
 
-When errors occur during resource creation:
+```go
+pool := client.NewWorkerPool(4)
+pool.Submit(func() error { return image1.Ensure(OptionCreate()) })
+pool.Submit(func() error { return image2.Ensure(OptionCreate()) })
+pool.Run(PoolRunArgs{FailFast: false})
+```
 
-1. All errors are accumulated
-2. In production mode, rollback is triggered automatically
-3. Resources are deleted in reverse priority order
-4. Debug mode skips rollback for manual inspection
+### Priority-Based Ordering
+
+Resources execute by priority. Lower values run first for ensure, last for delete:
+
+| Resource | Priority | Create Order | Delete Order |
+| -------- | -------- | ------------ | ------------ |
+| Project  | 256      | 1st          | Last         |
+| Profile  | 512      | 2nd          | 5th          |
+| Image    | 1024     | 3rd          | 4th          |
+| Network  | 2048     | 4th          | 3rd          |
+| Volume   | 4096     | 5th          | 2nd          |
+| Instance | 8192     | Last         | 1st          |
+
+Images in the same batch run in parallel via WorkerPool.
+
+## Hooks
+
+Before and after hooks intercept resource actions for logging, validation, and error modification:
+
+```go
+client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+    log.Printf("Starting %s on %s", action, r.Name())
+    return err
+})
+```
+
+See [Hooks](architecture/hooks.md) for details.
 
 ## Name Sanitization
 
-Incus has strict naming requirements that differ from Docker Compose:
-
 ### Projects
-- No underscores or special characters
-- Example: `My_Project!` → `my-project`
+
+`My_Project!` -> `my-project`
 
 ### Instances
-- Valid DNS names (lowercase, hyphens only)
-- Maximum 63 characters
-- Long names are hashed for uniqueness
-- Example: `web_server` → `web-server`
+
+Valid DNS names, max 63 chars, long names hashed to 32 hex chars.
 
 ### Networks
-- Must fit Linux interface name limits (13 characters)
-- Short names use `{project}-{network}` format
-- Long names use `{prefix}{hash}` format (deterministic)
-- Example: `backend` → `app-backend` or `ic-a1b2c3d4e5`
 
-## Environment Variables
+Linux interface limit (13 chars), uses hash for long names:
+`backend` -> `app-backend` or `ic-a1b2c3d4e5`
 
-incus-compose handles environment variables differently from Docker Compose for security and reproducibility:
+## Error Handling
 
-- OS environment variables are NOT included by default
-- `.env` files can use OS variables for interpolation (e.g., `HOME=${HOME}`)
-- Only variables explicitly defined in `.env` files are added to the project
-- Use `--os-env` flag for full Docker Compose compatibility
-
-This prevents accidental leakage of sensitive environment variables into containers.
-
-## Profile Handling
-
-When Incus creates a new project, it generates an empty default profile with no devices. This causes instance launches to fail.
-
-incus-compose automatically handles this by:
-
-1. Checking if the profile has devices
-2. If empty, copying devices from a source profile (typically the global default)
-3. Updating the profile with the copied devices
-
-Existing profiles with devices are not modified - we assume they're correctly configured.
-
-## Volume UID/GID Shifting
-
-Storage volumes are automatically configured with the correct UID/GID from the instance's OCI config:
-
-1. Instance reads `oci.uid` and `oci.gid` from its image
-2. Volume is configured with these values before creation
-3. Files in the volume are owned by the correct user inside the container
-
-This happens transparently when attaching volumes to instances.
-
-## Service to Instance Translation
-
-The project package translates Docker Compose services to Incus instances:
+Sentinel errors with context enrichment:
 
 ```go
-// Load compose file
-composeProject, err := project.Load(ctx, project.LoadModel(model))
+var (
+    ErrDisconnected       = NewError("client is not connected")
+    ErrNotEnsured         = NewError("resource not ensured")
+    ErrNotFound           = NewError("resource not found")
+    ErrBindMountRemote    = NewError("bind mounts not supported over network connection")
+    ErrDependencyNotEnsured = NewError("dependency not ensured")
+)
 
-// Convert service to instance
-instance, err := project.ServiceToInstance(clientProject, service, image)
-
-// Get dependency order
-order, err := project.ServiceGraph(services, false) // false = start order
+// Usage with context
+return ErrNotFound.WithResource(r).Wrap(err)
 ```
 
-Key translations:
+Check errors with `errors.Is()`:
 
-- `services` → instances
-- `networks` → Incus bridge networks
-- `volumes` → storage pool volumes or bind mounts
-- `ports` → proxy devices
-- `environment` → instance config
+```go
+if errors.Is(err, client.ErrNotFound) {
+    // handle not found
+}
+```
 
 ## Connection Modes
 
-incus-compose supports two connection modes:
+**Direct URL (testing/CI):**
 
-**1. Incus CLI config (normal usage):**
-```bash
-incus-compose up
-```
-Uses the default remote from `~/.config/incus/config.yml`
-
-**2. Direct URL (testing/CI):**
 ```bash
 export INCUS_COMPOSE_URL="https://192.168.1.100:8443"
 export INCUS_COMPOSE_CERT="./certs/client.crt"
 export INCUS_COMPOSE_KEY="./certs/client.key"
-incus-compose up
 ```
 
-### Remote vs Local Connections
+**Provided connection (for testing):**
 
-Some features only work with local (Unix socket) connections:
-
-- **Bind mounts**: Only supported locally (source path must be accessible to Incus server)
-- **Network performance**: Local connections have lower latency
-
-The client detects the connection type and validates operations accordingly.
-
-## Debugging
-
-Enable trace logging to see detailed Incus API interactions:
-
-```bash
-# Set trace level in client
-c := client.New(ctx, logger,
-    client.TraceLevel(slog.LevelDebug - 4),
-)
+```go
+client.New(ctx, client.ClientProvideConnection(instanceServer, cacheServer))
 ```
 
-In debug mode:
-- Rollback is skipped (manual cleanup required)
-- Additional fields logged for all operations
-- API calls are traced with timing information
+## Environment Variables
 
-## Best Practices
-
-1. **Always use project isolation** - Each compose application gets its own Incus project
-2. **Let the client handle transactions** - Use `Ensure()` methods instead of manual Create/Get
-3. **Sanitize names early** - The client handles this automatically
-4. **Use `.env` files for configuration** - Avoid relying on OS environment
-5. **Test with nested Incus** - Integration tests use nested Incus for isolation
-6. **Enable debug mode for troubleshooting** - Prevents automatic rollback
+- OS environment variables NOT included by default
+- `.env` files can use OS variables for interpolation
+- Use `--os-env` flag for Docker Compose compatibility
 
 ## Related Documentation
 
+- [Hooks](architecture/hooks.md) - Before/after hooks for operations
+- [Client Package](architecture/client.md) - Resources, Stack, WorkerPool
+- [Instance Details](architecture/instance.md) - Pre/post devices, UID/GID shifting
+- [Images](architecture/images.md) - OCI image handling and caching
 - [Getting Started](getting-started.md) - Quick start guide
-- [Compose Compatibility](compose-compatibility.md) - What's supported from Docker Compose
-- [Environment Variables](environment-variables.md) - Environment variable handling details
+- [Compose Compatibility](compose-compatibility.md) - Docker Compose support

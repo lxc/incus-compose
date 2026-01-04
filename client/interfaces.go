@@ -1,0 +1,75 @@
+package client
+
+// Kind identifies a resource type.
+type Kind string
+
+// Resource kind identifiers.
+const (
+	KindProject       Kind = "project"
+	KindProfile       Kind = "profile"
+	KindImage         Kind = "image"
+	KindStorageVolume Kind = "storage-volume"
+	KindNetwork       Kind = "network"
+	KindInstance      Kind = "instance"
+)
+
+// Action identifies a resource action.
+type Action string
+
+// Action constants for resource actions.
+const (
+	ActionEnsure Action = "ensure"
+	ActionDelete Action = "delete"
+	ActionStart  Action = "start"
+	ActionStop   Action = "stop"
+)
+
+// Resource defines the common interface for all Incus resources.
+type Resource interface {
+	// Kind returns the resource type identifier (e.g., "instance", "network").
+	Kind() Kind
+
+	// Name returns the user-facing resource name.
+	Name() string
+
+	// IncusName returns the sanitized name for incus.
+	IncusName() string
+
+	// Priority returns the creation/deletion priority for dependency ordering.
+	// Lower values are created first and deleted last.
+	Priority() int
+
+	// IsEnsured returns wherever the resource has been ensured.
+	IsEnsured() bool
+}
+
+// Config is implemented by resource configuration types.
+type Config interface {
+	GetConfig() any
+}
+
+// type EnsuredResource interface {
+// 	Resource
+// }
+
+// EnsureAble is implemented by resources that can be ensured.
+type EnsureAble interface {
+	// Ensure fetches an existing Resource or creates a new one.
+	// If a Resource with the same name exists, it is returned.
+	Ensure(opts ...Option) error
+}
+
+// StartAble is implemented by resources that can be started.
+type StartAble interface {
+	Start(opts ...Option) error
+}
+
+// StopAble is implemented by resources that can be stopped.
+type StopAble interface {
+	Stop(opts ...Option) error
+}
+
+// DeleteAble is implemented by resources that can be deleted.
+type DeleteAble interface {
+	Delete(opts ...Option) error
+}

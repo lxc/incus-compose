@@ -5,27 +5,9 @@
 
 ## Current Capabilities
 
-up/down/ps works without all the specials other compose solutions provide.
+config/up/down/list works without all the specials other compose solutions provide.
 
 ## Planned Improvements
-
-### Worker Pool
-
-- **Status:** Planned
-- **Goal:** Implement concurrent worker pool for resource-intensive operations
-- **Use Cases:**
-  - Parallel image downloads/copies
-  - Concurrent instance creation
-  - Batch operations
-- **Benefits:**
-  - Faster multi-service deployments
-  - Better resource utilization
-  - Rate limiting/throttling control
-
-### Move Up/Down logic to client/
-
-- **Status:** Planned
-- **Goal:** Move that logic to the client using Priorities
 
 ### Remote Handling with Custom Config
 

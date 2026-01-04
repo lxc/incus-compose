@@ -66,7 +66,20 @@ services:
     build: .
 ```
 
-**Workaround:** Build images separately and push to a registry, or use Incus image builds.
+**Workaround:** Build images separately and push to a registry:
+
+```bash
+docker build -t ghcr.io/myorg/myapp:latest .
+docker push ghcr.io/myorg/myapp:latest
+```
+
+Then reference in compose:
+
+```yaml
+services:
+  app:
+    image: ghcr.io/myorg/myapp:latest
+```
 
 ### Health Checks
 
@@ -137,6 +150,45 @@ Not supported:
 - `external_links` - Cross-project links
 
 ## Behavioral Differences
+
+### Images
+
+**Registry prefix required:**
+
+Docker allows short image names, incus-compose requires the registry:
+
+```yaml
+# Docker Compose
+image: nginx:alpine
+
+# incus-compose
+image: docker.io/nginx:alpine
+```
+
+Registries must be configured as Incus remotes first:
+
+```bash
+incus remote add --protocol oci docker.io https://docker.io
+incus remote add --protocol oci ghcr.io https://ghcr.io
+```
+
+**Global cache:**
+
+Like Docker, images are cached globally. An image pulled for one project is available to all projects. This avoids duplicate downloads.
+
+**Registry authentication:**
+
+Docker uses `~/.docker/config.json`. Incus uses remote configuration:
+
+```bash
+incus remote add --protocol oci docker.io https://docker.io --auth-type bearer
+```
+
+See [Incus documentation](https://linuxcontainers.org/incus/docs/main/howto/images_remote/) for details.
+
+**Platform selection:**
+
+Docker allows `--platform linux/amd64`. incus-compose uses the host architecture automatically. Multi-arch images select the correct variant.
 
 ### Port Publishing
 

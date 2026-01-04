@@ -15,7 +15,7 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 
 **Early Development** - This project is in its initial phase. APIs and behavior may change. Contributions and feedback are welcome!
 
-It does "up, down and ps" those are well tested.
+It does "up, down, list and config" those are well tested.
 
 Compose projects get created with a incus project, storage pool volumes and as much bridge networks as you wish. Yes, it does also shift your Volumes transparently and it does bind mounts.
 
@@ -110,4 +110,6 @@ See [Getting Started](docs/getting-started.md) for detailed examples.
 
 This project builds on work by [@bketelsen](https://github.com/bketelsen).
 Some components are adapted from [docker compose](https://github.com/docker/compose).
-AI tools assist with test generation, code reviews and docs; core implementation is hand-written.
+
+This project uses AI tools as development aids (drafting, iteration, reviews, tests, and documentation).
+Architecture, constraints, and final code decisions are owned by the human committers.

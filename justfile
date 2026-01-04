@@ -18,15 +18,15 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 # Run `incus-compose` via `go run` against your local incus (ignores .env)
 run-local *args:
-    env -u INCUS_COMPOSE_URL -u INCUS_COMPOSE_CERT -u INCUS_COMPOSE_KEY go run ./cmd/incus-compose -v -v -v {{ args }}
+    env -u INCUS_COMPOSE_URL -u INCUS_COMPOSE_CERT -u INCUS_COMPOSE_KEY go run ./cmd/incus-compose --debug {{ args }}
 
 # Run local unit-tests, incus-facing tests are skipped.
-test-local:
-    env -u INCUS_COMPOSE_URL -u INCUS_COMPOSE_CERT -u INCUS_COMPOSE_KEY go test ./... -v
+test-local folder="./..." *args:
+    env -u INCUS_COMPOSE_URL -u INCUS_COMPOSE_CERT -u INCUS_COMPOSE_KEY go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}
 
 # Lint all files.
-lint:
-    golangci-lint run
+lint folder="./...":
+    golangci-lint run {{ folder }}
 
 # Update snapshot test files
 update-snapshots:
@@ -73,41 +73,26 @@ run *args:
 # Usage: just run-debug -f test/fixtures/simple-nginx/compose.yaml config
 run-debug *args:
     @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
-    @go run ./cmd/incus-compose -v -v -v {{ args }}
+    @go run ./cmd/incus-compose --debug {{ args }}
 
 # Run all tests against nested Incus
-test:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [[ ! -f .env ]]; then
-        echo "Error: .env not found. Run 'just dev-install' first."
-        exit 1
-    fi
-    go test ./... -v -coverprofile=coverage.out -covermode=atomic
+test folder="./..." *args:
+    @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
+
+    go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}
 
 # Run tests with coverage report
-test-coverage:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [[ ! -f .env ]]; then
-        echo "Error: .env not found. Run 'just dev-install' first."
-        exit 1
-    fi
-    go test ./... -v -coverprofile=coverage.out -covermode=atomic
+test-coverage folder="./..." *args:
+    just test {{ folder }} {{ args }}
     go tool cover -func=coverage.out
     echo ""
     echo "For detailed HTML report, run: go tool cover -html=coverage.out"
 
-# Run tests for a specific package with coverage
-test-pkg pkg:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [[ ! -f .env ]]; then
-        echo "Error: .env not found. Run 'just dev-install' first."
-        exit 1
-    fi
-    go test {{ pkg }} -v -coverprofile=coverage.out -covermode=atomic
-    go tool cover -func=coverage.out | grep {{ pkg }}
+# Run this before you commit.
+pre-commit:
+    just lint
+    just test-local
+    just test
 
 [private]
 make-nested incus_project='default' name='incus-compose-test' image='images:debian/trixie':

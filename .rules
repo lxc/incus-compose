@@ -1,0 +1,20 @@
+# Project Rules
+
+To get an idea about the project read [README.md](README.md).
+
+This document contains **AI-specific and meta rules only**.
+
+## Claude Agents
+
+Make sure to configure yourself with the .claude/ folder in the project, most important .claude/settings.json and .claude/settings.local.json
+
+## Canonical Project Rules
+
+All coding, architecture, testing, and workflow rules are defined in [CONTRIBUTING.md](CONTRIBUTING.md), recursively read all referenced docs.
+
+## Enforcement
+
+AI assistants must follow all rules defined in CONTRIBUTING.md, everything else is discussable.
+Do not restate or reinterpret project rules locally.
+
+Any conflict is resolved in favor of CONTRIBUTING.md.

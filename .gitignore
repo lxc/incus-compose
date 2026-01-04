@@ -2,7 +2,7 @@
 .env
 
 # My AI rules.
-.rules
+.rules.local.md
 
 # Development files exclusively for this host.
 run/

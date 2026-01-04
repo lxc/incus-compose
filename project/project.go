@@ -1,10 +1,19 @@
-// Package project provides docker-compose project loading and service-to-instance translation.
+// Package project loads Docker Compose files and configures client resources.
+//
+// This package is not a passive loader. It actively drives resource creation
+// by calling into the client package. The typical flow is:
+//
+//  1. CLI creates a client.Client
+//  2. project.Load() parses the compose file
+//  3. project.ToStack() configures resources on the client and builds a Stack
+//  4. CLI runs the Stack to execute operations on Incus
 package project
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -100,23 +109,6 @@ func NewLoadOptions(opts ...LoadOption) LoadOptions {
 	return res
 }
 
-// Load loads a compose project with full interpolation and validation.
-func Load(ctx context.Context, opts ...LoadOption) (*types.Project, error) {
-	options := NewLoadOptions(opts...)
-
-	cliOptions, err := buildProjectOptions(options)
-	if err != nil {
-		return nil, err
-	}
-
-	cp, err := cliOptions.LoadProject(ctx)
-	if errors.Is(err, errdefs.ErrNotFound) {
-		return nil, fmt.Errorf("No compose.yaml found, either change to a directory with a `compose.yaml` or use `--file`")
-	}
-
-	return cp, err
-}
-
 // LoadModel loads the raw compose model without interpolation.
 // Useful for extracting variable definitions before resolution.
 func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) {
@@ -129,7 +121,7 @@ func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) 
 
 	model, err := cliOptions.LoadModel(ctx)
 	if errors.Is(err, errdefs.ErrNotFound) {
-		return nil, fmt.Errorf("No compose.yaml found, either change to a directory with a `compose.yaml` or use `--file`")
+		return nil, fmt.Errorf("no compose.yaml found, either change to a directory with a `compose.yaml` or use `--file`")
 	}
 
 	return model, err
@@ -138,8 +130,14 @@ func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) 
 // ServiceToInstance translates a compose service to an Incus instance.
 // Environment vars become instance config, labels become user metadata.
 // Volumes default to bind mounts for paths starting with / or ., otherwise named volumes.
-func ServiceToInstance(c *client.ClientProject, service types.ServiceConfig, image *client.Image) (*client.Instance, error) {
+func ServiceToInstance(c *client.Client, service types.ServiceConfig, full bool) ([]client.Resource, error) {
+	var errs error
+
 	config := make(map[string]string, len(service.Environment)+len(service.Labels))
+
+	resources := []client.Resource{}
+	devices := []client.InstanceDevice{}
+	postDevices := []client.InstanceDevice{}
 
 	// Environment variables
 	for key, val := range service.Environment {
@@ -153,91 +151,142 @@ func ServiceToInstance(c *client.ClientProject, service types.ServiceConfig, ima
 		config["user."+key] = val
 	}
 
-	// Network devices
-	networks := make(map[string]*client.Network, len(service.Networks))
-	ethIdx := 0
-	for netName := range service.Networks {
-		net, err := c.Network(netName, &client.NetworkConfig{})
-		if err != nil {
-			return nil, err
-		}
-		devName := fmt.Sprintf("eth%d", ethIdx)
-		networks[devName] = net
+	// image, this will fail if the image hasn't been configured before.
+	image, err := c.Resource(client.KindImage, service.Image, &client.ImageConfig{})
+	if err != nil {
+		errs = errors.Join(errs, err)
+	}
+	resources = append(resources, image)
 
+	// Networks
+	ethIdx := 0
+	for name := range maps.Keys(service.Networks) {
+		network, err := c.Resource(client.KindNetwork, name, &client.NetworkConfig{})
+		if err != nil {
+			errs = errors.Join(errs, err)
+			continue
+		}
+
+		devices = append(devices, client.InstanceDevice{
+			Name: fmt.Sprintf("eth%d", ethIdx),
+			Config: client.InstanceDeviceConfig{
+				DeviceType: client.InstanceDeviceTypeNic,
+				Network:    network,
+			},
+		})
 		ethIdx++
+
+		resources = append(resources, network)
 	}
 
-	ports := make([]client.InstancePortProxy, len(service.Ports))
 	for _, port := range service.Ports {
 		lPort, err := strconv.ParseUint(port.Published, 10, 32)
 		if err != nil {
-			return nil, fmt.Errorf("bad publishing port %q must be a number: %w", port.Published, err)
+			errs = errors.Join(errs, fmt.Errorf("bad publishing port %q must be a number: %w", port.Published, err))
+			continue
 		}
 
-		ports = append(ports, client.InstancePortProxy{
-			Protocol: port.Protocol,
-			HostIP:   port.HostIP,
-			Listen:   uint32(lPort),
-			Connect:  port.Target,
-		})
+		proto := port.Protocol
+		if proto == "" {
+			proto = "tcp"
+		}
+
+		listenIP := port.HostIP
+		if listenIP == "" {
+			listenIP = "0.0.0.0"
+		}
+
+		devName := fmt.Sprintf("proxy-%d", lPort)
+		devConfig := client.InstanceDeviceConfig{
+			DeviceType: client.InstanceDeviceTypeProxy,
+			Proxy: client.InstanceDeviceProxyConfig{
+				ListenType:  proto,
+				ListenAddr:  listenIP,
+				ListenPort:  uint32(lPort),
+				ConnectType: proto,
+				ConnectAddr: "127.0.0.1",
+				ConnectPort: port.Target,
+			},
+		}
+
+		devices = append(devices, client.InstanceDevice{Name: devName, Config: devConfig})
 	}
 
-	pVolumes := []client.InstancePoolVolume{}
-	bindMounts := []client.InstanceBindMount{}
-
-	for _, vol := range service.Volumes {
-		if vol.Type == "" {
+	for _, cVol := range service.Volumes {
+		if cVol.Type == "" {
 			// Infer type from source path (short syntax compatibility)
 			// Absolute or relative paths are bind mounts, named sources are volumes
-			if vol.Source != "" && (strings.HasPrefix(vol.Source, "/") || strings.HasPrefix(vol.Source, ".")) {
-				vol.Type = "bind"
-			} else if vol.Source != "" {
-				vol.Type = "volume"
+			if cVol.Source != "" && (strings.HasPrefix(cVol.Source, "/") || strings.HasPrefix(cVol.Source, ".")) {
+				cVol.Type = "bind"
+			} else if cVol.Source != "" {
+				cVol.Type = "volume"
 			}
 		}
 
-		switch vol.Type {
+		switch cVol.Type {
 		case "volume":
-			volume, err := c.PoolVolume(vol.Source, client.PoolVolumeConfig{})
+			volConfig := &client.StorageVolumeConfig{}
+
+			_, err := c.Resource(client.KindStorageVolume, cVol.Source, volConfig)
 			if err != nil {
-				return nil, err
+				errs = errors.Join(errs, err)
+				continue
 			}
 
-			pVol := client.InstancePoolVolume{}
-			pVol.Path = vol.Target
-			pVol.Volume = volume
-
-			if vol.ReadOnly {
-				pVol.ReadOnly = true
+			devName := fmt.Sprintf("vol-%s", cVol.Source)
+			devConfig := client.InstanceDeviceConfig{
+				DeviceType: client.InstanceDeviceTypeDisk,
+				Disk: client.InstanceDeviceDiskConfig{
+					StorageVolumeConfig: volConfig,
+					Source:              cVol.Source,
+					Path:                cVol.Target,
+					Shift:               true,
+				},
 			}
 
-			pVolumes = append(pVolumes, pVol)
+			if cVol.ReadOnly {
+				devConfig.Disk.ReadOnly = true
+			}
+
+			postDevices = append(postDevices, client.InstanceDevice{Name: devName, Config: devConfig})
 		case "bind":
-			bMount := client.InstanceBindMount{}
-			bMount.Source = vol.Source
-			bMount.Path = vol.Target
-
-			if vol.ReadOnly {
-				bMount.ReadOnly = true
+			devName := fmt.Sprintf("bind-%s", cVol.Source)
+			devConfig := client.InstanceDeviceConfig{
+				DeviceType: client.InstanceDeviceTypeDisk,
+				Disk: client.InstanceDeviceDiskConfig{
+					Source: cVol.Source,
+					Path:   cVol.Target,
+					Shift:  true,
+				},
 			}
 
-			bindMounts = append(bindMounts, bMount)
+			if cVol.ReadOnly {
+				devConfig.Disk.ReadOnly = true
+			}
+
+			postDevices = append(postDevices, client.InstanceDevice{Name: devName, Config: devConfig})
 		case "tmpfs":
 			// tmpfs not yet implemented - Incus has native tmpfs device support
-			c.Logger().WarnContext(c.Ctx, "tmpfs volumes not yet supported", "target", vol.Target)
+			c.LogWarn("tmpfs volumes not yet supported", "target", cVol.Target)
 		default:
-			return nil, fmt.Errorf("Unknown volume type %q for service %q", vol.Type, service.Name)
+			err := fmt.Errorf("Unknown volume type %q for service %q", cVol.Type, service.Name)
+			errs = errors.Join(errs, err)
+			continue
 		}
 	}
 
-	return c.Instance(service.Name, client.InstanceConfig{
-		Image:       image,
-		Networks:    networks,
-		PortProxies: ports,
-		PoolVolumes: pVolumes,
-		BindMounts:  bindMounts,
-		Config:      config,
-	})
+	if errs != nil {
+		return nil, errs
+	}
+
+	instanceConfig := &client.InstanceConfig{Full: full, Resources: slices.Clone(resources), Image: image.Name(), Config: config, Devices: devices, PostDevices: postDevices}
+	instance, err := c.Resource(client.KindInstance, service.Name, instanceConfig)
+	if err != nil {
+		return nil, err
+	}
+	resources = append(resources, instance)
+
+	return resources, nil
 }
 
 // ServiceGraph returns services in dependency order using topological sort.
@@ -246,15 +295,15 @@ func ServiceGraph(serviceConfigs types.Services, reverse bool) ([]string, error)
 	g := graph.New(graph.StringHash, graph.Directed(), graph.PreventCycles())
 
 	// Add vertices
-	for n := range serviceConfigs {
-		_ = g.AddVertex(n)
+	for s := range maps.Values(serviceConfigs) {
+		_ = g.AddVertex(s.Name)
 	}
 
 	// Add edges for dependencies
-	for n, s := range serviceConfigs {
+	for s := range maps.Values(serviceConfigs) {
 		for dep := range s.DependsOn {
 			// Edge from dependency to dependent (dep must start before n)
-			err := g.AddEdge(dep, n)
+			err := g.AddEdge(dep, s.Name)
 			if err != nil && err != graph.ErrEdgeAlreadyExists {
 				return nil, fmt.Errorf("adding dependency edge %s -> %s: %w", dep, s.Name, err)
 			}
@@ -273,53 +322,126 @@ func ServiceGraph(serviceConfigs types.Services, reverse bool) ([]string, error)
 	return order, nil
 }
 
-// Images maps image references to client Image resources.
-type Images = map[string]*client.Image
+// Project wraps a Docker Compose project with Incus client integration.
+type Project struct {
+	*types.Project
+}
 
-// ToInstances converts compose services to Incus instances.
-// Creates networks and translates service configs to instance configs.
-func ToInstances(clientProject *client.ClientProject, images Images, project *types.Project, services []string) (map[string]*client.Instance, error) {
-	_, err := clientProject.Profile("default", client.ProfileConfig{})
+// New creates a new Project.
+func New() *Project {
+	return &Project{}
+}
+
+// Load loads a compose project with full interpolation and validation.
+func (p *Project) Load(ctx context.Context, opts ...LoadOption) (*Project, error) {
+	options := NewLoadOptions(opts...)
+
+	cliOptions, err := buildProjectOptions(options)
 	if err != nil {
-		return nil, err
+		return p, err
 	}
 
-	// Configure Networks
-	iNetworks := make(map[string]*client.Network, len(project.Networks))
-	for networkName := range project.Networks {
-		net, err := clientProject.Network(networkName, &client.NetworkConfig{})
-		if err != nil {
-			return nil, err
+	cp, err := cliOptions.LoadProject(ctx)
+	if errors.Is(err, errdefs.ErrNotFound) {
+		return p, fmt.Errorf("no compose.yaml found, either change to a directory with a `compose.yaml` or use `--file`")
+	}
+
+	if err != nil {
+		return p, err
+	}
+
+	p.Project = cp
+	return p, nil
+}
+
+// ToStackOptions configures how services are converted to stack operations.
+type ToStackOptions struct {
+	OnlyServices []string
+	Reverse      bool
+	Full         bool
+}
+
+// ToStackOption is a functional option for ToStack.
+type ToStackOption func(o *ToStackOptions)
+
+// ToStackOnlyServices limits the stack to the specified services.
+func ToStackOnlyServices(services []string) ToStackOption {
+	return func(o *ToStackOptions) {
+		o.OnlyServices = services
+	}
+}
+
+// ToStackReverse reverses the order of operations for teardown.
+func ToStackReverse() ToStackOption {
+	return func(o *ToStackOptions) {
+		o.Reverse = true
+	}
+}
+
+// ToStackFull fetches complete instance state including image alias and full instance details.
+func ToStackFull() ToStackOption {
+	return func(o *ToStackOptions) {
+		o.Full = true
+	}
+}
+
+// ToStack converts the compose project services to Incus stack operations.
+func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStackOption) error {
+	if stack == nil {
+		return client.ErrNilPointer
+	}
+
+	resources := []client.Resource{}
+
+	options := &ToStackOptions{OnlyServices: []string{}}
+	for _, o := range opts {
+		o(options)
+	}
+
+	var errs error
+
+	if len(options.OnlyServices) > 1 {
+		services := types.Services{}
+		for _, n := range options.OnlyServices {
+			s := p.Services[n]
+			services[n] = s
+			for depName := range s.DependsOn {
+				services[depName] = p.Services[depName]
+			}
 		}
 
-		iNetworks[networkName] = net
+		p.Services = services
 	}
 
-	instances := make(map[string]*client.Instance, len(services))
+	serviceOrder, err := ServiceGraph(p.Services, options.Reverse)
+	if err != nil {
+		return err
+	}
 
 	// Configure instances
-	for _, serviceName := range services {
-		service := project.Services[serviceName]
-
-		image, ok := images[service.Image]
-		if ok {
-			instance, err := ServiceToInstance(clientProject, service, image)
-			if err != nil {
-				return nil, err
-			}
-
-			instances[serviceName] = instance
-		} else {
-			instance, err := clientProject.Instance(serviceName, client.InstanceConfig{})
-			if err != nil {
-				return nil, err
-			}
-
-			instances[serviceName] = instance
+	for _, serviceName := range serviceOrder {
+		service, ok := p.Services[serviceName]
+		if !ok {
+			return fmt.Errorf("found %q a service that does not exists in services, this should never happen", serviceName)
 		}
+
+		instanceResources, err := ServiceToInstance(c, service, options.Full)
+		if err != nil {
+			errs = errors.Join(errs, err)
+			continue
+		}
+
+		resources = append(resources, instanceResources...)
 	}
 
-	return instances, nil
+	if errs != nil {
+		return errs
+	}
+
+	resources = client.FilterDuplicates(resources)
+	stack.Add(resources...)
+
+	return nil
 }
 
 // buildProjectOptions creates cli.ProjectOptions from LoadOptions.
@@ -376,13 +498,9 @@ func withDotEnvAndOsEnv(o *cli.ProjectOptions) error {
 	osEnv := getOsEnv()
 
 	// Merge current project env with OS env for lookups
-	lookupEnv := make(map[string]string)
-	for k, v := range osEnv {
-		lookupEnv[k] = v
-	}
-	for k, v := range o.Environment {
-		lookupEnv[k] = v // Project env overrides OS env
-	}
+	lookupEnv := make(map[string]string, len(osEnv)+len(o.Environment))
+	maps.Copy(lookupEnv, osEnv)
+	maps.Copy(lookupEnv, o.Environment)
 
 	// Parse .env files using combined env for interpolation
 	envMap, err := dotenv.GetEnvFromFile(lookupEnv, o.EnvFiles)
@@ -390,7 +508,7 @@ func withDotEnvAndOsEnv(o *cli.ProjectOptions) error {
 		return err
 	}
 
-	// Only merge the .env results (not OS env) into project environment
+	// Only merge the .env results into project environment
 	o.Environment.Merge(envMap)
 	return nil
 }
