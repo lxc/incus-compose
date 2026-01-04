@@ -16,51 +16,58 @@ import (
 
 func TestImageParsing(t *testing.T) {
 	tests := []struct {
-		name           string
-		imageName      string
-		configRemote   string
-		configImage    string
-		expectedRemote string
-		expectedImage  string
-		wantErr        bool
+		name              string
+		imageName         string
+		configRemote      string
+		configImage       string
+		expectedRemote    string
+		expectedImage     string
+		expectedIncusName string
+		wantErr           bool
 	}{
 		{
-			name:           "full docker reference",
-			imageName:      "docker.io/library/alpine:3.18",
-			expectedRemote: "docker.io",
-			expectedImage:  "library/alpine:3.18",
+			name:              "full docker reference",
+			imageName:         "docker.io/library/alpine:3.18",
+			expectedRemote:    "docker.io",
+			expectedImage:     "library/alpine:3.18",
+			expectedIncusName: "docker.io/library/alpine:3.18",
 		},
 		{
-			name:           "short reference defaults to docker.io",
-			imageName:      "nginx:alpine",
-			expectedRemote: "docker.io",
-			expectedImage:  "library/nginx:alpine",
+			name:              "short reference defaults to docker.io",
+			imageName:         "nginx:alpine",
+			expectedRemote:    "docker.io",
+			expectedImage:     "library/nginx:alpine",
+			expectedIncusName: "docker.io/library/nginx:alpine",
 		},
 		{
-			name:           "ghcr.io reference",
-			imageName:      "ghcr.io/someorg/someimage:v1.0",
-			expectedRemote: "ghcr.io",
-			expectedImage:  "someorg/someimage:v1.0",
+			name:              "ghcr.io reference",
+			imageName:         "ghcr.io/someorg/someimage:v1.0",
+			expectedRemote:    "ghcr.io",
+			expectedImage:     "someorg/someimage:v1.0",
+			expectedIncusName: "ghcr.io/someorg/someimage:v1.0",
 		},
 		{
-			name:           "localhost converted to local",
-			imageName:      "localhost/myimage:latest",
-			expectedRemote: "local",
-			expectedImage:  "localhost/myimage:latest", // CutPrefix uses "local/" but string has "localhost/"
+			name:              "localhost converted to local",
+			imageName:         "localhost/myimage:latest",
+			expectedRemote:    "local",
+			expectedImage:     "myimage:latest",
+			expectedIncusName: "local/myimage:latest",
 		},
 		{
-			name:           "config overrides parsing",
-			imageName:      "custom-name",
-			configRemote:   "custom.registry.io",
-			configImage:    "myimage:v2",
-			expectedRemote: "custom.registry.io",
-			expectedImage:  "myimage:v2",
+			name:              "config overrides parsing",
+			imageName:         "custom-name",
+			configRemote:      "custom.registry.io",
+			configImage:       "myimage:v2",
+			expectedRemote:    "custom.registry.io",
+			expectedImage:     "myimage:v2",
+			expectedIncusName: "custom.registry.io/myimage:v2",
 		},
 		{
-			name:           "image with no tag gets latest",
-			imageName:      "alpine",
-			expectedRemote: "docker.io",
-			expectedImage:  "library/alpine:latest",
+			name:              "image with no tag gets latest",
+			imageName:         "alpine",
+			expectedRemote:    "docker.io",
+			expectedImage:     "library/alpine:latest",
+			expectedIncusName: "docker.io/library/alpine:latest",
 		},
 	}
 
@@ -85,6 +92,7 @@ func TestImageParsing(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedRemote, img.Config.Remote)
 			assert.Equal(t, tt.expectedImage, img.Config.Image)
+			assert.Equal(t, tt.expectedIncusName, img.IncusName())
 		})
 	}
 }
@@ -200,7 +208,6 @@ func (s *ImageSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
 		Cache:  s.client.Connection(),
 	})
 	s.Require().NoError(err)
-	defer func() { _ = RunAction(r, ActionDelete, OptionForce()) }()
 
 	// First attempt without create - fails (not in project cache)
 	err = RunAction(r, ActionEnsure)

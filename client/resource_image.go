@@ -72,20 +72,24 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 			return nil, fmt.Errorf("parsing image reference %s: %w", name, err)
 		}
 
-		config.Remote = reference.Domain(ref)
+		originalDomain := reference.Domain(ref)
+		config.Remote = originalDomain
 		if config.Remote == "localhost" {
 			// Handle podman style "localhost" images.
 			config.Remote = "local"
 		}
 
-		image, _ := strings.CutPrefix(ref.String(), config.Remote+"/")
+		image, _ := strings.CutPrefix(ref.String(), originalDomain+"/")
 		config.Image = image
 	}
+
+	// Build incusName from parsed/converted values
+	incusName := config.Remote + "/" + config.Image
 
 	img := &Image{
 		BaseResource: NewBaseResource(KindImage, name, PriorityImage),
 		client:       c,
-		incusName:    name,
+		incusName:    incusName,
 		Config:       *config,
 	}
 
