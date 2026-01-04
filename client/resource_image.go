@@ -109,17 +109,27 @@ func (r *Image) Ensure(opts ...Option) error {
 		return nil
 	}
 
+	options := NewOptions(opts...)
+
 	if r.client.hookBefore != nil {
 		if err := r.client.hookBefore(ActionEnsure, r, args, nil); err != nil {
 			return err
 		}
 	}
 
-	// Try to get existing profile
+	// Try to get existing image
 	err := r.get()
 	if err == nil {
 		if r.client.hookAfter != nil {
 			err = r.client.hookAfter(ActionEnsure, r, args, err)
+		}
+
+		return err
+	}
+
+	if !options.Create {
+		if r.client.hookAfter != nil {
+			err = r.client.hookAfter(ActionEnsure, r, options, err)
 		}
 
 		return err
