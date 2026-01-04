@@ -149,6 +149,28 @@ if errors.Is(err, ErrNotFound) { }
 - Use gci for import ordering (enforced by linter)
 - Group: stdlib, external, internal
 
+### Commit Messages
+
+Use conventional commit format with package scope:
+
+```
+<type>(<package>): <description>
+```
+
+**Types**:
+
+- `fix` - Bug fix
+- `feat` - New feature or improvement
+- `chore` - API or CLI API change
+
+**Examples**:
+
+```
+fix(client): handle nil pointer in image cache
+feat(cmd): add --timeout flag to up command
+chore(client): rename Resource interface method
+```
+
 ## Testing
 
 For comprehensive testing documentation including patterns, fixtures, and best practices, see [docs/testing.md](docs/testing.md).
