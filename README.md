@@ -6,68 +6,56 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 
 - **[Getting Started](docs/getting-started.md)** - Install and run your first compose project
 - **[Compose Compatibility](docs/compose-compatibility.md)** - What works and what doesn't
-- **[Environment Variables](docs/environment-variables.md)** - How env vars work
+- **[Architecture](docs/architecture.md)** - How it works under the hood
 - **[Why Incus?](docs/why-incus.md)** - Benefits over Docker
 
-[Full Documentation](docs/) | [Roadmap](docs/roadmap.md)
+[Full Documentation](docs/) | [Roadmap](docs/roadmap.md) | [Contributing](CONTRIBUTING.md)
 
 ## Status
 
-**Early Development** - This project is in its initial phase. APIs and behavior may change. Contributions and feedback are welcome!
+**Active Development** - Core functionality is working and well-tested. The API is stabilizing but may still change.
 
-It does "up, down, list and config" those are well tested.
+**What works:**
 
-Compose projects get created with a incus project, storage pool volumes and as much bridge networks as you wish. Yes, it does also shift your Volumes transparently and it does bind mounts.
+- `up`, `down`, `list`, `config` commands
+- Compose project parsing via compose-go
+- OCI image pulling from docker.io, ghcr.io, and other registries
+- Bridge networks with automatic name sanitization
+- Storage volumes with UID/GID shifting for proper permissions
+- Bind mounts (local connections only)
+- Port forwarding via proxy devices
+- Incus project isolation
 
-No specials included (caps and so on).
+**What's coming:**
+
+- Additional commands: `start`, `stop`, `restart`, `logs`, `exec`, `ps`
+- VM instance support alongside containers
+- Container image building via Podman/Docker
+- Advanced compose features (depends_on, healthchecks, etc.)
+
+See [Roadmap](docs/roadmap.md) for details.
 
 ## Why incus-compose?
 
-[Incus](https://linuxcontainers.org/incus/) provides powerful system containers and virtual machines, but lacks the declarative multi-container orchestration that Docker Compose offers. This tool bridges that gap, letting you:
+[Incus](https://linuxcontainers.org/incus/) provides powerful system containers and virtual machines with superior security and isolation, but lacks the declarative multi-container orchestration that Docker Compose offers. This tool bridges that gap:
 
 - Use existing `docker-compose.yml` files with Incus containers
-- Leverage the superior security and isolation model of Incus
-- Run Docker/OCI images directly from registries like docker.io and ghcr.io
-- Manage complex multi-container applications with familiar commands
-
-## Goals
-
-### Specification Compliance
-
-- Parse and execute compose projects according to the [Compose specification](https://compose-spec.io/) using [compose-go](https://github.com/compose-spec/compose-go)
-- Support the latest compose file format features
-- Maintain compatibility with Docker Compose workflows
-
-### Incus Integration
-
-- Interact with Incus through its official Go client library
 - Leverage Incus's native OCI registry support for image pulling
-- Support both system containers and VM instances where applicable
+- Run Docker/OCI images directly from registries
+- Manage complex multi-container applications with familiar commands
+- Benefit from Incus's resource efficiency and security model
 
-### Command Compatibility
+## Architecture
 
-- Implement core `docker compose` commands: `up`, `down`, `start`, `stop`, `restart`, `logs`, `ps`, `exec`, and more
-- Match Docker Compose CLI behavior and options where possible
-- Document all intentional differences from Docker Compose
-- Treat unexpected behavior differences as bugs
+incus-compose uses a **resource-first design**:
 
-### Container Building
+- **Unified Resource Interface** - Images, instances, networks, profiles, and volumes are all first-class resources
+- **Two-Phase Pattern** - Configuration (resource creation) then execution (ensure/start/stop/delete)
+- **Priority-Based Ordering** - Dependencies managed via numeric priorities, no complex graph resolution
+- **Stack Execution** - Batch operations with parallel image downloads
+- **Hook System** - Before/after action interception for logging and validation
 
-- Build container images using Podman (preferred) or Docker via their respective sockets
-- Support both local Dockerfiles and remote build contexts
-
-### Quality Assurance
-
-- Comprehensive unit test coverage for core functionality
-- End-to-end tests validating real-world compose scenarios
-- CI/CD integration for automated testing
-- Well-documented codebase with examples
-
-### Library Support
-
-- Expose a Go API (`client/` and `project/`) for programmatic use
-- Enable embedding in other tools and workflows
-- **API is unstable** - will change without notice until this message is gone
+See [Architecture Documentation](docs/architecture.md) for details.
 
 ## Quick Start
 
@@ -79,12 +67,21 @@ incus remote add --protocol oci docker.io https://docker.io
 incus remote add --protocol oci ghcr.io https://ghcr.io
 ```
 
+### Installation
+
+```bash
+# Build from source
+git clone https://gitlab.com/r3j0/incus-compose
+cd incus-compose
+just build
+
+# Or install directly
+go install gitlab.com/r3j0/incus-compose/cmd/incus-compose@latest
+```
+
 ### Usage
 
 ```bash
-# Build incus-compose
-just build
-
 # Create a compose.yaml
 cat > compose.yaml <<EOF
 services:
@@ -92,19 +89,93 @@ services:
     image: docker.io/nginx:alpine
     ports:
       - "8080:80"
+    volumes:
+      - web-data:/usr/share/nginx/html
+
+volumes:
+  web-data:
 EOF
 
 # Start services
-./bin/incus-compose up
+incus-compose up
 
-# Check status
-./bin/incus-compose ps
+# Check configuration
+incus-compose config
+
+# List running services
+incus-compose list
 
 # Stop and remove
-./bin/incus-compose down
+incus-compose down
 ```
 
 See [Getting Started](docs/getting-started.md) for detailed examples.
+
+## Design Principles
+
+**KISS** - Keep It Simple, Stupid. We prefer:
+
+- Shallow package structure over deep nesting
+- Direct code over abstractions
+- Working software over perfect architecture
+- Simple solutions over clever ones
+- Boring code that's easy to understand
+
+**Compose Specification First** - We follow the [Compose specification](https://compose-spec.io/) faithfully. Any deviation from Docker Compose behavior is either:
+
+- Intentional and documented in [Compose Compatibility](docs/compose-compatibility.md)
+- A bug that should be reported
+
+**Incus Native** - We use Incus's official Go client library and leverage its native features (OCI support, projects, profiles, storage pools).
+
+See [Contributing](CONTRIBUTING.md) for detailed guidelines.
+
+## Development
+
+```bash
+# Set up development environment
+just dev-install
+
+# Run tests
+just test
+
+# Run linters
+just lint
+
+# Build binary
+just build
+
+# Run against a compose file
+just run -f test/fixtures/simple-nginx/compose.yaml config
+```
+
+## Library Usage
+
+The `client` and `project` packages can be used programmatically:
+
+```go
+import (
+    "context"
+    "github.com/your-org/incus-compose/client"
+    "github.com/your-org/incus-compose/project"
+)
+
+// Create client
+globalClient := client.New(ctx,
+    client.ClientURL("unix:///var/lib/incus/unix.socket"),
+)
+globalClient.Connect()
+
+// Load compose project
+proj, _ := project.Load("compose.yaml")
+
+// Execute
+// ... see docs/architecture/client_api.md for full API
+```
+
+**Note:** The library API is stabilizing but may still change. Breaking changes will be noted in release notes.
+
+See [Client API Reference](docs/architecture/client_api.md) for details.
 
 ## Credits
 
@@ -113,3 +184,7 @@ Some components are adapted from [docker compose](https://github.com/docker/comp
 
 This project uses AI tools as development aids (drafting, iteration, reviews, tests, and documentation).
 Architecture, constraints, and final code decisions are owned by the human committers.
+
+## License
+
+[Apache 2.0](LICENSE)
