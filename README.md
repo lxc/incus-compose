@@ -170,12 +170,12 @@ globalClient.Connect()
 proj, _ := project.Load("compose.yaml")
 
 // Execute
-// ... see docs/architecture/client_api.md for full API
+// ... see docs/architecture/client/ for full API
 ```
 
 **Note:** The library API is stabilizing but may still change. Breaking changes will be noted in release notes.
 
-See [Client API Reference](docs/architecture/client_api.md) for details.
+See [Client Package](docs/architecture/client/) for details.
 
 ## Credits
 
