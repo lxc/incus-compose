@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"maps"
 
 	incusClient "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/shared/cliconfig"
@@ -66,7 +65,7 @@ var upCommand = &cli.Command{
 		services := cmd.Args().Slice()
 		if len(services) == 0 {
 			services = make([]string, 0, len(p.Services))
-			for n := range maps.Values(p.Services) {
+			for _, n := range p.Services {
 				services = append(services, n.Name)
 			}
 		}
@@ -172,7 +171,7 @@ var upCommand = &cli.Command{
 		c.LogDebug("Ensure", "resources", stack.All())
 
 		// Ensure with create.
-		if err := stack.Run(client.ActionEnsure, client.OptionCreate()); err != nil {
+		if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure, client.OptionCreate()); err != nil {
 			c.LogError("Creating resources", "error", err)
 			return errLogged.Wrap(err)
 		}

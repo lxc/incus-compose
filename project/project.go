@@ -157,6 +157,11 @@ func ServiceToInstance(c *client.Client, service types.ServiceConfig, full bool)
 		errs = errors.Join(errs, err)
 	}
 
+	if full && image != nil {
+		// Full needs images.
+		resources = append(resources, image)
+	}
+
 	// Networks
 	ethIdx := 0
 	for name := range maps.Keys(service.Networks) {

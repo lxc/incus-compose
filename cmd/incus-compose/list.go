@@ -155,6 +155,12 @@ var listCommand = &cli.Command{
 			defer fd.Close()
 		}
 
+		err = stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure)
+		if err != nil {
+			c.LogError("Ensuring the stack", "error", "err")
+			return errLogged.Wrap(err)
+		}
+
 		statuses := NewContainerStatuses(fd)
 
 		for _, r := range stack.All() {
@@ -163,7 +169,7 @@ var listCommand = &cli.Command{
 				continue
 			}
 
-			s := "Not existing"
+			s := "Unknown"
 			if r.IsEnsured() {
 				s = "Exists"
 			}
@@ -180,6 +186,8 @@ var listCommand = &cli.Command{
 
 			if r.Kind() == client.KindInstance {
 				if !r.IsEnsured() {
+					c.LogDebug("Getting an instance", "error", client.NewError("not ensured").WithResource(r))
+					statuses.Add(status)
 					continue
 				}
 
@@ -188,16 +196,17 @@ var listCommand = &cli.Command{
 					err = client.ErrUnknown.WithResource(r)
 					c.LogError("Getting an instance", err)
 					rErr = errors.Join(rErr, err)
+					statuses.Add(status)
 					continue
 				}
 
 				if !instance.HasFull() {
-					c.LogDebug("Skipping cause not having a full instance", "kind", r.Kind(), "name", r.Name(), "resource", r)
+					c.LogWarn("Skipping", "error", client.NewError("not all instance details provided").WithResource(r))
+					statuses.Add(status)
 					continue
 				}
 
 				instFull := instance.IncusInstanceFull
-				status.IncusName = instance.IncusName()
 
 				status.Status = instFull.State.Status
 				status.Image = instance.IncusImageAlias.Name

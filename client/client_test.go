@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+var errTestLocal = NewError("env INCUS_COMPOSE_TEST_LOCAL is set")
+
 // ----------------------------------------------------------------------------
 // Unit Tests
 // ----------------------------------------------------------------------------
@@ -89,6 +91,10 @@ func resolvePath(path string) string {
 // NewTestClient creates a new GlobalClient for testing.
 // Returns error if INCUS_COMPOSE_URL is not set.
 func NewTestClient(ctx context.Context) (*GlobalClient, error) {
+	if _, ok := os.LookupEnv("INCUS_COMPOSE_TEST_LOCAL"); ok {
+		return nil, errTestLocal
+	}
+
 	var logger *slog.Logger
 
 	logFormat, ok := os.LookupEnv("LOG_FORMAT")
@@ -123,7 +129,7 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 	}
 
 	var opts []ClientOption
-	if url, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok && remote == "local" {
+	if url, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok && remote == "" {
 		slog.DebugContext(ctx, "Connecting", "url", url)
 
 		cert := resolvePath(os.Getenv("INCUS_COMPOSE_CERT"))
