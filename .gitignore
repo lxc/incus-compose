@@ -1,8 +1,8 @@
+*.local.json
+*.local.md
+
 # Its generated with random host only data, still no need to commit.
 .env
-
-# My AI rules.
-.rules.local.md
 
 # Development files exclusively for this host.
 run/
