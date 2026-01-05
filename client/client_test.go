@@ -319,6 +319,48 @@ func (s *ClientSuite) TestProject_DeleteNonExistent_NoError() {
 }
 
 // ----------------------------------------------------------------------------
+// Progress Tests
+// ----------------------------------------------------------------------------
+
+func (s *ClientSuite) TestProgress_ImageDownload() {
+	progressCalled := false
+	s.globalClient.progressHandler = func(action Action, r Resource, args Options, progress int) {
+		progressCalled = true
+		s.T().Logf("Progress: %s %s %d%%", action, r.Name(), progress)
+	}
+
+	// Create project
+	project, err := s.globalClient.EnsureProject(s.projectName, true)
+	s.Require().NoError(err)
+
+	// Get image server
+	conf, err := cliconfig.LoadConfig("")
+	s.Require().NoError(err)
+
+	imageServer, err := conf.GetImageServer("images")
+	s.Require().NoError(err)
+
+	r, err := project.Resource(KindImage, "images:alpine/edge", &ImageConfig{
+		Source:      imageServer,
+		NativeIncus: true,
+	})
+	s.Require().NoError(err)
+
+	// Ensure -> Delete -> Ensure to force fresh download
+	err = RunAction(r, ActionEnsure, OptionCreate())
+	s.Require().NoError(err)
+
+	err = RunAction(r, ActionDelete)
+	s.Require().NoError(err)
+
+	progressCalled = false // Reset before the actual test
+	err = RunAction(r, ActionEnsure, OptionCreate())
+	s.Require().NoError(err)
+
+	s.True(progressCalled, "progress handler should have been called")
+}
+
+// ----------------------------------------------------------------------------
 // Run the suite
 // ----------------------------------------------------------------------------
 

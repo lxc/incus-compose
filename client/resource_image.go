@@ -13,6 +13,7 @@ import (
 // ImageConfig contains the source and cache configuration for an image.
 type ImageConfig struct {
 	// Source is the image server to copy the image from.
+	// For NativeIncus images, this can be nil and will be resolved from Remote.
 	Source incusClient.ImageServer
 
 	// Cache is the instance server where images are cached.
@@ -24,6 +25,10 @@ type ImageConfig struct {
 
 	// Image is the image reference without the remote prefix.
 	Image string
+
+	// NativeIncus indicates this is an Incus native image (e.g., "images:alpine/edge")
+	// rather than an OCI image (e.g., "docker.io/library/alpine:latest").
+	NativeIncus bool
 }
 
 // GetConfig returns the configuration.
@@ -66,26 +71,41 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 		config.Cache = c.imageCache
 	}
 
-	// Parse Docker reference if Remote or Image is not set
-	if config.Remote == "" || config.Image == "" {
-		ref, err := reference.ParseDockerRef(name)
-		if err != nil {
-			return nil, fmt.Errorf("parsing image reference %s: %w", name, err)
+	var incusName string
+
+	if config.NativeIncus {
+		// Parse native Incus format: "images:alpine/edge" or "remote:image/path"
+		if config.Remote == "" || config.Image == "" {
+			parts := strings.SplitN(name, ":", 2)
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("invalid native Incus image format %q, expected remote:image", name)
+			}
+			config.Remote = parts[0]
+			config.Image = parts[1]
+		}
+		incusName = name
+	} else {
+		// Parse Docker/OCI reference if Remote or Image is not set
+		if config.Remote == "" || config.Image == "" {
+			ref, err := reference.ParseDockerRef(name)
+			if err != nil {
+				return nil, fmt.Errorf("parsing image reference %s: %w", name, err)
+			}
+
+			originalDomain := reference.Domain(ref)
+			config.Remote = originalDomain
+			if config.Remote == "localhost" {
+				// Handle podman style "localhost" images.
+				config.Remote = "local"
+			}
+
+			image, _ := strings.CutPrefix(ref.String(), originalDomain+"/")
+			config.Image = image
 		}
 
-		originalDomain := reference.Domain(ref)
-		config.Remote = originalDomain
-		if config.Remote == "localhost" {
-			// Handle podman style "localhost" images.
-			config.Remote = "local"
-		}
-
-		image, _ := strings.CutPrefix(ref.String(), originalDomain+"/")
-		config.Image = image
+		// Build incusName from parsed/converted values
+		incusName = config.Remote + "/" + config.Image
 	}
-
-	// Build incusName from parsed/converted values
-	incusName := config.Remote + "/" + config.Image
 
 	img := &Image{
 		BaseResource: NewBaseResource(KindImage, name, PriorityImage),

@@ -430,9 +430,21 @@ func (c *GlobalClient) reportProgress(action Action, r Resource, args Options, o
 		for key, val := range opAPI.Metadata {
 			if strings.HasSuffix(key, "_progress") {
 				if s, ok := val.(string); ok {
-					// Try to parse percentage from message like "50% (1.2MB/s)"
-					if _, err := fmt.Sscanf(s, "%d%%", &percent); err != nil {
-						percent = -1
+					// Native Incus images: "rootfs: 42% (3.10MB/s)" or "metadata: 100% (876B/s)"
+					// OCI images: "Retrieving OCI image from registry"
+					// Find percentage pattern anywhere in the string
+					if idx := strings.Index(s, "%"); idx > 0 {
+						// Walk backwards from % to find the start of the number
+						start := idx - 1
+						for start >= 0 && s[start] >= '0' && s[start] <= '9' {
+							start--
+						}
+						start++ // Move past the non-digit
+						if start < idx {
+							if _, err := fmt.Sscanf(s[start:], "%d%%", &percent); err != nil {
+								percent = -1
+							}
+						}
 					}
 				}
 				break
