@@ -63,13 +63,13 @@ func (s *LoadProjectTestSuite) TestLoadWordPressStack() {
 	// Check db service.
 	db, exists := proj.Services["db"]
 	s.True(exists, "db service should exist")
-	s.Equal("docker.io/library/mysql:8.0", db.Image)
+	s.Equal("docker.io/library/mysql:9.5.0", db.Image)
 	s.Contains(db.Environment, "MYSQL_ROOT_PASSWORD")
 
 	// Check wordpress service.
 	wordpress, exists := proj.Services["wordpress"]
 	s.True(exists, "wordpress service should exist")
-	s.Equal("docker.io/library/wordpress:latest", wordpress.Image)
+	s.Equal("docker.io/library/wordpress:6.9.0-php8.1-apache", wordpress.Image)
 	s.NotEmpty(wordpress.DependsOn)
 
 	// Check volumes.
