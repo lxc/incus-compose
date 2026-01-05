@@ -16,9 +16,17 @@ type ImageConfig struct {
 	// For NativeIncus images, this can be nil and will be resolved from Remote.
 	Source incusClient.ImageServer
 
-	// Cache is the instance server where images are cached.
-	// Defaults to ClientProject.imageCache if not specified.
-	Cache incusClient.InstanceServer
+	// CacheServer is an image server to use as cache (for library users).
+	// Takes precedence over CacheProject.
+	CacheServer incusClient.InstanceServer
+
+	// CacheProject is the project name to use as cache (for CLI users).
+	// The project will be created if it doesn't exist.
+	// Ignored if CacheServer is set.
+	CacheProject string
+
+	// cache is the resolved instance server for caching (internal use).
+	cache incusClient.InstanceServer
 
 	// Remote is the domain part of the image reference.
 	Remote string
@@ -50,6 +58,10 @@ type Image struct {
 	// State - nil means not ensured.
 	IncusAlias *incusApi.ImageAliasesEntry
 	ETag       string
+
+	// target is the project-scoped instance server where image was copied.
+	// Delete only removes from target, not from cache.
+	target incusClient.InstanceServer
 }
 
 // newImage returns an existing Image resource or creates a new one.
@@ -66,9 +78,18 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 	}
 	config = cConfig
 
-	// Set cache default
-	if config.Cache == nil {
-		config.Cache = c.imageCache
+	// Resolve cache: CacheServer > CacheProject > default imageCache
+	if config.CacheServer != nil {
+		config.cache = config.CacheServer
+	} else if config.CacheProject != "" {
+		// Ensure cache project exists
+		cacheClient, err := c.globalClient.EnsureProject(config.CacheProject, true)
+		if err != nil {
+			return nil, fmt.Errorf("ensuring cache project %s: %w", config.CacheProject, err)
+		}
+		config.cache = cacheClient.incus
+	} else {
+		config.cache = c.imageCache
 	}
 
 	var incusName string
@@ -137,6 +158,22 @@ func (r *Image) Created() bool {
 	return r.created
 }
 
+// Status returns the image status: "Unknown", "Cached", or "Exists".
+func (r *Image) Status() string {
+	// Check if image exists in project (either via CopyTo or already there)
+	if r.target != nil {
+		return "Exists"
+	}
+	// Check if image exists in project by querying Incus
+	if _, _, err := r.client.incus.GetImageAlias(r.incusName); err == nil {
+		return "Exists"
+	}
+	if r.IsEnsured() {
+		return "Cached"
+	}
+	return "Unknown"
+}
+
 // Remote returns the image remote.
 func (r *Image) Remote() string {
 	return r.Config.Remote
@@ -191,7 +228,7 @@ func (r *Image) Ensure(opts ...Option) error {
 
 func (r *Image) get() error {
 	// Check if image alias exists in cache
-	alias, eTag, err := r.Config.Cache.GetImageAlias(r.incusName)
+	alias, eTag, err := r.Config.cache.GetImageAlias(r.incusName)
 	if err != nil {
 		return ErrNotFound.Wrap(err)
 	}
@@ -224,7 +261,7 @@ func (r *Image) create(args Options) error {
 	}
 
 	// Start the copy operation
-	op, err := r.Config.Cache.CopyImage(r.Config.Source, *imgInfo, copyArgs)
+	op, err := r.Config.cache.CopyImage(r.Config.Source, *imgInfo, copyArgs)
 
 	// Wait for copy to complete
 	if err = r.client.hookRemoteOperation(ActionEnsure, r, args, op, err); err != nil {
@@ -232,7 +269,7 @@ func (r *Image) create(args Options) error {
 	}
 
 	// Fetch the created alias
-	alias, eTag, err := r.Config.Cache.GetImageAlias(r.incusName)
+	alias, eTag, err := r.Config.cache.GetImageAlias(r.incusName)
 	if err != nil {
 		return fmt.Errorf("fetching image alias after copy: %w", err)
 	}
@@ -243,10 +280,46 @@ func (r *Image) create(args Options) error {
 	return nil
 }
 
-// Delete removes the image from the cache.
-func (r *Image) Delete(opts ...Option) error {
+// CopyTo copies image from cache to target instance server (project).
+// The target is remembered for Delete operations.
+func (r *Image) CopyTo(target incusClient.InstanceServer) error {
 	if !r.IsEnsured() {
-		return nil
+		return ErrNotEnsured.WithResource(r)
+	}
+
+	if r.target != nil {
+		return nil // Already copied
+	}
+
+	// Get image info from cache
+	imgInfo, _, err := r.Config.cache.GetImage(r.IncusAlias.Target)
+	if err != nil {
+		return fmt.Errorf("getting image from cache: %w", err)
+	}
+
+	// Copy from cache to target project
+	copyArgs := &incusClient.ImageCopyArgs{
+		Aliases: []incusApi.ImageAlias{{Name: r.incusName}},
+	}
+
+	op, err := target.CopyImage(r.Config.cache, *imgInfo, copyArgs)
+	if err != nil {
+		return fmt.Errorf("copying image to project: %w", err)
+	}
+
+	err = op.Wait()
+	if err != nil {
+		return fmt.Errorf("waiting for image copy: %w", err)
+	}
+
+	r.target = target
+	return nil
+}
+
+// Delete removes the image from the project (target), not from cache.
+func (r *Image) Delete(opts ...Option) error {
+	if r.target == nil {
+		return nil // Nothing copied, nothing to delete
 	}
 
 	options := NewOptions(opts...)
@@ -257,8 +330,8 @@ func (r *Image) Delete(opts ...Option) error {
 		}
 	}
 
-	// Delete the image by fingerprint
-	op, err := r.Config.Cache.DeleteImage(r.IncusAlias.Target)
+	// Delete the image from target (project), not from cache
+	op, err := r.target.DeleteImage(r.IncusAlias.Target)
 
 	// Do the delete
 	err = r.client.hookOperation(ActionDelete, r, options, op, err)
@@ -270,9 +343,8 @@ func (r *Image) Delete(opts ...Option) error {
 		return err
 	}
 
-	// Clear state
-	r.IncusAlias = nil
-	r.ETag = ""
+	// Clear target state, but keep IncusAlias (image still in cache)
+	r.target = nil
 	return nil
 }
 

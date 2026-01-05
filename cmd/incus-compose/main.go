@@ -171,22 +171,40 @@ func main() {
 				return ctx, nil
 			}
 
+			// Connect to Incus server.
+			// Priority: INCUS_REMOTE/--remote -> INCUS_COMPOSE_URL -> "local" remote
 			remote := cmd.String("remote")
-			if remote == "" {
-				remote = "local"
+
+			// 1. If remote is explicitly set, use Incus CLI config
+			if remote != "" {
+				slog.Debug("Using connection", "remote", remote)
+
+				conf, err := cliconfig.LoadConfig("")
+				if err != nil {
+					return ctx, err
+				}
+
+				server, err := conf.GetInstanceServer(remote)
+				if err != nil {
+					return ctx, err
+				}
+
+				opts := []client.ClientOption{
+					client.ClientLogger(slog.Default()),
+					client.ClientProvideInstanceServer(server),
+					client.ClientCacheProject("incus-compose-images"),
+				}
+
+				c := client.New(ctx, opts...)
+				if err := c.Connect(); err != nil {
+					return ctx, err
+				}
+
+				return context.WithValue(ctx, clientKey{}, c), nil
 			}
 
-			// Connect to Incus server.
-			// Two connection modes:
-			// 1. Direct URL (via env vars, used for testing with nested Incus)
-			// 2. Incus CLI config remote (normal usage)
-			//
-			// Environment variables for URL-based connections:
-			//   - INCUS_COMPOSE_URL: Direct URL to connect to (e.g., https://192.168.1.100:8443)
-			//   - INCUS_COMPOSE_CERT: Path to TLS client certificate
-			//   - INCUS_COMPOSE_KEY: Path to TLS client key
-			// Check for URL override (used for testing with nested Incus)
-			if url, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok && remote == "local" {
+			// 2. If INCUS_COMPOSE_URL is set, use direct URL connection
+			if url, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok {
 				slog.Debug("Using connection", "url", url)
 
 				opts := []client.ClientOption{
@@ -203,6 +221,8 @@ func main() {
 					opts = append(opts, client.ClientTLSClientKey(key))
 				}
 
+				opts = append(opts, client.ClientCacheProject("incus-compose-images"))
+
 				c := client.New(ctx, opts...)
 				if err := c.Connect(); err != nil {
 					return ctx, err
@@ -211,28 +231,25 @@ func main() {
 				return context.WithValue(ctx, clientKey{}, c), nil
 			}
 
-			// Use Incus CLI configuration to resolve remotes
+			// 3. Fall back to "local" remote
+			slog.Debug("Using connection", "remote", "local")
+
 			conf, err := cliconfig.LoadConfig("")
 			if err != nil {
 				return ctx, err
 			}
 
-			instanceServer, err := conf.GetInstanceServer(remote)
-			if err != nil {
-				return ctx, err
-			}
-
-			imageCache, err := conf.GetInstanceServer(remote)
+			server, err := conf.GetInstanceServer("local")
 			if err != nil {
 				return ctx, err
 			}
 
 			opts := []client.ClientOption{
 				client.ClientLogger(slog.Default()),
-				client.ClientProvideConnection(instanceServer, imageCache),
+				client.ClientProvideInstanceServer(server),
+				client.ClientCacheProject("incus-compose-images"),
 			}
 
-			slog.Debug("Using connection", "remote", remote)
 			c := client.New(ctx, opts...)
 			if err := c.Connect(); err != nil {
 				return ctx, err

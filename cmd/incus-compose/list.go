@@ -174,6 +174,13 @@ var listCommand = &cli.Command{
 				s = "Exists"
 			}
 
+			// Images have 3-stage status: Unknown -> Cached -> Exists
+			if r.Kind() == client.KindImage {
+				if img, ok := r.(*client.Image); ok {
+					s = img.Status()
+				}
+			}
+
 			status := ProjectStatus{
 				Kind:        string(r.Kind()),
 				Name:        r.Name(),

@@ -231,17 +231,16 @@ func (s *ImageSuite) TestEnsure_Idempotent() {
 	})
 	s.Require().NoError(err)
 
-	// First ensure - should create
+	// First ensure - puts image in cache (or finds existing)
 	err = RunAction(r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
-	s.True(r.Created(), "first ensure should set Created() to true")
+	// Note: Created() may be false if image was already in cache
 
-	// Second ensure - should return immediately without creating
+	// Second ensure - should return immediately
 	err = RunAction(r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
-	// Created() stays true from first call (not reset)
 
 	s.cleanup = append(s.cleanup, r)
 }
@@ -249,8 +248,8 @@ func (s *ImageSuite) TestEnsure_Idempotent() {
 func (s *ImageSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
 	// Use project-scoped cache to avoid finding images from default project
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{
-		Source: s.imageServer,
-		Cache:  s.client.Connection(),
+		Source:      s.imageServer,
+		CacheServer: s.client.Connection(),
 	})
 	s.Require().NoError(err)
 
@@ -271,7 +270,7 @@ func (s *ImageSuite) TestEnsure_WithoutSource_Fails() {
 	// Use project-scoped cache to avoid finding images from default project
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{
 		// No Source configured - but use project cache
-		Cache: s.client.Connection(),
+		CacheServer: s.client.Connection(),
 	})
 	s.Require().NoError(err)
 
@@ -281,7 +280,7 @@ func (s *ImageSuite) TestEnsure_WithoutSource_Fails() {
 }
 
 func (s *ImageSuite) TestEnsure_ExistingImage_NewResource() {
-	// First, create an image
+	// First, ensure image is in cache
 	r1, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{
 		Source: s.imageServer,
 	})
@@ -290,7 +289,7 @@ func (s *ImageSuite) TestEnsure_ExistingImage_NewResource() {
 	err = RunAction(r1, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r1.IsEnsured())
-	s.True(r1.Created(), "first resource should have Created() true")
+	// Note: Created() may be false if image was already in cache from previous test
 
 	s.cleanup = append(s.cleanup, r1)
 
@@ -298,13 +297,13 @@ func (s *ImageSuite) TestEnsure_ExistingImage_NewResource() {
 	newClient, err := s.globalClient.getProject(s.projectName)
 	s.Require().NoError(err)
 
-	// Create a new resource for the same image - should find existing
+	// Create a new resource for the same image - should find existing in cache
 	r2, err := newClient.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{
 		Source: s.imageServer,
 	})
 	s.Require().NoError(err)
 
-	// Ensure without create should find existing image
+	// Ensure without create should find existing image in cache
 	err = RunAction(r2, ActionEnsure)
 	s.Require().NoError(err)
 	s.True(r2.IsEnsured())
@@ -347,19 +346,29 @@ func (s *ImageSuite) TestResource_DifferentNamesAreDifferent() {
 // Delete Tests
 // ----------------------------------------------------------------------------
 
-func (s *ImageSuite) TestDelete_AfterEnsure() {
+func (s *ImageSuite) TestDelete_AfterCopyTo() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{
 		Source: s.imageServer,
 	})
 	s.Require().NoError(err)
 
+	// Ensure in cache
 	err = RunAction(r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
+	// Copy to project
+	image, ok := r.(*Image)
+	s.Require().True(ok)
+	err = image.CopyTo(s.client.Connection())
+	s.Require().NoError(err)
+
+	// Delete removes from project, not cache
 	err = RunAction(r, ActionDelete, OptionForce())
 	s.Require().NoError(err)
-	s.False(r.IsEnsured())
+
+	// Image is still ensured (in cache), just not in project
+	s.True(r.IsEnsured())
 }
 
 func (s *ImageSuite) TestDelete_NotEnsured_NoError() {
@@ -484,7 +493,11 @@ func (s *ImageSuite) TestHook_DeleteAction() {
 	s.Require().NoError(err)
 	s.Equal(ActionEnsure, action)
 
-	s.cleanup = append(s.cleanup, r)
+	// Must CopyTo before Delete will trigger hooks
+	image, ok := r.(*Image)
+	s.Require().True(ok)
+	err = image.CopyTo(s.client.Connection())
+	s.Require().NoError(err)
 
 	err = RunAction(r, ActionDelete)
 	s.Require().NoError(err)

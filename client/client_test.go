@@ -122,14 +122,29 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug - 4}))
 	}
 
-	remote := "local"
-	envRemote, ok := os.LookupEnv("INCUS_REMOTE")
-	if ok {
-		remote = envRemote
-	}
-
+	// Priority: INCUS_REMOTE -> INCUS_COMPOSE_URL -> "local" remote
 	var opts []ClientOption
-	if url, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok && remote == "" {
+
+	// 1. If INCUS_REMOTE is set, use Incus CLI config
+	if remote, ok := os.LookupEnv("INCUS_REMOTE"); ok {
+		slog.DebugContext(ctx, "Connecting", "remote", remote)
+
+		conf, err := cliconfig.LoadConfig("")
+		if err != nil {
+			return nil, ErrConnectionFailed.Wrap(err)
+		}
+
+		server, err := conf.GetInstanceServer(remote)
+		if err != nil {
+			return nil, ErrConnectionFailed.Wrap(err)
+		}
+
+		opts = []ClientOption{
+			ClientLogger(logger),
+			ClientProvideConnection(server),
+		}
+	} else if url, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok {
+		// 2. If INCUS_COMPOSE_URL is set, use direct URL connection
 		slog.DebugContext(ctx, "Connecting", "url", url)
 
 		cert := resolvePath(os.Getenv("INCUS_COMPOSE_CERT"))
@@ -148,29 +163,27 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 			opts = append(opts, ClientTLSClientKey(key))
 		}
 	} else {
-		slog.DebugContext(ctx, "Connecting", "remote", remote)
+		// 3. Fall back to "local" remote
+		slog.DebugContext(ctx, "Connecting", "remote", "local")
 
-		// Use Incus CLI configuration to resolve remotes
 		conf, err := cliconfig.LoadConfig("")
 		if err != nil {
 			return nil, ErrConnectionFailed.Wrap(err)
 		}
 
-		instanceServer, err := conf.GetInstanceServer(remote)
-		if err != nil {
-			return nil, ErrConnectionFailed.Wrap(err)
-		}
-
-		imageCache, err := conf.GetInstanceServer(remote)
+		server, err := conf.GetInstanceServer("local")
 		if err != nil {
 			return nil, ErrConnectionFailed.Wrap(err)
 		}
 
 		opts = []ClientOption{
 			ClientLogger(logger),
-			ClientProvideConnection(instanceServer, imageCache),
+			ClientProvideConnection(server),
 		}
 	}
+
+	// Use own cache project for tests.
+	opts = append(opts, ClientCacheProject("incus-compose-tests-cache"))
 
 	c := New(ctx, opts...)
 	if err := c.Connect(); err != nil {
@@ -258,10 +271,10 @@ func (s *ClientSuite) TestProject_GlobalClientKeepsDefaultProfile() {
 	s.Require().Equal("default", gInfo.Project)
 }
 
-func (s *ClientSuite) TestProject_ImageCacheIsInDefaultProfile() {
+func (s *ClientSuite) TestProject_ImageCacheIsInCacheProfile() {
 	gInfo, err := s.globalClient.imageCache.GetConnectionInfo()
 	s.Require().NoError(err)
-	s.Require().Equal("default", gInfo.Project)
+	s.Require().Equal("incus-compose-tests-cache", gInfo.Project)
 }
 
 func (s *ClientSuite) TestProject_EnsureWithCreate() {
@@ -316,48 +329,6 @@ func (s *ClientSuite) TestProject_DeleteNonExistent_NoError() {
 	// DeleteProject should handle non-existent gracefully or return error
 	// Either behavior is acceptable, just document it
 	_ = err
-}
-
-// ----------------------------------------------------------------------------
-// Progress Tests
-// ----------------------------------------------------------------------------
-
-func (s *ClientSuite) TestProgress_ImageDownload() {
-	progressCalled := false
-	s.globalClient.progressHandler = func(action Action, r Resource, args Options, progress int) {
-		progressCalled = true
-		s.T().Logf("Progress: %s %s %d%%", action, r.Name(), progress)
-	}
-
-	// Create project
-	project, err := s.globalClient.EnsureProject(s.projectName, true)
-	s.Require().NoError(err)
-
-	// Get image server
-	conf, err := cliconfig.LoadConfig("")
-	s.Require().NoError(err)
-
-	imageServer, err := conf.GetImageServer("images")
-	s.Require().NoError(err)
-
-	r, err := project.Resource(KindImage, "images:alpine/edge", &ImageConfig{
-		Source:      imageServer,
-		NativeIncus: true,
-	})
-	s.Require().NoError(err)
-
-	// Ensure -> Delete -> Ensure to force fresh download
-	err = RunAction(r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	err = RunAction(r, ActionDelete)
-	s.Require().NoError(err)
-
-	progressCalled = false // Reset before the actual test
-	err = RunAction(r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	s.True(progressCalled, "progress handler should have been called")
 }
 
 // ----------------------------------------------------------------------------

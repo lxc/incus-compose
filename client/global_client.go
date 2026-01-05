@@ -44,6 +44,10 @@ type ClientConfig struct {
 
 	// ProvidedImageCache allows injecting an existing image cache (for testing).
 	ProvidedImageCache incusClient.InstanceServer
+
+	// CacheProject is the project name to use as image cache.
+	// If set, the project will be created if it doesn't exist.
+	CacheProject string
 }
 
 // ClientOption is a functional option for configuring the Client.
@@ -90,11 +94,22 @@ func ClientDescriptionFormat(n string) ClientOption {
 }
 
 // ClientProvideConnection injects existing connections (for testing).
-func ClientProvideConnection(instances, cache incusClient.InstanceServer) ClientOption {
+func ClientProvideConnection(instances incusClient.InstanceServer) ClientOption {
 	return func(c *ClientConfig) {
 		c.ProvidedInstanceServer = instances
-		c.ProvidedImageCache = cache
 	}
+}
+
+// ClientProvideInstanceServer injects an existing instance server connection.
+func ClientProvideInstanceServer(server incusClient.InstanceServer) ClientOption {
+	return func(c *ClientConfig) {
+		c.ProvidedInstanceServer = server
+	}
+}
+
+// ClientCacheProject sets the project name to use as image cache.
+func ClientCacheProject(n string) ClientOption {
+	return func(c *ClientConfig) { c.CacheProject = n }
 }
 
 // GlobalClient provides a high-level interface to Incus operations.
@@ -210,7 +225,7 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 
 // Connect establishes a connection to the Incus server.
 func (c *GlobalClient) Connect() error {
-	if c.Config.ProvidedInstanceServer != nil && c.Config.ProvidedImageCache != nil {
+	if c.Config.ProvidedInstanceServer != nil {
 		return c.connectProvided()
 	}
 
@@ -218,7 +233,7 @@ func (c *GlobalClient) Connect() error {
 		return c.connectTLS()
 	}
 
-	return errors.New("provide either URL with TLS certs or ProvideConnection")
+	return errors.New("provide either URL with TLS certs or ProvidedInstanceServer")
 }
 
 func (c *GlobalClient) connectProvided() error {
@@ -237,11 +252,9 @@ func (c *GlobalClient) connectProvided() error {
 	}
 
 	c.incus = pIncus
-	// Image cache always uses "default" project for shared caching across projects.
-	c.imageCache = c.Config.ProvidedImageCache.UseProject("default")
 	c.logger = c.logger.With("url", c.Config.URL)
 	c.connected = true
-	return nil
+	return c.setupImageCache()
 }
 
 func (c *GlobalClient) connectTLS() error {
@@ -285,10 +298,28 @@ func (c *GlobalClient) connectTLS() error {
 	}
 
 	c.incus = pIncus
-	c.imageCache = incus
 	c.unix = false
 	c.logger = c.logger.With("url", c.Config.URL)
 	c.connected = true
+	return c.setupImageCache()
+}
+
+// setupImageCache configures the image cache based on CacheProject or defaults.
+func (c *GlobalClient) setupImageCache() error {
+	if c.Config.CacheProject != "" {
+		// Use dedicated cache project (create if needed)
+		cacheClient, err := c.EnsureProject(c.Config.CacheProject, true)
+		if err != nil {
+			return fmt.Errorf("ensuring cache project %s: %w", c.Config.CacheProject, err)
+		}
+		c.imageCache = cacheClient.incus
+	} else if c.Config.ProvidedImageCache != nil {
+		// Use provided cache (for testing)
+		c.imageCache = c.Config.ProvidedImageCache.UseProject("default")
+	} else {
+		// Default: use "default" project as cache
+		c.imageCache = c.incus.UseProject("default")
+	}
 	return nil
 }
 

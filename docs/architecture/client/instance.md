@@ -127,21 +127,25 @@ Post-devices require UID/GID from the created instance to configure proper owner
 
 5. Get image from resource store
 
-6. Create instance from image
+6. Copy image from cache to project
+   |-- image.CopyTo(projectClient)
+   |-- Fast local copy, no registry access
+
+7. Create instance from image
    |-- CreateInstanceFromImage() with pre-devices
 
-7. Extract UID/GID from created instance
+8. Extract UID/GID from created instance
    |-- Read oci.uid, oci.gid from config
 
-8. Process post-devices (volumes)
+9. Process post-devices (volumes)
    |-- For each PostDevice where DeviceType=disk:
        |-- If StorageVolumeConfig != nil:
            |-- Set Shifted=true, UID, GID on volume
            |-- StorageVolume.Ensure()
        |-- Convert to Incus device format
 
-9. Update instance with post-devices
-   |-- UpdateInstance() with new devices map
+10. Update instance with post-devices
+    |-- UpdateInstance() with new devices map
 ```
 
 ## UID/GID Shifting

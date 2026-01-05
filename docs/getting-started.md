@@ -199,6 +199,30 @@ $ incus-compose -p testing up
 
 Projects are isolated: separate networks, volumes, and instances.
 
+## Image Caching
+
+Images are cached in a dedicated `incus-compose-images` project:
+
+```bash
+$ incus project list
++----------------------+--------+----------+-----------------+-----------------+
+|         NAME         | IMAGES | PROFILES | STORAGE VOLUMES | STORAGE BUCKETS |
++----------------------+--------+----------+-----------------+-----------------+
+| default              | YES    | YES      | YES             | YES             |
+| incus-compose-images | YES    | YES      | YES             | YES             |
+| myapp                | YES    | YES      | YES             | YES             |
++----------------------+--------+----------+-----------------+-----------------+
+```
+
+This means:
+
+- First run pulls from registry (slow)
+- Subsequent runs copy from local cache (fast)
+- No Docker Hub rate limits after initial pull
+- `incus-compose down` only removes project images, cache persists
+
+The cache project is created automatically on first use.
+
 ## Next Steps
 
 - [Compose Compatibility](compose-compatibility.md) - What features are supported

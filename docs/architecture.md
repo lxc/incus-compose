@@ -57,6 +57,7 @@ for execution.
 
 ```
 GlobalClient
+  ├── imageCache (incus-compose-images project)
   └── Client (project-scoped)
         ├── Profile
         ├── Image
@@ -66,6 +67,26 @@ GlobalClient
               ├── Devices (pre-creation)
               └── PostDevices (post-creation)
 ```
+
+## Image Caching (3-Stage Flow)
+
+Images go through three stages:
+
+1. **Remote** - OCI registry (docker.io, ghcr.io)
+2. **Cache** - Local `incus-compose-images` project
+3. **Project** - Project-scoped copy for instance use
+
+```
+Registry ──pull──> Cache ──copy──> Project ──use──> Instance
+           (slow)        (fast)
+```
+
+Benefits:
+
+- First pull is slow (network), subsequent runs are fast (local copy)
+- No registry rate limits after initial download
+- Project deletion doesn't affect cache
+- Each project gets isolated image copy
 
 ## Two-Phase Resource Pattern
 

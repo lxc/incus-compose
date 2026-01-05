@@ -2,6 +2,31 @@
 
 The Image resource handles OCI image pulling and caching in Incus.
 
+## 3-Stage Image Flow
+
+Images go through three stages:
+
+1. **Remote** - OCI registry (docker.io, ghcr.io)
+2. **Cache** - Local image store (`incus-compose-images` project)
+3. **Project** - Project-scoped copy for instance use
+
+This design provides:
+
+- **Faster subsequent runs** - no re-pulling from registry
+- **No registry rate limits** - cached locally after first pull
+- **Project isolation** - each project gets its own copy
+- **Safe cleanup** - deleting project images doesn't affect cache
+
+## Image Status
+
+Images report their status via `Status()`:
+
+| Status  | Description                            |
+| ------- | -------------------------------------- |
+| Unknown | Not downloaded yet                     |
+| Cached  | In cache project, ready to copy        |
+| Exists  | Copied to project, ready for instances |
+
 ## ImageConfig
 
 Configuration for image sources:
@@ -11,9 +36,14 @@ type ImageConfig struct {
     // Source is the image server to copy the image from.
     Source incusClient.ImageServer
 
-    // Cache is the instance server where images are cached.
-    // Defaults to Client.imageCache (global cache) if not specified.
-    Cache incusClient.InstanceServer
+    // CacheServer is an image server to use as cache (for library users).
+    // Takes precedence over CacheProject.
+    CacheServer incusClient.InstanceServer
+
+    // CacheProject is the project name to use as cache (for CLI users).
+    // The project will be created if it doesn't exist.
+    // Ignored if CacheServer is set.
+    CacheProject string
 
     // Remote is the domain part of the image reference.
     Remote string
@@ -23,24 +53,23 @@ type ImageConfig struct {
 }
 ```
 
-### Cache vs Source
+### Cache Configuration
 
-- **Source**: Where to download images from (e.g., docker.io registry)
-- **Cache**: Where to store downloaded images
-
-The default cache is the global image cache (default project). For project-isolated caching, use `Client.Connection()`:
+- **CacheServer**: For library users who manage their own cache
+- **CacheProject**: For CLI users, specifies project name (auto-created)
+- **Default**: Uses `incus-compose-images` project
 
 ```go
-// Global cache (default) - images shared across projects
+// Library usage - provide your own cache server
 img, _ := project.Resource(client.KindImage, "docker.io/nginx:alpine", &client.ImageConfig{
-    Source: imageServer,
-    // Cache defaults to global cache
+    Source:      imageServer,
+    CacheServer: myCacheServer,
 })
 
-// Project-scoped cache - images isolated to this project
+// CLI usage - specify cache project name
 img, _ := project.Resource(client.KindImage, "docker.io/nginx:alpine", &client.ImageConfig{
-    Source: imageServer,
-    Cache:  project.Connection(),
+    Source:       imageServer,
+    CacheProject: "my-image-cache",
 })
 ```
 
@@ -84,10 +113,10 @@ img, _ := project.Resource(client.KindImage, "custom-name", &client.ImageConfig{
 
 ### 1. Check Cache
 
-Before downloading, check if image alias exists:
+Before downloading, check if image alias exists in cache:
 
 ```go
-alias, eTag, err := config.Cache.GetImageAlias(incusName)
+alias, eTag, err := config.cache.GetImageAlias(incusName)
 if err == nil {
     // Already cached
     return nil
@@ -106,16 +135,11 @@ err := client.RunAction(img, client.ActionEnsure)
 err := client.RunAction(img, client.ActionEnsure, client.OptionCreate())
 ```
 
-### 3. Copy Operation
+### 3. Copy to Cache
 
-Images are copied from source to cache:
+Images are copied from source (registry) to cache:
 
 ```go
-imgInfo := &incusApi.Image{
-    Fingerprint: config.Image,
-}
-imgInfo.Public = true
-
 copyArgs := &incusClient.ImageCopyArgs{
     Aliases:    []incusApi.ImageAlias{{Name: incusName}},
     AutoUpdate: true,
@@ -123,8 +147,18 @@ copyArgs := &incusClient.ImageCopyArgs{
     Mode:       "pull",
 }
 
-op, err := config.Cache.CopyImage(config.Source, *imgInfo, copyArgs)
+op, err := config.cache.CopyImage(config.Source, *imgInfo, copyArgs)
 ```
+
+### 4. Copy to Project
+
+Before creating an instance, images are copied from cache to project:
+
+```go
+err := image.CopyTo(projectClient)
+```
+
+This is called automatically by `Instance.Ensure()`. The copy is local and fast.
 
 ## Source Configuration
 
@@ -158,11 +192,13 @@ err := client.RunAction(img, client.ActionEnsure, client.OptionCreate())
 
 ## Delete
 
-Removing an image by fingerprint:
+Delete only removes the image from the project, not from the cache:
 
 ```go
 err := client.RunAction(img, client.ActionDelete, client.OptionForce())
 ```
+
+This preserves the cached image for future use. The cache persists across test runs.
 
 Note: `incus-compose down` does not delete images by default.
 

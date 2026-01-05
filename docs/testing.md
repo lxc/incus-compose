@@ -82,6 +82,12 @@ Integration tests use real nested Incus instances and test actual API interactio
 just test
 ```
 
+### Image Cache
+
+Tests use a dedicated cache project separate from the CLI's `incus-compose-images` project. This keeps test images isolated and avoids polluting the user's cache.
+
+The test cache is configured via `ClientProvideConnection` in test setup, pointing to a test-specific project.
+
 ### Environment Setup
 
 The nested Incus environment is configured via `.env` file:
