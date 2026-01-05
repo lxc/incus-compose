@@ -46,10 +46,7 @@ incus-compose down
 incus-compose down --volumes
 
 # List running containers
-incus-compose ps
-
-# List all containers (including stopped)
-incus-compose ps --all
+incus-compose list
 
 # Validate compose file
 incus-compose config --quiet
@@ -125,5 +122,5 @@ services:
 
 ## Need Help?
 
-- **Bugs/Features**: Open an issue on GitHub
+- **Bugs/Features**: Open an issue on Gitlab
 - **Questions**: Check existing documentation or open a discussion

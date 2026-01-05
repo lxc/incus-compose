@@ -271,7 +271,7 @@ incus-compose config
 incus-compose up --no-start
 
 # Check what was created
-incus-compose ps
+incus-compose list
 ```
 
 ## Reporting Compatibility Issues

@@ -55,7 +55,7 @@ This will:
 ### 3. Check status
 
 ```bash
-incus-compose ps
+incus-compose list
 ```
 
 ### 4. Stop and remove
@@ -128,12 +128,10 @@ API_PORT=3000
 
 ```yaml
 services:
-  app:
-    image: docker.io/myapp:latest
-    environment:
-      DB_PASSWORD: ${DB_PASSWORD}
+  web:
+    image: docker.io/nginx:alpine
     ports:
-      - "${API_PORT}:3000"
+      - "8080:80"
 ```
 
 Only variables defined in `.env` are available (not your shell environment).
@@ -145,10 +143,11 @@ Only variables defined in `.env` are available (not your shell environment).
 Incus gives each container a real IP on your network:
 
 ```bash
-$ incus-compose ps
-SERVICE   CONTAINER   IMAGE              STATUS   ADDRESSES
-web       web         nginx:alpine       Running  10.0.1.42
-app       app         node:20-alpine     Running  10.0.1.43
+$ incus-compose list
+KIND      NAME                    INCUSNAME                       IMAGE                           STATUS   ADDRESSES
+image     docker.io/nginx:alpine  docker.io/library/nginx:alpine                                  Exists
+network   default                 ic-ynmt73wxwq                                                   Exists
+instance  web                     web                             docker.io/library/nginx:alpine  Running  10.149.206.30
 ```
 
 You can access containers directly: `curl http://10.0.1.42`
