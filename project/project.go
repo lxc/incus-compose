@@ -130,7 +130,8 @@ func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) 
 // ServiceToInstance translates a compose service to an Incus instance.
 // Environment vars become instance config, labels become user metadata.
 // Volumes default to bind mounts for paths starting with / or ., otherwise named volumes.
-func ServiceToInstance(c *client.Client, service types.ServiceConfig, full bool) ([]client.Resource, error) {
+// The index parameter is used for instance naming ({service}-{index}).
+func ServiceToInstance(c *client.Client, service types.ServiceConfig, full bool, index int) ([]client.Resource, error) {
 	var errs error
 
 	config := make(map[string]string, len(service.Environment)+len(service.Labels))
@@ -284,8 +285,7 @@ func ServiceToInstance(c *client.Client, service types.ServiceConfig, full bool)
 	}
 
 	// Instance name follows Docker Compose convention: {service}-{index}
-	// Even single instances get -1 suffix for future scaling support.
-	instanceName := fmt.Sprintf("%s-1", service.Name)
+	instanceName := fmt.Sprintf("%s-%d", service.Name, index)
 	instanceConfig := &client.InstanceConfig{Full: full, Resources: slices.Clone(resources), Image: image.Name(), Config: config, Devices: devices, PostDevices: postDevices}
 	instance, err := c.Resource(client.KindInstance, instanceName, instanceConfig)
 	if err != nil {
@@ -366,6 +366,7 @@ type ToStackOptions struct {
 	OnlyServices []string
 	Reverse      bool
 	Full         bool
+	Scale        map[string]int // service name -> replica count override
 }
 
 // ToStackOption is a functional option for ToStack.
@@ -389,6 +390,13 @@ func ToStackReverse() ToStackOption {
 func ToStackFull() ToStackOption {
 	return func(o *ToStackOptions) {
 		o.Full = true
+	}
+}
+
+// ToStackScale sets replica count overrides for services.
+func ToStackScale(scale map[string]int) ToStackOption {
+	return func(o *ToStackOptions) {
+		o.Scale = scale
 	}
 }
 
@@ -432,13 +440,23 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 			return fmt.Errorf("found %q a service that does not exists in services, this should never happen", serviceName)
 		}
 
-		instanceResources, err := ServiceToInstance(c, service, options.Full)
-		if err != nil {
-			errs = errors.Join(errs, err)
-			continue
+		// Determine scale: CLI override > deploy.replicas > 1
+		scale := 1
+		if s, ok := options.Scale[serviceName]; ok {
+			scale = s
+		} else if service.Deploy != nil && service.Deploy.Replicas != nil {
+			scale = int(*service.Deploy.Replicas)
 		}
 
-		resources = append(resources, instanceResources...)
+		for i := 1; i <= scale; i++ {
+			instanceResources, err := ServiceToInstance(c, service, options.Full, i)
+			if err != nil {
+				errs = errors.Join(errs, err)
+				continue
+			}
+
+			resources = append(resources, instanceResources...)
+		}
 	}
 
 	if errs != nil {

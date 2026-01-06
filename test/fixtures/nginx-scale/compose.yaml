@@ -1,0 +1,5 @@
+services:
+  web:
+    image: docker.io/nginx:alpine
+    deploy:
+      replicas: 3

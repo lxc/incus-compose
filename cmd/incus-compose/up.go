@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 
 	incusClient "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/shared/cliconfig"
@@ -31,12 +33,26 @@ var upCommand = &cli.Command{
 			Usage: "Timeout in seconds for stopping/starting",
 			Value: 10,
 		},
+		&cli.StringSliceFlag{
+			Name:  "scale",
+			Usage: "Scale SERVICE to NUM instances (service=num)",
+		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
 		reCreate := cmd.Bool("recreate")
 		timeout := cmd.Int("timeout")
-
 		start := !cmd.Bool("no-start")
+
+		// Parse --scale flags (service=num)
+		scaleOverrides := make(map[string]int)
+		for _, s := range cmd.StringSlice("scale") {
+			parts := strings.SplitN(s, "=", 2)
+			if len(parts) == 2 {
+				if n, err := strconv.Atoi(parts[1]); err == nil {
+					scaleOverrides[parts[0]] = n
+				}
+			}
+		}
 
 		globalClient, err := clientFromContext(ctx)
 		if err != nil {
@@ -126,7 +142,11 @@ var upCommand = &cli.Command{
 			return rErr
 		}
 
-		err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()))
+		toStackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice())}
+		if len(scaleOverrides) > 0 {
+			toStackOpts = append(toStackOpts, project.ToStackScale(scaleOverrides))
+		}
+		err = p.ToStack(c, stack, toStackOpts...)
 		if err != nil {
 			c.LogError("Adding the project to a stack", "error", err)
 			return errLogged.Wrap(err)

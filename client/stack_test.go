@@ -247,6 +247,54 @@ var stackTests = []*stackTest{
 			{ActionDelete, []Option{OptionForce()}, false, false},
 		},
 	},
+	{
+		name: "nginx-scale",
+		resources: func(s *StackTestSuite, client *Client) ([]Resource, error) {
+			network, err := client.Resource(KindNetwork, "default", &NetworkConfig{})
+			s.Require().NoError(err)
+
+			imageResource, err := client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
+			s.Require().NoError(err)
+
+			image, ok := imageResource.(*Image)
+			s.Require().True(ok)
+
+			is, err := s.incusConfig.GetImageServer(image.Remote())
+			s.Require().NoError(err)
+
+			image.SetSource(is)
+
+			devices := []InstanceDevice{}
+			devices = append(devices, InstanceDevice{
+				Name: "eth0",
+				Config: InstanceDeviceConfig{
+					DeviceType: InstanceDeviceTypeNic,
+					Network:    network,
+				},
+			})
+
+			resources := []Resource{network, image}
+
+			// Create 3 scaled instances: web-1, web-2, web-3
+			for i := 1; i <= 3; i++ {
+				instance, err := client.Resource(KindInstance, fmt.Sprintf("web-%d", i), &InstanceConfig{
+					Image:   image.Name(),
+					Devices: devices,
+				})
+				s.Require().NoError(err)
+
+				resources = append(resources, instance)
+			}
+
+			return resources, nil
+		},
+		runs: []stackRun{
+			{ActionEnsure, []Option{OptionCreate()}, false, true},
+			{ActionStart, []Option{}, false, false},
+			{ActionStop, []Option{OptionForce()}, false, false},
+			{ActionDelete, []Option{OptionForce()}, false, false},
+		},
+	},
 	// Flaky test cause of bind port
 	// {
 	// 	name: "simple-nginx-proxy",
