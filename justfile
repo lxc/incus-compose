@@ -98,7 +98,6 @@ test-coverage folder="./..." *args:
 pre-commit:
     just lint
     just test-local
-    just test
 
 [private]
 make-nested container='local:incus-compose-test' image='images:debian/trixie' listen="" project="default":
