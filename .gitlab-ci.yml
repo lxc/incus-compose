@@ -1,0 +1,56 @@
+default:
+  tags:
+    - linux
+    - incus-compose-shell
+
+stages:
+  - lint
+  - test
+
+lint:
+  stage: lint
+  before_script:
+    - cd $CI_PROJECT_DIR
+  script:
+    - golangci-lint run
+
+test:
+  stage: test
+  variables:
+    INCUS_REMOTE: ict
+    GO_REPORT_DIR: $CI_PROJECT_DIR/reports
+    GOPATH: $CI_BUILDS_DIR/.go/path
+    GOBIN: $CI_BUILDS_DIR/.go/bin
+    GOCACHE: $CI_BUILDS_DIR/.go/cache
+    # https://stackoverflow.com/a/79780883/3368468
+    GOTOOLCHAIN: go1.25.0+auto
+  before_script:
+    - mkdir -p "$GOPATH" "$GOBIN" "$GOCACHE" "$GO_REPORT_DIR"
+    - cd $CI_PROJECT_DIR
+    - go mod tidy -v -diff
+    - go clean -testcache
+  script:
+    - go test -v -cover -coverprofile="$CI_PROJECT_DIR/reports/go-test-coverage.txt" ./... 2>&1 | tee "$CI_PROJECT_DIR/reports/go-test-results.txt"
+  after_script:
+    - |
+      # Convert Go test report to Junit format
+      if [[ -s "$GO_REPORT_DIR/go-test-results.txt" ]]; then
+        go install github.com/jstemmer/go-junit-report/v2@latest
+        "$GOBIN/go-junit-report" -in "$GO_REPORT_DIR/go-test-results.txt" -out "$GO_REPORT_DIR/junit.xml"
+      fi
+    - |
+      # Convert Go test coverage report to Cobertura format
+      if [[ -s "$GO_REPORT_DIR/go-test-coverage.txt" ]]; then
+        go install gitlab.com/adiproject/gocover-report@latest
+        "$GOBIN/gocover-report" -cobertura="$GO_REPORT_DIR/cobertura.xml" "$GO_REPORT_DIR/go-test-coverage.txt"
+      fi
+  coverage: '/^Total statement coverage: \d+(?:\.\d+)%/'
+  artifacts:
+    expose_as: "go test reports"
+    paths:
+      - $GO_REPORT_DIR
+    reports:
+      junit: $GO_REPORT_DIR/junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: $GO_REPORT_DIR/cobertura.xml
