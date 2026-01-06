@@ -18,19 +18,21 @@ test:
   stage: test
   variables:
     INCUS_REMOTE: ict
-    GO_REPORT_DIR: $CI_PROJECT_DIR/reports
+    REPORT_DIR: reports
+    GO_REPORT_DIR: $CI_BUILDS_DIR/reports
     GOPATH: $CI_BUILDS_DIR/.go/path
     GOBIN: $CI_BUILDS_DIR/.go/bin
     GOCACHE: $CI_BUILDS_DIR/.go/cache
     # https://stackoverflow.com/a/79780883/3368468
     GOTOOLCHAIN: go1.25.0+auto
   before_script:
-    - mkdir -p "$GOPATH" "$GOBIN" "$GOCACHE" "$GO_REPORT_DIR"
-    - cd $CI_PROJECT_DIR
+    - mkdir -p "$GOPATH" "$GOBIN" "$GOCACHE"
+    - cd "$CI_PROJECT_DIR"
+    - mkdir "$REPORT_DIR"
     - go mod tidy -v -diff
     - go clean -testcache
   script:
-    - go test -v -cover -coverprofile="$CI_PROJECT_DIR/reports/go-test-coverage.txt" ./... 2>&1 | tee "$CI_PROJECT_DIR/reports/go-test-results.txt"
+    - go test -v -cover -coverprofile="$CI_PROJECT_DIR/$REPORT_DIR/go-test-coverage.txt" ./... 2>&1 | tee "$CI_PROJECT_DIR/$REPORT_DIR/go-test-results.txt"
   after_script:
     - |
       # Convert Go test report to Junit format
@@ -50,7 +52,7 @@ test:
     paths:
       - $GO_REPORT_DIR
     reports:
-      junit: $GO_REPORT_DIR/junit.xml
+      junit: $REPORT_DIR/junit.xml
       coverage_report:
         coverage_format: cobertura
-        path: $GO_REPORT_DIR/cobertura.xml
+        path: $REPORT_DIR/cobertura.xml
