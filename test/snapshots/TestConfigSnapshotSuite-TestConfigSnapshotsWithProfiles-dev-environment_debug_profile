@@ -1,4 +1,4 @@
-name: dev_environment
+name: dev-environment
 services:
   app:
     command:
@@ -84,9 +84,9 @@ services:
         protocol: tcp
 networks:
   default:
-    name: dev_environment_default
+    name: dev-environment_default
 volumes:
   db_data:
-    name: dev_environment_db_data
+    name: dev-environment_db_data
   node_modules:
-    name: dev_environment_node_modules
+    name: dev-environment_node_modules

@@ -81,12 +81,12 @@ func (s *LoadProjectTestSuite) TestLoadWordPressStack() {
 // TestLoadPostgresRedisWithEnv tests PostgreSQL + Redis with environment variables.
 func (s *LoadProjectTestSuite) TestLoadPostgresRedisWithEnv() {
 	proj, err := project.New().Load(
-		s.ctx, project.LoadWorkingDir(s.fixturePath("postgres_redis")),
+		s.ctx, project.LoadWorkingDir(s.fixturePath("postgres-redis")),
 	)
 
 	s.Require().NoError(err)
 	s.Require().NotNil(proj)
-	s.Equal("postgres_redis", proj.Name)
+	s.Equal("postgres-redis", proj.Name)
 	s.Len(proj.Services, 3)
 
 	// Check postgres service.
@@ -110,7 +110,7 @@ func (s *LoadProjectTestSuite) TestLoadPostgresRedisWithEnv() {
 // TestLoadNginxProxyMultiNetwork tests Nginx proxy with multiple networks.
 func (s *LoadProjectTestSuite) TestLoadNginxProxyMultiNetwork() {
 	proj, err := project.New().Load(
-		s.ctx, project.LoadWorkingDir(s.fixturePath("nginx_proxy")),
+		s.ctx, project.LoadWorkingDir(s.fixturePath("nginx-proxy")),
 	)
 
 	s.Require().NoError(err)
@@ -183,7 +183,7 @@ func (s *LoadProjectTestSuite) TestLoadWithCustomFiles() {
 func (s *LoadProjectTestSuite) TestLoadWithDefaultEnvFile() {
 	proj, err := project.New().Load(
 
-		s.ctx, project.LoadWorkingDir(s.fixturePath("with_env")),
+		s.ctx, project.LoadWorkingDir(s.fixturePath("with-env")),
 	)
 
 	s.Require().NoError(err)
@@ -202,10 +202,10 @@ func (s *LoadProjectTestSuite) TestLoadWithDefaultEnvFile() {
 
 // TestLoadWithCustomEnvFile tests custom environment file.
 func (s *LoadProjectTestSuite) TestLoadWithCustomEnvFile() {
-	prodEnvPath := filepath.Join(s.fixturePath("with_env"), "production.env")
+	prodEnvPath := filepath.Join(s.fixturePath("with-env"), "production.env")
 
 	proj, err := project.New().Load(
-		s.ctx, project.LoadWorkingDir(s.fixturePath("with_env")),
+		s.ctx, project.LoadWorkingDir(s.fixturePath("with-env")),
 		project.LoadEnvFiles([]string{prodEnvPath}),
 	)
 
@@ -225,7 +225,7 @@ func (s *LoadProjectTestSuite) TestLoadWithCustomEnvFile() {
 
 // TestLoadWithMultipleEnvFiles tests multiple environment files.
 func (s *LoadProjectTestSuite) TestLoadWithMultipleEnvFiles() {
-	basePath := s.fixturePath("with_env")
+	basePath := s.fixturePath("with-env")
 	prodEnv := filepath.Join(basePath, "production.env")
 	stagingEnv := filepath.Join(basePath, "staging.env")
 
@@ -243,7 +243,7 @@ func (s *LoadProjectTestSuite) TestLoadWithMultipleEnvFiles() {
 func (s *LoadProjectTestSuite) TestLoadWithoutProfiles() {
 	proj, err := project.New().Load(
 		s.ctx,
-		project.LoadWorkingDir(s.fixturePath("with_profiles")),
+		project.LoadWorkingDir(s.fixturePath("with-profiles")),
 	)
 
 	s.Require().NoError(err)
@@ -259,7 +259,7 @@ func (s *LoadProjectTestSuite) TestLoadWithoutProfiles() {
 func (s *LoadProjectTestSuite) TestLoadWithSingleProfile() {
 	proj, err := project.New().Load(
 		s.ctx,
-		project.LoadWorkingDir(s.fixturePath("with_profiles")),
+		project.LoadWorkingDir(s.fixturePath("with-profiles")),
 		project.LoadProfiles([]string{"dev"}),
 	)
 
@@ -283,7 +283,7 @@ func (s *LoadProjectTestSuite) TestLoadWithSingleProfile() {
 func (s *LoadProjectTestSuite) TestLoadWithMultipleProfiles() {
 	proj, err := project.New().Load(
 		s.ctx,
-		project.LoadWorkingDir(s.fixturePath("with_profiles")),
+		project.LoadWorkingDir(s.fixturePath("with-profiles")),
 		project.LoadProfiles([]string{"dev", "monitoring"}),
 	)
 
@@ -314,7 +314,7 @@ func (s *LoadProjectTestSuite) TestLoadWithMultipleProfiles() {
 func (s *LoadProjectTestSuite) TestLoadDevEnvironment() {
 	proj, err := project.New().Load(
 		s.ctx,
-		project.LoadWorkingDir(s.fixturePath("dev_environment")),
+		project.LoadWorkingDir(s.fixturePath("dev-environment")),
 	)
 
 	s.Require().NoError(err)
@@ -328,7 +328,7 @@ func (s *LoadProjectTestSuite) TestLoadDevEnvironment() {
 func (s *LoadProjectTestSuite) TestLoadDevEnvironmentWithDebugProfile() {
 	proj, err := project.New().Load(
 		s.ctx,
-		project.LoadWorkingDir(s.fixturePath("dev_environment")),
+		project.LoadWorkingDir(s.fixturePath("dev-environment")),
 		project.LoadProfiles([]string{"debug"}),
 	)
 
@@ -353,7 +353,7 @@ func (s *LoadProjectTestSuite) TestLoadDevEnvironmentWithDebugProfile() {
 
 // TestLoadMultipleComposeFiles tests multiple compose files (base + override).
 func (s *LoadProjectTestSuite) TestLoadMultipleComposeFiles() {
-	basePath := s.fixturePath("multiple_files")
+	basePath := s.fixturePath("multiple-files")
 	baseFile := filepath.Join(basePath, "compose.yaml")
 	overrideFile := filepath.Join(basePath, "compose.override.yaml")
 
@@ -379,7 +379,7 @@ func (s *LoadProjectTestSuite) TestLoadMultipleComposeFiles() {
 
 // TestLoadMultipleComposeFilesCustomOrder tests multiple compose files with custom order.
 func (s *LoadProjectTestSuite) TestLoadMultipleComposeFilesCustomOrder() {
-	basePath := s.fixturePath("multiple_files")
+	basePath := s.fixturePath("multiple-files")
 	baseFile := filepath.Join(basePath, "compose.yaml")
 	testFile := filepath.Join(basePath, "compose.test.yaml")
 
@@ -419,7 +419,7 @@ func (s *LoadProjectTestSuite) TestLoadMissingComposeFile() {
 
 // TestLoadWithAllOptions tests all options combined.
 func (s *LoadProjectTestSuite) TestLoadWithAllOptions() {
-	basePath := s.fixturePath("postgres_redis")
+	basePath := s.fixturePath("postgres-redis")
 	composePath := filepath.Join(basePath, "compose.yaml")
 	envPath := filepath.Join(basePath, ".env")
 

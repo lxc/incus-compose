@@ -10,7 +10,7 @@
         "MYSQL_ROOT_PASSWORD": "somewordpress",
         "MYSQL_USER": "wordpress"
       },
-      "image": "docker.io/library/mysql:8.0",
+      "image": "docker.io/library/mysql:9.5.0",
       "networks": {
         "default": null
       },
@@ -39,7 +39,7 @@
         "WORDPRESS_DB_PASSWORD": "wordpress",
         "WORDPRESS_DB_USER": "wordpress"
       },
-      "image": "docker.io/library/wordpress:latest",
+      "image": "docker.io/library/wordpress:6.9.0-php8.1-apache",
       "networks": {
         "default": null
       },

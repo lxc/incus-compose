@@ -1,4 +1,4 @@
-name: with_profiles
+name: with-profiles
 services:
   prometheus:
     profiles:
@@ -29,4 +29,4 @@ services:
         bind: {}
 networks:
   default:
-    name: with_profiles_default
+    name: with-profiles_default

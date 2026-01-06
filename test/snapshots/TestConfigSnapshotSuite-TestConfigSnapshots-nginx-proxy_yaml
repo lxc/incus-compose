@@ -1,4 +1,4 @@
-name: nginx_proxy
+name: nginx-proxy
 services:
   backend1:
     command:
@@ -60,9 +60,9 @@ services:
         bind: {}
 networks:
   backend:
-    name: nginx_proxy_backend
+    name: nginx-proxy_backend
     driver: bridge
     internal: true
   frontend:
-    name: nginx_proxy_frontend
+    name: nginx-proxy_frontend
     driver: bridge

@@ -1,9 +1,0 @@
-name: hello_world
-services:
-  hello_world:
-    image: docker.io/hello-world:latest
-    networks:
-      default: null
-networks:
-  default:
-    name: hello_world_default
