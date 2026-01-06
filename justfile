@@ -96,6 +96,7 @@ test-coverage folder="./..." *args:
 
 # Run this before you commit.
 pre-commit:
+    go mod tidy
     just lint
     just test-local
 
