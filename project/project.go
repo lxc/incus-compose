@@ -283,8 +283,11 @@ func ServiceToInstance(c *client.Client, service types.ServiceConfig, full bool)
 		return nil, errs
 	}
 
+	// Instance name follows Docker Compose convention: {service}-{index}
+	// Even single instances get -1 suffix for future scaling support.
+	instanceName := fmt.Sprintf("%s-1", service.Name)
 	instanceConfig := &client.InstanceConfig{Full: full, Resources: slices.Clone(resources), Image: image.Name(), Config: config, Devices: devices, PostDevices: postDevices}
-	instance, err := c.Resource(client.KindInstance, service.Name, instanceConfig)
+	instance, err := c.Resource(client.KindInstance, instanceName, instanceConfig)
 	if err != nil {
 		return nil, err
 	}
