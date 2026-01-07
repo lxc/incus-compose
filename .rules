@@ -19,6 +19,13 @@ Do not restate or reinterpret project rules locally.
 
 Any conflict is resolved in favor of CONTRIBUTING.md.
 
+Use `just` commands instead raw `go` commands. Consult `docs/testing.md` for howto use them or use `just --list`.
+
+## When Stuck
+
+- If cycling (same approach, no progress), stop and ask
+- Prefer asking for clarification over guessing
+
 ## Before Implementing
 
 - Check existing patterns in the codebase before creating new ones
