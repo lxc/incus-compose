@@ -244,13 +244,13 @@ var listCommand = &cli.Command{
 				return errLogged.Wrap(err)
 			}
 		case "yaml":
-			err := statuses.Table()
+			err := statuses.Yaml()
 			if err != nil {
 				c.LogError(err.Error())
 				return errLogged.Wrap(err)
 			}
 		case "json":
-			err := statuses.Table()
+			err := statuses.JSON()
 			if err != nil {
 				c.LogError(err.Error())
 				return errLogged.Wrap(err)
