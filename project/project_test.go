@@ -437,6 +437,45 @@ func (s *LoadProjectTestSuite) TestLoadWithAllOptions() {
 	s.Len(proj.Services, 3)
 }
 
+// TestLoadWithSecrets tests loading a compose file with secrets.
+func (s *LoadProjectTestSuite) TestLoadWithSecrets() {
+	proj, err := project.New().Load(
+		s.ctx, project.LoadWorkingDir(s.fixturePath("with-secrets")),
+	)
+
+	s.Require().NoError(err)
+	s.Require().NotNil(proj)
+	s.Equal("with-secrets", proj.Name)
+
+	// Check secrets are defined.
+	s.Len(proj.Secrets, 2)
+	s.Contains(proj.Secrets, "db_password")
+	s.Contains(proj.Secrets, "api_key")
+
+	// Check db_password secret (file-based).
+	dbSecret := proj.Secrets["db_password"]
+	s.NotEmpty(dbSecret.File)
+
+	// Check api_key secret (file-based).
+	apiSecret := proj.Secrets["api_key"]
+	s.NotEmpty(apiSecret.File)
+
+	// Check service has secrets configured.
+	app, exists := proj.Services["app"]
+	s.True(exists, "app service should exist")
+	s.Len(app.Secrets, 2)
+
+	// Check first secret (simple reference).
+	s.Equal("db_password", app.Secrets[0].Source)
+
+	// Check second secret (with custom target).
+	s.Equal("api_key", app.Secrets[1].Source)
+	s.Equal("/app/secrets/api.key", app.Secrets[1].Target)
+	s.Equal("1000", app.Secrets[1].UID)
+	s.Equal("1000", app.Secrets[1].GID)
+	s.NotNil(app.Secrets[1].Mode)
+}
+
 // TestLoadProjectSuite runs the test suite.
 func TestLoadProjectSuite(t *testing.T) {
 	// Skip if fixtures don't exist.

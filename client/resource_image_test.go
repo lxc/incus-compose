@@ -276,7 +276,7 @@ func (s *ImageSuite) TestEnsure_WithoutSource_Fails() {
 
 	err = RunAction(r, ActionEnsure, OptionCreate())
 	s.Require().Error(err)
-	s.Contains(err.Error(), "source not configured")
+	s.ErrorIs(err, ErrImageSource)
 }
 
 func (s *ImageSuite) TestEnsure_ExistingImage_NewResource() {

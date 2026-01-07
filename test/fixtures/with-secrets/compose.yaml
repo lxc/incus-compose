@@ -1,0 +1,16 @@
+services:
+  app:
+    image: docker.io/library/alpine:latest
+    secrets:
+      - db_password
+      - source: api_key
+        target: /app/secrets/api.key
+        uid: "1000"
+        gid: "1000"
+        mode: 0440
+
+secrets:
+  db_password:
+    file: ./db_password.txt
+  api_key:
+    file: ./api_key.txt

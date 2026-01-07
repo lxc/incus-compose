@@ -129,16 +129,29 @@ services:
 incus config set myapp-app boot.autostart true
 ```
 
-### Secrets and Configs
+### Secrets
+
+- `secrets` - File-based secrets pushed into container at `/run/secrets/{name}`
+- `secrets[].file` - Read secret from file
+- `secrets[].environment` - Read secret from environment variable
+- Service `secrets[].target` - Custom target path
+- Service `secrets[].uid` / `secrets[].gid` - File ownership
+- Service `secrets[].mode` - File permissions (default: 0400)
+
+Not supported:
+
+- External secrets
+
+### Configs
 
 ```yaml
 # Not supported
-secrets:
-  db_password:
-    file: ./db_password.txt
+configs:
+  my_config:
+    file: ./config.txt
 ```
 
-**Workaround:** Use environment variables or bind mount config files.
+**Workaround:** Use bind mounts or secrets.
 
 ### Extended Features
 

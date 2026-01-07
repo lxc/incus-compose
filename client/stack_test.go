@@ -166,6 +166,63 @@ type stackTest struct {
 
 var stackTests = []*stackTest{
 	{
+		name: "instance-with-secrets",
+		resources: func(s *StackTestSuite, client *Client) ([]Resource, error) {
+			network, err := client.Resource(KindNetwork, "default", &NetworkConfig{})
+			s.Require().NoError(err)
+
+			imageResource, err := client.Resource(KindImage, "docker.io/alpine:latest", &ImageConfig{})
+			s.Require().NoError(err)
+
+			image, ok := imageResource.(*Image)
+			s.Require().True(ok)
+
+			is, err := s.incusConfig.GetImageServer(image.Remote())
+			s.Require().NoError(err)
+
+			image.SetSource(is)
+
+			devices := []InstanceDevice{}
+			devices = append(devices, InstanceDevice{
+				Name: "eth0",
+				Config: InstanceDeviceConfig{
+					DeviceType: InstanceDeviceTypeNic,
+					Network:    network,
+				},
+			})
+
+			secrets := []InstanceSecret{
+				{
+					Source:  "db_password",
+					Content: []byte("super-secret-password"),
+				},
+				{
+					Source:  "api_key",
+					Target:  "/app/secrets/api.key",
+					Content: []byte("my-api-key-value"),
+					UID:     0,
+					GID:     0,
+					Mode:    0o440,
+				},
+			}
+
+			instance, err := client.Resource(KindInstance, "app-with-secrets", &InstanceConfig{
+				Image:   image.Name(),
+				Devices: devices,
+				Secrets: secrets,
+			})
+			s.Require().NoError(err)
+
+			return []Resource{network, image, instance}, nil
+		},
+		runs: []stackRun{
+			{ActionEnsure, []Option{OptionCreate()}, false, true},
+			{ActionStart, []Option{}, false, false},
+			{ActionStop, []Option{OptionForce()}, false, false},
+			{ActionDelete, []Option{OptionForce()}, false, false},
+		},
+	},
+	{
 		name: "ensure without create fails for non-existent",
 		resources: func(s *StackTestSuite, client *Client) ([]Resource, error) {
 			profile, err := client.Resource(KindProfile, "p1", &ProfileConfig{})

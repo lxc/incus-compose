@@ -131,7 +131,12 @@ func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) 
 // Environment vars become instance config, labels become user metadata.
 // Volumes default to bind mounts for paths starting with / or ., otherwise named volumes.
 // The index parameter is used for instance naming ({service}-{index}).
-func ServiceToInstance(c *client.Client, service types.ServiceConfig, networks types.Networks, full bool, index int) ([]client.Resource, error) {
+func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, full bool, index int) ([]client.Resource, error) {
+	service, ok := p.Services[serviceName]
+	if !ok {
+		return nil, fmt.Errorf("service %q not found", serviceName)
+	}
+
 	var errs error
 
 	config := make(map[string]string, len(service.Environment)+len(service.Labels))
@@ -167,7 +172,7 @@ func ServiceToInstance(c *client.Client, service types.ServiceConfig, networks t
 	ethIdx := 0
 	for name := range maps.Keys(service.Networks) {
 		netConfig := &client.NetworkConfig{}
-		if networkDef, ok := networks[name]; ok {
+		if networkDef, ok := p.Networks[name]; ok {
 			netConfig.External = bool(networkDef.External)
 		}
 
@@ -292,13 +297,48 @@ func ServiceToInstance(c *client.Client, service types.ServiceConfig, networks t
 		}
 	}
 
+	// Secrets
+	var instanceSecrets []client.InstanceSecret
+	for _, svcSecret := range service.Secrets {
+		secretDef, ok := p.Secrets[svcSecret.Source]
+		if !ok {
+			errs = errors.Join(errs, fmt.Errorf("secret %q not defined", svcSecret.Source))
+			continue
+		}
+
+		var content []byte
+		var err error
+		switch {
+		case secretDef.File != "":
+			content, err = os.ReadFile(secretDef.File)
+			if err != nil {
+				errs = errors.Join(errs, fmt.Errorf("reading secret %q: %w", svcSecret.Source, err))
+				continue
+			}
+		case secretDef.Environment != "":
+			content = []byte(os.Getenv(secretDef.Environment))
+		default:
+			errs = errors.Join(errs, fmt.Errorf("secret %q has no source (file or environment)", svcSecret.Source))
+			continue
+		}
+
+		instanceSecrets = append(instanceSecrets, client.InstanceSecret{
+			Source:  svcSecret.Source,
+			Target:  svcSecret.Target,
+			Content: content,
+			UID:     parseSecretUID(svcSecret.UID),
+			GID:     parseSecretGID(svcSecret.GID),
+			Mode:    parseSecretMode(svcSecret.Mode),
+		})
+	}
+
 	if errs != nil {
 		return nil, errs
 	}
 
 	// Instance name follows Docker Compose convention: {service}-{index}
 	instanceName := fmt.Sprintf("%s-%d", service.Name, index)
-	instanceConfig := &client.InstanceConfig{Full: full, Resources: slices.Clone(resources), Image: image.Name(), Config: config, Devices: devices, PostDevices: postDevices}
+	instanceConfig := &client.InstanceConfig{Full: full, Resources: slices.Clone(resources), Image: image.Name(), Config: config, Devices: devices, PostDevices: postDevices, Secrets: instanceSecrets}
 	instance, err := c.Resource(client.KindInstance, instanceName, instanceConfig)
 	if err != nil {
 		return nil, err
@@ -314,6 +354,32 @@ func formatTmpfsSize(opts *types.ServiceVolumeTmpfs) string {
 		return ""
 	}
 	return strconv.FormatInt(int64(opts.Size), 10)
+}
+
+// parseSecretUID parses a UID string to int64.
+func parseSecretUID(uid string) int64 {
+	if uid == "" {
+		return 0
+	}
+	v, _ := strconv.ParseInt(uid, 10, 64)
+	return v
+}
+
+// parseSecretGID parses a GID string to int64.
+func parseSecretGID(gid string) int64 {
+	if gid == "" {
+		return 0
+	}
+	v, _ := strconv.ParseInt(gid, 10, 64)
+	return v
+}
+
+// parseSecretMode parses a file mode to int.
+func parseSecretMode(mode *types.FileMode) int {
+	if mode == nil {
+		return 0
+	}
+	return int(*mode)
 }
 
 // ServiceGraph returns services in dependency order using topological sort.
@@ -469,7 +535,7 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 		}
 
 		for i := 1; i <= scale; i++ {
-			instanceResources, err := ServiceToInstance(c, service, p.Networks, options.Full, i)
+			instanceResources, err := ServiceToInstance(c, p.Project, serviceName, options.Full, i)
 			if err != nil {
 				errs = errors.Join(errs, err)
 				continue

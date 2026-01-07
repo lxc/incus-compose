@@ -68,6 +68,11 @@ func (s *E2ESuite) TestConfigCommand() {
 			wantErr: false,
 		},
 		{
+			name:    "with-secrets",
+			args:    []string{"-f", "../../test/fixtures/with-secrets/compose.yaml", "config"},
+			wantErr: false,
+		},
+		{
 			name:    "nonexistent file",
 			args:    []string{"-f", "nonexistent.yaml", "config"},
 			wantErr: true,
@@ -149,6 +154,43 @@ func (s *E2ESuite) TestUpDownWithScale() {
 		{
 			name:    "down nginx-scale",
 			args:    []string{"-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project"},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
+func (s *E2ESuite) TestUpDownWithSecrets() {
+	s.skipIfLocal()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up with-secrets",
+			args:    []string{"-f", "../../test/fixtures/with-secrets/compose.yaml", "up"},
+			wantErr: false,
+		},
+		{
+			name:    "list with-secrets",
+			args:    []string{"-f", "../../test/fixtures/with-secrets/compose.yaml", "list"},
+			wantErr: false,
+		},
+		{
+			name:    "down with-secrets",
+			args:    []string{"-f", "../../test/fixtures/with-secrets/compose.yaml", "down", "--project"},
 			wantErr: false,
 		},
 	}

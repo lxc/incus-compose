@@ -1,10 +1,12 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"maps"
 	"strconv"
 	"strings"
@@ -19,6 +21,16 @@ import (
 // maxInstanceNameLen is the maximum length for Incus instance names.
 // Incus allows up to 63 characters (DNS hostname limit).
 const maxInstanceNameLen = 63
+
+// InstanceSecret represents a secret to be pushed into the instance.
+type InstanceSecret struct {
+	Source  string // secret name
+	Target  string // path in container (default: /run/secrets/{source})
+	Content []byte // file content
+	UID     int64
+	GID     int64
+	Mode    int // default: 0400
+}
 
 // InstanceConfig configures instance creation.
 type InstanceConfig struct {
@@ -39,6 +51,9 @@ type InstanceConfig struct {
 
 	// PostDevices are devices attached after instance creation (volumes needing UID/GID).
 	PostDevices []InstanceDevice
+
+	// Secrets are files pushed into the instance after start.
+	Secrets []InstanceSecret
 
 	// Config contains Incus instance configuration options.
 	Config map[string]string
@@ -484,7 +499,99 @@ func (r *Instance) start() error {
 	r.IncusInstance = instance
 	r.ETag = eTag
 
+	// Push secrets after instance is running
+	if len(r.Config.Secrets) > 0 {
+		if err := r.PushSecrets(); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+// PushSecrets pushes secrets into the running instance.
+// Secrets are only pushed if they don't already exist with the same content.
+func (r *Instance) PushSecrets() error {
+	if !r.IsEnsured() {
+		return ErrNotEnsured
+	}
+
+	for _, secret := range r.Config.Secrets {
+		target := secret.Target
+		if target == "" {
+			target = "/run/secrets/" + secret.Source
+		}
+
+		mode := secret.Mode
+		if mode == 0 {
+			mode = 0o400
+		}
+
+		// Check if secret already exists with same content
+		if r.secretExists(target, secret.Content) {
+			continue
+		}
+
+		// Create parent directories recursively
+		if err := r.mkdirP(target[:strings.LastIndex(target, "/")]); err != nil {
+			return ErrCreate.WithText("creating secret directory").Wrap(err)
+		}
+
+		err := r.client.incus.CreateInstanceFile(r.incusName, target, incusClient.InstanceFileArgs{
+			Content: bytes.NewReader(secret.Content),
+			UID:     secret.UID,
+			GID:     secret.GID,
+			Mode:    mode,
+			Type:    "file",
+		})
+		if err != nil {
+			return ErrCreate.WithText("pushing secret " + secret.Source).Wrap(err)
+		}
+	}
+
+	return nil
+}
+
+// mkdirP creates a directory and all parent directories.
+func (r *Instance) mkdirP(path string) error {
+	if path == "" || path == "/" {
+		return nil
+	}
+
+	// Build list of directories to create from root to leaf
+	var dirs []string
+	for p := path; p != "" && p != "/"; p = p[:strings.LastIndex(p, "/")] {
+		dirs = append([]string{p}, dirs...)
+	}
+
+	for _, dir := range dirs {
+		err := r.client.incus.CreateInstanceFile(r.incusName, dir, incusClient.InstanceFileArgs{
+			Type: "directory",
+			Mode: 0o755,
+		})
+		// Ignore "already exists" errors
+		if err != nil && !strings.Contains(err.Error(), "exist") {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// secretExists checks if a file exists in the instance with the same content.
+func (r *Instance) secretExists(path string, content []byte) bool {
+	reader, _, err := r.client.incus.GetInstanceFile(r.incusName, path)
+	if err != nil {
+		return false // doesn't exist
+	}
+	defer reader.Close()
+
+	existing, err := io.ReadAll(reader)
+	if err != nil {
+		return false
+	}
+
+	return bytes.Equal(existing, content)
 }
 
 // Stop stops the instance.
