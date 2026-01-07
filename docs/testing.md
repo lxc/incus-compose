@@ -188,6 +188,7 @@ Located in `test/fixtures/`. Each fixture is a minimal compose scenario.
 - `wordpress/` - Multi-service with volumes
 - `with_profiles/` - Profile testing
 - `with_env/` - Environment variable testing
+- `with-secrets/` - Secrets management testing
 
 ### Fixture Guidelines
 
@@ -228,21 +229,58 @@ just update-snapshots
 
 ## Running Tests
 
+Use `just --list` to see all available commands. Below is the complete reference:
+
+### Test Commands
+
+| Command                                         | Description                                        |
+| ----------------------------------------------- | -------------------------------------------------- |
+| `just test`                                     | Run all tests against nested Incus                 |
+| `just test ./client/...`                        | Run tests for specific package                     |
+| `just test -v -run TestName`                    | Run specific test with verbose output              |
+| `just test-local`                               | Run unit tests only (no Incus connection required) |
+| `just test-coverage`                            | Run tests with coverage report                     |
+| `just update-snapshots`                         | Update all snapshot test files                     |
+| `just update-snapshots ./cmd/incus-compose/...` | Update snapshots for specific package              |
+
+### Development Commands
+
+| Command                 | Description                                  |
+| ----------------------- | -------------------------------------------- |
+| `just build`            | Build the binary                             |
+| `just run <args>`       | Run incus-compose via `go run` (uses `.env`) |
+| `just run-debug <args>` | Run with debug output enabled                |
+| `just run-local <args>` | Run against local Incus (ignores `.env`)     |
+| `just incus <args>`     | Run commands in the nested Incus container   |
+
+### Code Quality
+
+| Command           | Description                                    |
+| ----------------- | ---------------------------------------------- |
+| `just lint`       | Lint all files with golangci-lint              |
+| `just pre-commit` | Run before committing (tidy, lint, test-local) |
+
+### Setup & Maintenance
+
+| Command            | Description                         |
+| ------------------ | ----------------------------------- |
+| `just dev-install` | Create nested Incus dev environment |
+| `just clean`       | Remove generated data               |
+
+### Common Workflows
+
 ```bash
-# All tests against nested Incus
-just test
+# Run a single test verbosely
+just test -v -run TestInstanceSecretSuite
 
-# Unit tests only (no Incus)
-just test-local
+# Run tests for a specific package
+just test ./client/...
 
-# Update all snapshots
-just update-snapshots
+# Quick validation before commit
+just pre-commit
 
-# Update snapshots for specific package
-just update-snapshots ./cmd/incus-compose/...
-
-# Run incus commands in nested container
-just incus <args>
+# Test a compose file
+just run -f test/fixtures/simple-nginx/compose.yaml config
 ```
 
 ## Best Practices
