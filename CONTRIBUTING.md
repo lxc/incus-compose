@@ -198,6 +198,45 @@ Output should match `docker compose config` where possible.
 
 - OS env vars not included by default (use `--os-env` for compatibility)
 
+## Style Preferences
+
+These aren't hard rules, but following them helps maintain consistency:
+
+### Keep it direct
+
+Avoid intermediate variables when the expression is clear:
+
+```go
+// Preferred
+err = r.client.hookOperation(r.client.globalClient.Ctx, ActionStop, r, options, op, err)
+
+// Avoid
+ctx := r.client.globalClient.Ctx
+err = r.client.hookOperation(ctx, ActionStop, r, options, op, err)
+```
+
+### Unused parameters
+
+Use `_` for unused parameters rather than ignoring in the function body:
+
+```go
+// Preferred
+func (t *logTerminal) Read(_ []byte) (int, error) {
+
+// Avoid
+func (t *logTerminal) Read(p []byte) (int, error) {
+    _ = p
+```
+
+### Reuse existing patterns
+
+Before adding new functionality, check if similar patterns exist in the codebase. For example, if there's already a helper function or flag handling logic, extend it rather than creating something new.
+
+### CLI environment variables
+
+- Use `INCUS_COMPOSE_*` prefix for configuration env vars
+- Support common standards like [no-color.org](https://no-color.org/) where applicable
+
 ## Guidelines
 
 ### Don't
