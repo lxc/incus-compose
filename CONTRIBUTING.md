@@ -76,20 +76,15 @@ incus-compose/
 
 ## Build and Test Commands
 
+See [docs/testing.md](docs/testing.md) for the complete command reference and testing patterns.
+
+Quick start:
+
 ```bash
-just build              # Build the binary
-just lint               # Run linters
-just test               # Run all tests against nested Incus
-just test-local         # Run local unit tests (no Incus needed)
-just update-snapshots   # Update test snapshots
+just --list       # Show all available commands
+just pre-commit   # Run before committing
+just dev-install  # First-time setup for nested Incus
 ```
-
-**Development workflow**:
-
-1. `just dev-install` - Set up nested Incus (first time only)
-2. `just run -f test/fixtures/simple-nginx/compose.yaml config` - Test a command
-3. `just test` - Run full test suite
-4. `just clean` - Clean up when done
 
 ## Code Style
 
