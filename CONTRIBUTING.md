@@ -260,6 +260,15 @@ Before adding new functionality, check if similar patterns exist in the codebase
 - Keep user docs minimal and practical
 - All exported functions/types must have doc comments ending with a period
 
+## Exploring Incus and Docker Compose
+
+When implementing features that interact with Incus or Docker Compose:
+
+1. Use `go doc` to check API types (e.g., `go doc github.com/lxc/incus/v6/client.InstanceServer`)
+2. Look at vendor source for implementation patterns
+3. Test with real tools (`docker-compose`, `incus`) to verify expected behavior
+4. Compare output for compatibility
+
 ## Questions?
 
 - Open an issue for bugs or feature requests
