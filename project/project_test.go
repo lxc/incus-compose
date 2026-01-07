@@ -476,6 +476,34 @@ func (s *LoadProjectTestSuite) TestLoadWithSecrets() {
 	s.NotNil(app.Secrets[1].Mode)
 }
 
+// TestLoadWithRestartPolicies tests loading a compose file with restart policies.
+func (s *LoadProjectTestSuite) TestLoadWithRestartPolicies() {
+	proj, err := project.New().Load(
+		s.ctx, project.LoadWorkingDir(s.fixturePath("with-restart")),
+	)
+
+	s.Require().NoError(err)
+	s.Require().NotNil(proj)
+	s.Equal("with-restart", proj.Name)
+	s.Len(proj.Services, 5)
+
+	// Check restart policies are parsed.
+	always := proj.Services["always-restart"]
+	s.Equal("always", always.Restart)
+
+	onFailure := proj.Services["on-failure-restart"]
+	s.Equal("on-failure", onFailure.Restart)
+
+	unlessStopped := proj.Services["unless-stopped-restart"]
+	s.Equal("unless-stopped", unlessStopped.Restart)
+
+	noRestart := proj.Services["no-restart"]
+	s.Equal("no", noRestart.Restart)
+
+	defaultRestart := proj.Services["default-restart"]
+	s.Equal("", defaultRestart.Restart)
+}
+
 // TestLoadProjectSuite runs the test suite.
 func TestLoadProjectSuite(t *testing.T) {
 	// Skip if fixtures don't exist.

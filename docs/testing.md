@@ -189,6 +189,7 @@ Located in `test/fixtures/`. Each fixture is a minimal compose scenario.
 - `with_profiles/` - Profile testing
 - `with_env/` - Environment variable testing
 - `with-secrets/` - Secrets management testing
+- `with-restart/` - Restart policies testing
 
 ### Fixture Guidelines
 

@@ -157,6 +157,9 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 		config["user."+key] = val
 	}
 
+	// Restart policy
+	applyRestartPolicy(config, service.Restart)
+
 	// image, this will fail if the image hasn't been configured before.
 	image, err := c.Resource(client.KindImage, service.Image, &client.ImageConfig{})
 	if err != nil {
@@ -346,6 +349,27 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 	resources = append(resources, instance)
 
 	return resources, nil
+}
+
+// applyRestartPolicy maps Docker Compose restart policies to Incus boot config.
+//
+// Mapping:
+//   - "no" (default): boot.autostart=false
+//   - "always": boot.autostart=true
+//   - "on-failure": boot.autostart=true, boot.autorestart=true
+//   - "unless-stopped": boot.autostart unset (uses last-state behavior)
+func applyRestartPolicy(config map[string]string, policy string) {
+	switch policy {
+	case "always":
+		config["boot.autostart"] = "true"
+	case "on-failure":
+		config["boot.autostart"] = "true"
+		config["boot.autorestart"] = "true"
+	case "unless-stopped":
+		// Leave unset - Incus defaults to "last-state" behavior
+	case "no", "":
+		config["boot.autostart"] = "false"
+	}
 }
 
 // formatTmpfsSize converts compose tmpfs size to a string.
