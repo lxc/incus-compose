@@ -1,0 +1,19 @@
+services:
+  always-restart:
+    image: docker.io/library/alpine:latest
+    restart: always
+
+  on-failure-restart:
+    image: docker.io/library/alpine:latest
+    restart: on-failure
+
+  unless-stopped-restart:
+    image: docker.io/library/alpine:latest
+    restart: unless-stopped
+
+  no-restart:
+    image: docker.io/library/alpine:latest
+    restart: "no"
+
+  default-restart:
+    image: docker.io/library/alpine:latest

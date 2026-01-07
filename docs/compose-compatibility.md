@@ -16,6 +16,7 @@ incus-compose implements a subset of the Compose Specification. This doc lists w
 - `ports` - Port publishing
 - `volumes` - Named volumes and bind mounts
 - `deploy.replicas` - Service scaling (instances named `{service}-{index}`)
+- `restart` - Restart policies (`no`, `always`, `on-failure`, `unless-stopped`)
 
 ### Networks
 
@@ -116,17 +117,20 @@ incus config set myapp-app limits.memory 512MiB
 
 ### Restart Policies
 
+Restart policies are supported and map to Incus boot configuration:
+
+| Compose `restart` | Incus Config                                   |
+| ----------------- | ---------------------------------------------- |
+| `no` (default)    | `boot.autostart=false`                         |
+| `always`          | `boot.autostart=true`                          |
+| `on-failure`      | `boot.autostart=true`, `boot.autorestart=true` |
+| `unless-stopped`  | Uses last-state behavior (Incus default)       |
+
 ```yaml
-# Not implemented
 services:
   app:
+    image: docker.io/nginx:alpine
     restart: always
-```
-
-**Workaround:** Use Incus boot config:
-
-```bash
-incus config set myapp-app boot.autostart true
 ```
 
 ### Secrets
