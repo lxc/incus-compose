@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -31,8 +32,8 @@ type Client struct {
 	// hookAfter is called after any action
 	hookAfter func(action Action, r Resource, args Options, err error) error
 
-	hookOperation       func(action Action, r Resource, args Options, op incusClient.Operation, err error) error
-	hookRemoteOperation func(action Action, r Resource, args Options, op incusClient.RemoteOperation, err error) error
+	hookOperation       func(ctx context.Context, action Action, r Resource, args Options, op incusClient.Operation, err error) error
+	hookRemoteOperation func(ctx context.Context, action Action, r Resource, args Options, op incusClient.RemoteOperation, err error) error
 }
 
 func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*Client, error) {

@@ -1,14 +1,18 @@
 package client
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"maps"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/gosimple/slug"
+	incusClient "github.com/lxc/incus/v6/client"
 	incusApi "github.com/lxc/incus/v6/shared/api"
 )
 
@@ -278,7 +282,7 @@ func (r *Instance) create(opts ...Option) error {
 
 	// Create instance from project-local image
 	op, err := r.client.incus.CreateInstanceFromImage(r.client.incus, *incusImage, req)
-	if err = r.client.hookRemoteOperation(ActionEnsure, r, options, op, err); err != nil {
+	if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, options, op, err); err != nil {
 		return err
 	}
 
@@ -506,7 +510,7 @@ func (r *Instance) Stop(opts ...Option) error {
 		Force:  options.Force,
 	}, r.ETag)
 
-	err = r.client.hookOperation(ActionStop, r, options, op, err)
+	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionStop, r, options, op, err)
 
 	if r.client.hookAfter != nil {
 		return r.client.hookAfter(ActionStop, r, options, err)
@@ -532,7 +536,7 @@ func (r *Instance) Delete(opts ...Option) error {
 	op, err := r.client.incus.DeleteInstance(r.incusName)
 
 	// Do the delete
-	err = r.client.hookOperation(ActionDelete, r, options, op, err)
+	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionDelete, r, options, op, err)
 
 	if r.client.hookAfter != nil {
 		if err := r.client.hookAfter(ActionDelete, r, options, err); err != nil {
@@ -551,12 +555,132 @@ func (r *Instance) Delete(opts ...Option) error {
 	return nil
 }
 
+// Log streams the instance console log to the outputHandler.
+func (r *Instance) Log(opts ...Option) error {
+	if !r.IsEnsured() {
+		return ErrNotEnsured
+	}
+
+	options := NewOptions(opts...)
+
+	if r.client.hookBefore != nil {
+		if err := r.client.hookBefore(ActionLog, r, options, nil); err != nil {
+			return err
+		}
+	}
+
+	err := r.log(options)
+
+	if r.client.hookAfter != nil {
+		err = r.client.hookAfter(ActionLog, r, options, err)
+	}
+
+	return err
+}
+
+func (r *Instance) log(options Options) error {
+	outputHandler := r.client.globalClient.outputHandler
+	if outputHandler == nil {
+		return nil
+	}
+
+	return r.logStream(options, outputHandler)
+}
+
+// logStream streams the console using WebSocket.
+// If options.Follow is true, it streams until context is cancelled.
+// Otherwise, it streams the current log buffer and exits after a brief timeout.
+func (r *Instance) logStream(options Options, outputHandler func(Action, Resource, []byte)) error {
+	ctx := r.client.globalClient.Ctx
+
+	// For non-follow mode, use a short timeout to exit after initial data
+	if !options.Follow {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 500*time.Millisecond)
+		defer cancel()
+	}
+
+	// Channel to signal disconnect
+	consoleDisconnect := make(chan bool)
+
+	// Terminal that writes to outputHandler
+	terminal := &logTerminal{
+		resource:      r,
+		outputHandler: outputHandler,
+	}
+
+	// Connect to console WebSocket
+	req := incusApi.InstanceConsolePost{
+		Type:  "console",
+		Force: true, // Take over existing console connections
+	}
+
+	// Control handler - required by Incus API, but we don't need window resize
+	controlHandler := func(conn *websocket.Conn) {
+		<-ctx.Done()
+		closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
+		_ = conn.WriteMessage(websocket.CloseMessage, closeMsg)
+	}
+
+	args := &incusClient.InstanceConsoleArgs{
+		Terminal:          terminal,
+		Control:           controlHandler,
+		ConsoleDisconnect: consoleDisconnect,
+	}
+
+	op, err := r.client.incus.ConsoleInstance(r.incusName, req, args)
+	if err != nil {
+		return fmt.Errorf("connecting to console: %w", err)
+	}
+
+	// Handle context cancellation
+	go func() {
+		<-ctx.Done()
+		close(consoleDisconnect)
+	}()
+
+	// Wait for operation to complete using hookOperation
+	err = r.client.hookOperation(ctx, ActionLog, r, options, op, err)
+
+	// Context cancellation (including timeout) is not an error
+	if ctx.Err() != nil {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("console streaming: %w", err)
+	}
+
+	return nil
+}
+
+// logTerminal implements io.ReadWriteCloser for console streaming.
+type logTerminal struct {
+	resource      *Instance
+	outputHandler func(Action, Resource, []byte)
+}
+
+func (t *logTerminal) Write(p []byte) (int, error) {
+	t.outputHandler(ActionLog, t.resource, p)
+	return len(p), nil
+}
+
+func (t *logTerminal) Read(_ []byte) (int, error) {
+	select {} // Block forever - we never send input
+}
+
+// Close implements io.Closer.
+func (t *logTerminal) Close() error {
+	return nil
+}
+
 var (
 	_ Resource   = (*Instance)(nil)
 	_ EnsureAble = (*Instance)(nil)
 	_ StartAble  = (*Instance)(nil)
 	_ StopAble   = (*Instance)(nil)
 	_ DeleteAble = (*Instance)(nil)
+	_ LogAble    = (*Instance)(nil)
 )
 
 // extractUIDGID extracts UID and GID from a container instance.

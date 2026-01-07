@@ -55,33 +55,34 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 }
 
 // initLogger configures the default slog logger with color and debug settings.
+func noColorFromAnsi(ansi string, fd uintptr) bool {
+	switch ansi {
+	case "never":
+		return true
+	case "always":
+		return false
+	case "auto":
+		// Support for https://no-color.org/
+		if _, ok := os.LookupEnv("NO_COLOR"); ok {
+			return true
+		} else if runtime.GOOS != "windows" && !isatty.IsTerminal(fd) {
+			// Non-windows and no terminal.
+			return true
+		}
+	}
+	return false
+}
+
 func initLogger(debug bool, ansi string) {
 	level := slog.LevelInfo
 	if debug {
 		level = slog.LevelDebug
 	}
 
-	noColor := false
-	switch ansi {
-	case "never":
-		noColor = true
-	case "always":
-		// No need, just for clarity.
-		noColor = false
-	case "auto":
-		// Support for https://no-color.org/
-		if _, ok := os.LookupEnv("NO_COLOR"); ok {
-			noColor = true
-		} else if runtime.GOOS != "windows" && !isatty.IsTerminal(os.Stderr.Fd()) {
-			// None windows and no terminal.
-			noColor = true
-		}
-	}
-
 	logger := slog.New(tint.NewHandler(
 		colorable.NewColorable(os.Stderr),
 		&tint.Options{
-			NoColor:    noColor,
+			NoColor:    noColorFromAnsi(ansi, os.Stderr.Fd()),
 			Level:      level,
 			TimeFormat: "15:04",
 		},
@@ -160,6 +161,7 @@ func main() {
 			downCommand,
 			listCommand,
 			configCommand,
+			logsCommand,
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			initLogger(cmd.Bool("debug"), cmd.String("ansi"))

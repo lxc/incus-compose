@@ -133,8 +133,11 @@ type GlobalClient struct {
 
 	progressHandler func(action Action, r Resource, args Options, progress int)
 
-	hookOperation       func(action Action, r Resource, args Options, op incusClient.Operation, err error) error
-	hookRemoteOperation func(action Action, r Resource, args Options, op incusClient.RemoteOperation, err error) error
+	// outputHandler is called when a resource produces output (e.g., logs).
+	outputHandler func(action Action, r Resource, data []byte)
+
+	hookOperation       func(ctx context.Context, action Action, r Resource, args Options, op incusClient.Operation, err error) error
+	hookRemoteOperation func(ctx context.Context, action Action, r Resource, args Options, op incusClient.RemoteOperation, err error) error
 }
 
 // New creates a new Client with the provided context and logger.
@@ -168,7 +171,7 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 		return err
 	}
 
-	c.hookOperation = func(action Action, r Resource, args Options, op incusClient.Operation, err error) error {
+	c.hookOperation = func(ctx context.Context, action Action, r Resource, args Options, op incusClient.Operation, err error) error {
 		if err != nil {
 			return err
 		}
@@ -186,7 +189,7 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 			}
 		}
 
-		err = errors.Join(err, op.WaitContext(c.Ctx))
+		err = errors.Join(err, op.WaitContext(ctx))
 		if err != nil {
 			return ErrOperation.Wrap(err)
 		}
@@ -194,7 +197,8 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 		return nil
 	}
 
-	c.hookRemoteOperation = func(action Action, r Resource, args Options, op incusClient.RemoteOperation, err error) error {
+	c.hookRemoteOperation = func(_ context.Context, action Action, r Resource, args Options, op incusClient.RemoteOperation, err error) error {
+		// Note: ctx is accepted for API consistency but RemoteOperation doesn't support WaitContext
 		if err != nil {
 			return err
 		}
@@ -512,4 +516,10 @@ func (c *GlobalClient) AddHookAfter(hook func(action Action, r Resource, args Op
 	}
 
 	c.hookAfter = newHook
+}
+
+// SetOutputHandler sets the handler for resource output (e.g., logs).
+// The handler receives raw bytes - formatting is the caller's responsibility.
+func (c *GlobalClient) SetOutputHandler(handler func(action Action, r Resource, data []byte)) {
+	c.outputHandler = handler
 }

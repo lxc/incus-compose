@@ -22,6 +22,7 @@ const (
 	ActionDelete Action = "delete"
 	ActionStart  Action = "start"
 	ActionStop   Action = "stop"
+	ActionLog    Action = "log"
 )
 
 // Resource defines the common interface for all Incus resources.
@@ -76,4 +77,9 @@ type StopAble interface {
 // DeleteAble is implemented by resources that can be deleted.
 type DeleteAble interface {
 	Delete(opts ...Option) error
+}
+
+// LogAble is implemented by resources that can stream logs.
+type LogAble interface {
+	Log(opts ...Option) error
 }

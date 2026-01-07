@@ -28,6 +28,9 @@ type Options struct {
 
 	// Timeout in seconds for actions (0 = default).
 	Timeout int
+
+	// Follow enables continuous streaming (for ActionLog).
+	Follow bool
 }
 
 // Option configures action arguments.
@@ -51,6 +54,13 @@ func OptionForce() Option {
 func OptionTimeout(t int) Option {
 	return func(o *Options) {
 		o.Timeout = t
+	}
+}
+
+// OptionFollow enables continuous streaming (for ActionLog).
+func OptionFollow() Option {
+	return func(o *Options) {
+		o.Follow = true
 	}
 }
 
@@ -113,6 +123,9 @@ func SupportsAction(r Resource, action Action) bool {
 	case ActionStop:
 		_, ok := r.(StopAble)
 		return ok
+	case ActionLog:
+		_, ok := r.(LogAble)
+		return ok
 	default:
 		return false
 	}
@@ -142,6 +155,11 @@ func RunAction(r Resource, action Action, opts ...Option) error {
 			return e.Stop(opts...)
 		}
 		return ErrUnsupportedAction.WithAction(ActionStop).WithResource(r)
+	case ActionLog:
+		if e, ok := r.(LogAble); ok {
+			return e.Log(opts...)
+		}
+		return ErrUnsupportedAction.WithAction(ActionLog).WithResource(r)
 	default:
 		return ErrUnsupportedAction.WithAction(action).WithResource(r)
 	}

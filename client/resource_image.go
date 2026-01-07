@@ -264,7 +264,7 @@ func (r *Image) create(args Options) error {
 	op, err := r.Config.cache.CopyImage(r.Config.Source, *imgInfo, copyArgs)
 
 	// Wait for copy to complete
-	if err = r.client.hookRemoteOperation(ActionEnsure, r, args, op, err); err != nil {
+	if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
 		return err
 	}
 
@@ -334,7 +334,7 @@ func (r *Image) Delete(opts ...Option) error {
 	op, err := r.target.DeleteImage(r.IncusAlias.Target)
 
 	// Do the delete
-	err = r.client.hookOperation(ActionDelete, r, options, op, err)
+	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionDelete, r, options, op, err)
 	if r.client.hookAfter != nil {
 		if err := r.client.hookAfter(ActionDelete, r, options, err); err != nil {
 			return err

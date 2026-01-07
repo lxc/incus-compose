@@ -122,8 +122,9 @@ func (s *Stack) runBatch(batch []Resource, kind Kind, action Action, opts ...Opt
 	// Execute batches in order
 	var errs error
 
-	// Images run in parallel - they have no dependencies
-	if kind == KindImage && len(batch) > 1 {
+	// Images and logs run in parallel - they have no dependencies
+	runParallel := (kind == KindImage || action == ActionLog) && len(batch) > 1
+	if runParallel {
 		pool := NewWorkerPool(s.workers)
 		for _, r := range batch {
 			task := r // capture for closure
@@ -178,6 +179,8 @@ func (s *Stack) ForAction(action Action) *Stack {
 		sortDescending = true
 	case ActionEnsure, ActionStart:
 		sortDescending = false
+	case ActionLog:
+		// ActionLog: no sort order change, logs run in parallel anyway
 	}
 	// default: unknown action, no modification
 
