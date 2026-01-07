@@ -1,0 +1,10 @@
+name: healthcheck-test
+
+services:
+  web:
+    image: docker.io/nginx:alpine
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

@@ -11,6 +11,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -157,6 +158,11 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 		config["user."+key] = val
 	}
 
+	// Command override
+	if len(service.Command) > 0 {
+		config["oci.entrypoint"] = formatCommand(service.Command)
+	}
+
 	// Restart policy
 	applyRestartPolicy(config, service.Restart)
 
@@ -300,6 +306,35 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 		}
 	}
 
+	// Copy "restart"
+	if service.Restart != "" {
+		config["user.restart"] = service.Restart
+	}
+
+	// Healtcheck
+	if service.HealthCheck != nil {
+		config["user.healthcheck.status"] = "starting"
+
+		testB, err := json.Marshal(service.HealthCheck.Test)
+		if err != nil {
+			errs = errors.Join(errs, fmt.Errorf("converting service %q healthcheck test: %w", service.Name, err))
+			return nil, errs
+		}
+		config["user.healthcheck.test"] = string(testB)
+
+		if service.HealthCheck.Interval != nil {
+			config["user.healthcheck.interval"] = service.HealthCheck.Interval.String()
+		}
+
+		if service.HealthCheck.Retries != nil {
+			config["user.healthcheck.retries"] = strconv.FormatUint(*service.HealthCheck.Retries, 10)
+		}
+
+		if service.HealthCheck.Timeout != nil {
+			config["user.healthcheck.timeout"] = service.HealthCheck.Timeout.String()
+		}
+	}
+
 	// Secrets
 	var instanceSecrets []client.InstanceSecret
 	for _, svcSecret := range service.Secrets {
@@ -404,6 +439,23 @@ func parseSecretMode(mode *types.FileMode) int {
 		return 0
 	}
 	return int(*mode)
+}
+
+// formatCommand formats a command slice for oci.entrypoint.
+func formatCommand(cmd []string) string {
+	if len(cmd) == 0 {
+		return ""
+	}
+	if len(cmd) == 1 {
+		return cmd[0]
+	}
+	// Quote arguments after the first
+	quoted := make([]string, len(cmd))
+	quoted[0] = cmd[0]
+	for i := 1; i < len(cmd); i++ {
+		quoted[i] = `"` + cmd[i] + `"`
+	}
+	return strings.Join(quoted, " ")
 }
 
 // ServiceGraph returns services in dependency order using topological sort.

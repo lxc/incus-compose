@@ -64,6 +64,7 @@ See [Architecture Documentation](docs/architecture.md) for details.
 # Add OCI image remotes to Incus
 incus remote add --protocol oci docker.io https://docker.io
 incus remote add --protocol oci ghcr.io https://ghcr.io
+incus remote add --protocol oci registry.gitlab.com https://registry.gitlab.com
 ```
 
 ### Installation

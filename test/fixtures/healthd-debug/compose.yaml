@@ -1,0 +1,50 @@
+name: healthd-debug
+
+# https://docs.docker.com/compose/how-tos/startup-order/
+services:
+  web:
+    image: docker.io/nginx:alpine
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost"]
+      interval: 10s # Run every 10s after start.
+
+      retries: 3 # After x retries the service is considered as unhealthy.
+      timeout: 5s # timeout for a single test/check (retry).
+
+  web-restart:
+    image: docker.io/nginx:alpine
+    restart: always
+
+  web-always:
+    image: docker.io/nginx:alpine
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost"]
+      interval: 10s # Run every 10s after start.
+
+      retries: 3 # After x retries the service is considered as unhealthy.
+      timeout: 5s # timeout for a single test/check (retry).
+
+  web-on-failure:
+    image: docker.io/nginx:alpine
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost"]
+      interval: 10s # Run every 10s after start.
+
+      retries: 3 # After x retries the service is considered as unhealthy.
+      timeout: 5s # timeout for a single test/check (retry).
+
+
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #       restart: true
+  # db:
+  #   image: postgres:18
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+  #     interval: 10s
+  #     retries: 5
+  #     start_period: 30s
+  #     timeout: 10s
