@@ -59,8 +59,9 @@ var downCommand = &cli.Command{
 			err = globalClient.DeleteProject(c.Project(), true)
 			if err != nil {
 				globalClient.LogError("Deleting the project", "error", err)
+				return errLogged
 			}
-			return errLogged
+			return nil
 		}
 
 		stack := client.NewStack(c)
