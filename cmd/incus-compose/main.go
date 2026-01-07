@@ -86,8 +86,8 @@ func clientFromContext(ctx context.Context) (*client.GlobalClient, error) {
 	return c, nil
 }
 
-func main() {
-	cmd := &cli.Command{
+func newRootCommand() *cli.Command {
+	return &cli.Command{
 		Usage: "Compose for incus",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -261,8 +261,10 @@ func main() {
 			return nil
 		},
 	}
+}
 
-	if err := cmd.Run(context.Background(), os.Args); err != nil {
+func main() {
+	if err := newRootCommand().Run(context.Background(), os.Args); err != nil {
 		if errors.Is(err, errLogged) {
 			os.Exit(1)
 		}
