@@ -224,6 +224,40 @@ func (s *DeviceSnapshotSuite) TestNicDevices() {
 	}
 }
 
+func (s *DeviceSnapshotSuite) TestTmpfsDevices() {
+	testCases := []DeviceTestCase{
+		{
+			Name: "tmpfs_basic",
+			Device: InstanceDevice{
+				Name: "tmpfs--tmp",
+				Config: InstanceDeviceConfig{
+					DeviceType: InstanceDeviceTypeTmpfs,
+					Tmpfs: InstanceDeviceTmpfsConfig{
+						Path: "/tmp",
+					},
+				},
+			},
+		},
+		{
+			Name: "tmpfs_with_size",
+			Device: InstanceDevice{
+				Name: "tmpfs--run",
+				Config: InstanceDeviceConfig{
+					DeviceType: InstanceDeviceTypeTmpfs,
+					Tmpfs: InstanceDeviceTmpfsConfig{
+						Path: "/run",
+						Size: "104857600",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		s.runDeviceTest(tc)
+	}
+}
+
 func (s *DeviceSnapshotSuite) TestDeviceErrors() {
 	s.Run("nic_no_network", func() {
 		device := InstanceDevice{

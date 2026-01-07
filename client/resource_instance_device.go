@@ -11,6 +11,7 @@ const (
 	InstanceDeviceTypeProxy = "proxy"
 	InstanceDeviceTypeDisk  = "disk"
 	InstanceDeviceTypeNic   = "nic"
+	InstanceDeviceTypeTmpfs = "tmpfs"
 )
 
 // InstanceDeviceProxyConfig configures a proxy device for port forwarding.
@@ -54,9 +55,18 @@ type InstanceDeviceDiskConfig struct {
 	ReadOnly bool
 }
 
+// InstanceDeviceTmpfsConfig configures a tmpfs device.
+type InstanceDeviceTmpfsConfig struct {
+	// Path is the mount point inside the instance.
+	Path string
+
+	// Size is the optional size limit in bytes.
+	Size string
+}
+
 // InstanceDeviceConfig configures an instance device.
 type InstanceDeviceConfig struct {
-	// DeviceType identifies the device type (nic, disk, proxy).
+	// DeviceType identifies the device type (nic, disk, proxy, tmpfs).
 	DeviceType string
 
 	// Network is the network resource for nic devices.
@@ -67,6 +77,9 @@ type InstanceDeviceConfig struct {
 
 	// Disk contains disk device configuration.
 	Disk InstanceDeviceDiskConfig
+
+	// Tmpfs contains tmpfs device configuration.
+	Tmpfs InstanceDeviceTmpfsConfig
 
 	ExtraConfig map[string]string
 }
@@ -95,6 +108,8 @@ func (d *InstanceDevice) ToIncusDevice() (string, map[string]string, *Error) {
 		devConfig, err = d.toProxyDevice()
 	case InstanceDeviceTypeDisk:
 		devConfig, err = d.toDiskDevice()
+	case InstanceDeviceTypeTmpfs:
+		devConfig, err = d.toTmpfsDevice()
 	default:
 		if d.Config.ExtraConfig == nil {
 			err = errors.New("ExtraConfig not given")
@@ -162,6 +177,22 @@ func (d *InstanceDevice) toDiskDevice() (map[string]string, error) {
 
 	if cfg.ReadOnly {
 		device["readonly"] = "true"
+	}
+
+	return device, nil
+}
+
+func (d *InstanceDevice) toTmpfsDevice() (map[string]string, error) {
+	cfg := d.Config.Tmpfs
+
+	device := map[string]string{
+		"type":   "disk",
+		"path":   cfg.Path,
+		"source": "tmpfs:",
+	}
+
+	if cfg.Size != "" {
+		device["size"] = cfg.Size
 	}
 
 	return device, nil

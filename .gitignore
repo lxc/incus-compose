@@ -2,6 +2,8 @@
 *.local.md
 .claude/commands/*
 
+.feedback/*
+
 # Its generated with random host only data, still no need to commit.
 /.env
 

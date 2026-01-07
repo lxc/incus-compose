@@ -1,0 +1,16 @@
+name: with-tmpfs
+services:
+  app:
+    image: images:alpine/edge
+    networks:
+      default: null
+    volumes:
+      - type: tmpfs
+        target: /tmp
+      - type: tmpfs
+        target: /run
+        tmpfs:
+          size: "104857600"
+networks:
+  default:
+    name: with-tmpfs_default

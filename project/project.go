@@ -271,8 +271,15 @@ func ServiceToInstance(c *client.Client, service types.ServiceConfig, full bool,
 
 			postDevices = append(postDevices, client.InstanceDevice{Name: devName, Config: devConfig})
 		case "tmpfs":
-			// tmpfs not yet implemented - Incus has native tmpfs device support
-			c.LogWarn("tmpfs volumes not yet supported", "target", cVol.Target)
+			devName := fmt.Sprintf("tmpfs-%s", strings.ReplaceAll(cVol.Target, "/", "-"))
+			devConfig := client.InstanceDeviceConfig{
+				DeviceType: client.InstanceDeviceTypeTmpfs,
+				Tmpfs: client.InstanceDeviceTmpfsConfig{
+					Path: cVol.Target,
+					Size: formatTmpfsSize(cVol.Tmpfs),
+				},
+			}
+			devices = append(devices, client.InstanceDevice{Name: devName, Config: devConfig})
 		default:
 			err := fmt.Errorf("Unknown volume type %q for service %q", cVol.Type, service.Name)
 			errs = errors.Join(errs, err)
@@ -294,6 +301,14 @@ func ServiceToInstance(c *client.Client, service types.ServiceConfig, full bool,
 	resources = append(resources, instance)
 
 	return resources, nil
+}
+
+// formatTmpfsSize converts compose tmpfs size to a string.
+func formatTmpfsSize(opts *types.ServiceVolumeTmpfs) string {
+	if opts == nil || opts.Size == 0 {
+		return ""
+	}
+	return strconv.FormatInt(int64(opts.Size), 10)
 }
 
 // ServiceGraph returns services in dependency order using topological sort.

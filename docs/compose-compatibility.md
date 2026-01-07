@@ -34,10 +34,10 @@ Not supported:
 - Bind mounts (local connections only)
 - Read-only volumes
 - Automatic UID/GID shifting
+- tmpfs mounts (with optional size limit)
 
 Not supported:
 
-- tmpfs volumes (not yet implemented)
 - Volume driver options
 
 ### Environment
