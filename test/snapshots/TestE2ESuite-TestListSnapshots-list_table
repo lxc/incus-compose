@@ -1,0 +1,5 @@
+KIND      NAME                    INCUSNAME                       IMAGE                           STATUS   ADDRESSES
+image     docker.io/nginx:alpine  docker.io/library/nginx:alpine                                  Exists   
+network   default                 ic-                                                   Exists   
+instance  web-1                   web-1                           docker.io/library/nginx:alpine  Running  
+

@@ -1,0 +1,23 @@
+- kind: image
+  name: docker.io/nginx:alpine
+  description: ""
+  incus_name: docker.io/library/nginx:alpine
+  image: ""
+  status: Exists
+  addresses: []
+- kind: network
+  name: default
+  description: ""
+  incus_name: ic-
+  image: ""
+  status: Exists
+  addresses: []
+- kind: instance
+  name: web-1
+  description: 'incus-compose: web-1'
+  incus_name: web-1
+  image: docker.io/library/nginx:alpine
+  status: Running
+  addresses:
+    - 
+
