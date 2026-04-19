@@ -8,13 +8,14 @@ import (
 	"github.com/distribution/reference"
 	incusClient "github.com/lxc/incus/v6/client"
 	incusApi "github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/cliconfig"
 )
 
 // ImageConfig contains the source and cache configuration for an image.
 type ImageConfig struct {
-	// Source is the image server to copy the image from.
-	// For NativeIncus images, this can be nil and will be resolved from Remote.
-	Source incusClient.ImageServer
+	// CliConfig is the Incus CLI config used to resolve image servers.
+	// If set, the source is resolved automatically from the remote name.
+	CliConfig *cliconfig.Config
 
 	// CacheServer is an image server to use as cache (for library users).
 	// Takes precedence over CacheProject.
@@ -28,15 +29,11 @@ type ImageConfig struct {
 	// cache is the resolved instance server for caching (internal use).
 	cache incusClient.InstanceServer
 
-	// Remote is the domain part of the image reference.
+	// Remote is the domain part of the image reference (set automatically if not provided).
 	Remote string
 
-	// Image is the image reference without the remote prefix.
+	// Image is the image reference without the remote prefix (set automatically if not provided).
 	Image string
-
-	// NativeIncus indicates this is an Incus native image (e.g., "images:alpine/edge")
-	// rather than an OCI image (e.g., "docker.io/library/alpine:latest").
-	NativeIncus bool
 }
 
 // GetConfig returns the configuration.
@@ -46,7 +43,7 @@ func (c *ImageConfig) GetConfig() any {
 
 var _ Config = (*ImageConfig)(nil)
 
-// Image represents an OCI image copied to the Incus image cache.
+// Image represents an OCI or native Incus image copied to the Incus image cache.
 type Image struct {
 	*BaseResource
 
@@ -54,6 +51,13 @@ type Image struct {
 	Config    ImageConfig
 	incusName string
 	created   bool
+
+	// source is the resolved image server for this image.
+	source incusClient.ImageServer
+
+	// nativeIncus indicates this is a native Incus image (protocol "incus")
+	// rather than an OCI image (protocol "oci").
+	nativeIncus bool
 
 	// State - nil means not ensured.
 	IncusAlias *incusApi.ImageAliasesEntry
@@ -66,18 +70,17 @@ type Image struct {
 }
 
 // newImage returns an existing Image resource or creates a new one.
-// The name should be a Docker-style image reference.
+// The name should be a Docker-style image reference or native Incus reference (remote:image).
 func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 	if configGetter == nil {
 		return nil, ErrUnknownConfig.WithKindName(KindImage, name)
 	}
 
-	var config *ImageConfig
 	cConfig, ok := configGetter.GetConfig().(*ImageConfig)
 	if !ok {
 		return nil, ErrUnknownConfig.WithKindName(KindImage, name)
 	}
-	config = cConfig
+	config := cConfig
 
 	// Resolve cache: CacheServer > CacheProject > default imageCache
 	if config.CacheServer != nil {
@@ -93,21 +96,39 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 		config.cache = c.imageCache
 	}
 
+	// Try to parse as native Incus format first: "remote:image/path"
+	// This takes precedence if CliConfig is provided and remote exists
+	var source incusClient.ImageServer
+	var nativeIncus bool
 	var incusName string
 
-	if config.NativeIncus {
-		// Parse native Incus format: "images:alpine/edge" or "remote:image/path"
-		if config.Remote == "" || config.Image == "" {
-			parts := strings.SplitN(name, ":", 2)
-			if len(parts) != 2 {
-				return nil, ErrInvalidFormat.WithText("native Incus image, expected remote:image").WithKindName(KindImage, name)
+	if config.CliConfig != nil && strings.Contains(name, ":") {
+		parts := strings.SplitN(name, ":", 2)
+		remoteName := parts[0]
+
+		// Check if this remote exists in CLI config
+		if _, ok := config.CliConfig.Remotes[remoteName]; ok {
+			is, err := config.CliConfig.GetImageServer(remoteName)
+			if err != nil {
+				return nil, ErrImageSource.WithText("getting image server for " + remoteName).Wrap(err)
 			}
-			config.Remote = parts[0]
+
+			source = is
+			config.Remote = remoteName
 			config.Image = parts[1]
+
+			// Detect protocol from connection info
+			connInfo, err := is.GetConnectionInfo()
+			if err == nil && connInfo.Protocol == "incus" {
+				nativeIncus = true
+			}
+
+			incusName = name
 		}
-		incusName = name
-	} else {
-		// Parse Docker/OCI reference if Remote or Image is not set
+	}
+
+	// If not resolved as native, try Docker/OCI reference
+	if source == nil {
 		if config.Remote == "" || config.Image == "" {
 			ref, err := reference.ParseDockerRef(name)
 			if err != nil {
@@ -127,6 +148,15 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 
 		// Build incusName from parsed/converted values
 		incusName = config.Remote + "/" + config.Image
+
+		// Resolve source from CLI config if available
+		if config.CliConfig != nil {
+			is, err := config.CliConfig.GetImageServer(config.Remote)
+			if err != nil {
+				return nil, ErrImageSource.WithText("getting image server for " + config.Remote).Wrap(err)
+			}
+			source = is
+		}
 	}
 
 	img := &Image{
@@ -134,6 +164,8 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 		client:       c,
 		incusName:    incusName,
 		Config:       *config,
+		source:       source,
+		nativeIncus:  nativeIncus,
 	}
 
 	return img, nil
@@ -180,9 +212,9 @@ func (r *Image) Remote() string {
 	return r.Config.Remote
 }
 
-// SetSource sets the source image server.
-func (r *Image) SetSource(imageServer incusClient.ImageServer) {
-	r.Config.Source = imageServer
+// NativeIncus returns true if this is a native Incus image.
+func (r *Image) NativeIncus() bool {
+	return r.nativeIncus
 }
 
 // Ensure retrieves an existing image from cache or copies it if Create option is set.
@@ -244,7 +276,7 @@ func (r *Image) get() error {
 }
 
 func (r *Image) create(args Options) error {
-	if r.Config.Source == nil {
+	if r.source == nil {
 		return ErrImageSource.WithText("not configured")
 	}
 
@@ -262,7 +294,7 @@ func (r *Image) create(args Options) error {
 	}
 
 	// Start the copy operation
-	op, err := r.Config.cache.CopyImage(r.Config.Source, *imgInfo, copyArgs)
+	op, err := r.Config.cache.CopyImage(r.source, *imgInfo, copyArgs)
 
 	// Wait for copy to complete
 	if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
@@ -293,6 +325,14 @@ func (r *Image) CopyTo(target incusClient.InstanceServer) error {
 
 	if r.target != nil {
 		return nil // Already copied
+	}
+
+	// Check if image alias already exists in target project
+	_, _, err := target.GetImageAlias(r.incusName)
+	if err == nil {
+		// Already exists in target, just remember it
+		r.target = target
+		return nil
 	}
 
 	// Get image info from cache

@@ -97,14 +97,13 @@ func TestParallelImageDownload(t *testing.T) {
 		return
 	}
 
-	// Load image server
+	// Load CLI config for image server resolution
 	conf, err := cliconfig.LoadConfig("")
 	if err != nil {
 		t.Skipf("Skipping: failed to load config: %v", err)
 		return
 	}
-	imageServer, err := conf.GetImageServer("docker.io")
-	if err != nil {
+	if _, err := conf.GetImageServer("docker.io"); err != nil {
 		t.Skipf("Skipping: docker.io not configured: %v", err)
 		return
 	}
@@ -125,7 +124,7 @@ func TestParallelImageDownload(t *testing.T) {
 
 	stack := NewStack(c, StackWorkers(3))
 	for _, name := range imageNames {
-		img, err := c.Resource(KindImage, name, &ImageConfig{Source: imageServer})
+		img, err := c.Resource(KindImage, name, &ImageConfig{CliConfig: conf})
 		require.NoError(t, err)
 
 		stack.Add(img)
@@ -171,16 +170,13 @@ var stackTests = []*stackTest{
 			network, err := client.Resource(KindNetwork, "default", &NetworkConfig{})
 			s.Require().NoError(err)
 
-			imageResource, err := client.Resource(KindImage, "docker.io/alpine:latest", &ImageConfig{})
+			imageResource, err := client.Resource(KindImage, "docker.io/alpine:latest", &ImageConfig{
+				CliConfig: s.incusConfig,
+			})
 			s.Require().NoError(err)
 
 			image, ok := imageResource.(*Image)
 			s.Require().True(ok)
-
-			is, err := s.incusConfig.GetImageServer(image.Remote())
-			s.Require().NoError(err)
-
-			image.SetSource(is)
 
 			devices := []InstanceDevice{}
 			devices = append(devices, InstanceDevice{
@@ -269,16 +265,13 @@ var stackTests = []*stackTest{
 			network, err := client.Resource(KindNetwork, "default", &NetworkConfig{})
 			s.Require().NoError(err)
 
-			imageResource, err := client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
+			imageResource, err := client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{
+				CliConfig: s.incusConfig,
+			})
 			s.Require().NoError(err)
 
 			image, ok := imageResource.(*Image)
 			s.Require().True(ok)
-
-			is, err := s.incusConfig.GetImageServer(image.Remote())
-			s.Require().NoError(err)
-
-			image.SetSource(is)
 
 			devices := []InstanceDevice{}
 			devices = append(devices, InstanceDevice{
@@ -310,16 +303,13 @@ var stackTests = []*stackTest{
 			network, err := client.Resource(KindNetwork, "default", &NetworkConfig{})
 			s.Require().NoError(err)
 
-			imageResource, err := client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
+			imageResource, err := client.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{
+				CliConfig: s.incusConfig,
+			})
 			s.Require().NoError(err)
 
 			image, ok := imageResource.(*Image)
 			s.Require().True(ok)
-
-			is, err := s.incusConfig.GetImageServer(image.Remote())
-			s.Require().NoError(err)
-
-			image.SetSource(is)
 
 			devices := []InstanceDevice{}
 			devices = append(devices, InstanceDevice{

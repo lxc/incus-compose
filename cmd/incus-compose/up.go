@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	incusClient "github.com/lxc/incus/v6/client"
-	"github.com/lxc/incus/v6/shared/cliconfig"
 	"github.com/urfave/cli/v3"
 
 	"gitlab.com/r3j0/incus-compose/client"
@@ -72,12 +70,6 @@ var upCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		conf, err := cliconfig.LoadConfig(cliconfig.DefaultConfig().ConfigDir)
-		if err != nil {
-			globalClient.LogError("Failed read the incus config", "error", err)
-			return errLogged.Wrap(err)
-		}
-
 		services := cmd.Args().Slice()
 		if len(services) == 0 {
 			services = make([]string, 0, len(p.Services))
@@ -91,7 +83,9 @@ var upCommand = &cli.Command{
 
 		images := []client.Resource{}
 
-		imageServers := make(map[string]incusClient.ImageServer)
+		// Use CliConfig from globalClient for automatic image server resolution
+		imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
+
 		for _, sName := range services {
 			cSv, ok := p.Services[sName]
 			if !ok {
@@ -109,34 +103,14 @@ var upCommand = &cli.Command{
 			}
 
 			c.LogDebug("Getting image", "image", cSv.Image, "service", cSv.Name)
-			r, err := c.Resource(client.KindImage, cSv.Image, &client.ImageConfig{})
+			r, err := c.Resource(client.KindImage, cSv.Image, imageConfig)
 			if err != nil {
 				c.LogError("Getting image", "service", cSv.Name, "image", cSv.Image, "error", err)
 				rErr = errors.Join(rErr, errLogged.Wrap(err))
 				continue
 			}
 
-			image, ok := r.(*client.Image)
-			if !ok {
-				err = client.ErrUnknown.WithResource(r)
-				c.LogError("Getting an image", err)
-				rErr = errors.Join(rErr, err)
-				continue
-			}
-
-			is, ok := imageServers[image.Remote()]
-			if !ok {
-				var err error
-				is, err = conf.GetImageServer(image.Remote())
-				if err != nil {
-					c.LogError("Getting an image server", "service", cSv.Name, "image", cSv.Image, "remote", image.Remote(), "error", err)
-					rErr = errors.Join(rErr, errLogged.Wrap(err))
-					continue
-				}
-			}
-
-			image.SetSource(is)
-			images = append(images, image)
+			images = append(images, r)
 		}
 		if rErr != nil {
 			return rErr

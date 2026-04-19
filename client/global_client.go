@@ -11,6 +11,7 @@ import (
 
 	incusClient "github.com/lxc/incus/v6/client"
 	incusApi "github.com/lxc/incus/v6/shared/api"
+	"github.com/lxc/incus/v6/shared/cliconfig"
 )
 
 // ClientConfig holds configuration options for the Client.
@@ -117,8 +118,9 @@ type GlobalClient struct {
 	Ctx    context.Context
 	Config ClientConfig
 
-	logger   *slog.Logger
-	projects []*Client
+	logger    *slog.Logger
+	projects  []*Client
+	cliConfig *cliconfig.Config
 
 	incus      *incusClient.ProtocolIncus
 	imageCache incusClient.InstanceServer
@@ -153,10 +155,14 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 		o(&config)
 	}
 
+	// Load CLI config by default for image server resolution
+	cliConf, _ := cliconfig.LoadConfig(cliconfig.DefaultConfig().ConfigDir)
+
 	c := &GlobalClient{
-		Ctx:    ctx,
-		Config: config,
-		logger: config.Logger,
+		Ctx:       ctx,
+		Config:    config,
+		logger:    config.Logger,
+		cliConfig: cliConf,
 	}
 
 	c.hookBefore = func(action Action, r Resource, args Options, err error) error {
@@ -348,6 +354,11 @@ func (c *GlobalClient) IsConnected() bool {
 // IsRemote returns true if connected via network (not unix socket).
 func (c *GlobalClient) IsRemote() bool {
 	return !c.unix
+}
+
+// CliConfig returns the CLI config for image server resolution.
+func (c *GlobalClient) CliConfig() *cliconfig.Config {
+	return c.cliConfig
 }
 
 func (c *GlobalClient) getProject(name string) (*Client, error) {
