@@ -32,6 +32,14 @@ type InstanceSecret struct {
 	Mode    int // default: 0400
 }
 
+// InstanceFile represents a file to push to an instance after creation.
+type InstanceFile struct {
+	Content io.ReadSeeker
+	UID     int64
+	GID     int64
+	Mode    int
+}
+
 // InstanceConfig configures instance creation.
 type InstanceConfig struct {
 	// Type is the instance type (container or VM).
@@ -54,6 +62,10 @@ type InstanceConfig struct {
 
 	// Secrets are files pushed into the instance after start.
 	Secrets []InstanceSecret
+
+	// Files are files pushed into the instance after creation.
+	// Map key is the target path in the instance.
+	Files map[string]InstanceFile
 
 	// Config contains Incus instance configuration options.
 	Config map[string]string
@@ -318,6 +330,13 @@ func (r *Instance) create(opts ...Option) error {
 		}
 	}
 
+	// Push files before marking as created
+	if len(r.Config.Files) > 0 {
+		if err := r.PushFiles(); err != nil {
+			return err
+		}
+	}
+
 	r.created = true
 	return nil
 }
@@ -546,6 +565,35 @@ func (r *Instance) PushSecrets() error {
 		})
 		if err != nil {
 			return ErrCreate.WithText("pushing secret " + secret.Source).Wrap(err)
+		}
+	}
+
+	return nil
+}
+
+// PushFiles pushes files into the instance.
+func (r *Instance) PushFiles() error {
+	if !r.IsEnsured() {
+		return ErrNotEnsured
+	}
+
+	for target, file := range r.Config.Files {
+		// Create parent directories recursively
+		if idx := strings.LastIndex(target, "/"); idx > 0 {
+			if err := r.mkdirP(target[:idx]); err != nil {
+				return ErrCreate.WithText("creating directory for " + target).Wrap(err)
+			}
+		}
+
+		err := r.client.incus.CreateInstanceFile(r.incusName, target, incusClient.InstanceFileArgs{
+			Content: file.Content,
+			UID:     file.UID,
+			GID:     file.GID,
+			Mode:    file.Mode,
+			Type:    "file",
+		})
+		if err != nil {
+			return ErrCreate.WithText("pushing file " + target).Wrap(err)
 		}
 	}
 
@@ -795,12 +843,19 @@ func extractUIDGID(instance *incusApi.Instance) (uint32, uint32, error) {
 		return 0, 0, nil
 	}
 
-	uid64, err := strconv.ParseUint(instance.Config["oci.uid"], 10, 32)
+	// oci.uid/gid only exist for OCI images, not native Incus images
+	uidStr, hasUID := instance.Config["oci.uid"]
+	gidStr, hasGID := instance.Config["oci.gid"]
+	if !hasUID || !hasGID {
+		return 0, 0, nil
+	}
+
+	uid64, err := strconv.ParseUint(uidStr, 10, 32)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	gid64, err := strconv.ParseUint(instance.Config["oci.gid"], 10, 32)
+	gid64, err := strconv.ParseUint(gidStr, 10, 32)
 	if err != nil {
 		return 0, 0, err
 	}
