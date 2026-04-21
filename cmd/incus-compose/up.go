@@ -35,11 +35,21 @@ var upCommand = &cli.Command{
 			Name:  "scale",
 			Usage: "Scale SERVICE to NUM instances (service=num)",
 		},
+		&cli.BoolFlag{
+			Name:  "no-healthd",
+			Usage: "Don't create healthd sidecar for healthchecks",
+		},
+		&cli.StringFlag{
+			Name:  "healthd-binary",
+			Usage: "Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)",
+		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
 		reCreate := cmd.Bool("recreate")
 		timeout := cmd.Int("timeout")
 		start := !cmd.Bool("no-start")
+		noHealthd := cmd.Bool("no-healthd")
+		healthdBinary := cmd.String("healthd-binary")
 
 		// Parse --scale flags (service=num)
 		scaleOverrides := make(map[string]int)
@@ -83,6 +93,24 @@ var upCommand = &cli.Command{
 
 		images := []client.Resource{}
 
+		// Prepare healthd early (before image loop) so we can add its image
+
+		var healthdConfig *client.HealthdConfig
+		if !noHealthd && start {
+			for _, sName := range services {
+				cSv, ok := p.Services[sName]
+				if ok && cSv.HealthCheck != nil {
+					healthdConfig = &client.HealthdConfig{}
+					c.LogDebug("Found healthchecks")
+					if healthdBinary != "" {
+						healthdConfig.Binary = healthdBinary
+						c.LogDebug("Using local healthd binary", "path", healthdBinary)
+					}
+					break
+				}
+			}
+		}
+
 		// Use CliConfig from globalClient for automatic image server resolution
 		imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
 
@@ -114,6 +142,48 @@ var upCommand = &cli.Command{
 		}
 		if rErr != nil {
 			return rErr
+		}
+
+		// Handle healthd image (same pattern as service images)
+		var healthd *client.Healthd
+		if healthdConfig != nil {
+			var imageName string
+			if healthdBinary != "" {
+				// Use system container for local binary
+				imageName = "images:alpine/edge"
+			} else {
+				// Use OCI image
+				imageName = client.DefaultHealthdImage
+			}
+
+			// Setup the request
+			r, err := c.Resource(client.KindImage, imageName, imageConfig)
+			if err != nil {
+				c.LogError("Getting healthd image", "image", imageName, "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			// Cast the request to image
+			healthdImage, ok := r.(*client.Image)
+			if !ok {
+				err = client.ErrUnknown.WithResource(r)
+				c.LogError("Getting healthd image", err)
+				return errLogged.Wrap(err)
+			}
+
+			// Add the request to images
+			images = append(images, healthdImage)
+
+			// Set image on config
+			healthdConfig.ImageResource = healthdImage
+
+			healthdName := "ic-healthd"
+			healthd, err = c.Healthd(healthdName, *healthdConfig)
+			if err != nil {
+				c.LogError("Creating healthd resource", "error", err)
+				return errLogged.Wrap(err)
+			}
+			c.LogDebug("Prepared healthd sidecar image", "name", healthdName)
 		}
 
 		toStackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice())}
@@ -161,6 +231,11 @@ var upCommand = &cli.Command{
 
 		// Add images after reCreate
 		stack.Add(images...)
+
+		// Add healthd after recreate (like images, so it doesn't get deleted during recreate)
+		if healthd != nil {
+			stack.Add(healthd)
+		}
 
 		c.LogDebug("Ensure", "resources", stack.All())
 

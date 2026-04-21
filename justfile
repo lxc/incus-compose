@@ -40,7 +40,7 @@ dev-install container_name="local:incus-compose-test" listen='127.0.0.1:1443' pr
 
 # Run commands in the nested incus.
 incus *args:
-    @echo "Using remote '${INCUS_REMOTE-"local"}':"
+    # @echo "Using remote '${INCUS_REMOTE-"local"}':"
     incus {{ args }}
 
 # Remove generated data
@@ -71,6 +71,20 @@ clean:
 # Build the binary
 build:
     go build -o bin/incus-compose ./cmd/incus-compose
+
+# Build ic-healthd binary
+build-healthd:
+    CGO_ENABLED=0 go build -tags=netgo -ldflags="-w -s" -trimpath -o bin/ic-healthd ./cmd/ic-healthd
+
+# Build ic-healthd container image
+build-healthd-image tag="registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest":
+    docker build -t {{ tag }} -f cmd/ic-healthd/Dockerfile .
+
+# Run with local healthd binary (for testing without an explicit OCI image) (ex. just run-healthd -f test/healthd/debug/compose.yaml up )
+run-healthd *args:
+    @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
+    just build-healthd
+    go run ./cmd/incus-compose --remote "${INCUS_REMOTE:-"local"}" {{ args }} --healthd-binary bin/ic-healthd
 
 # Usage: just run -f test/fixtures/simple-nginx/compose.yaml config
 run *args:

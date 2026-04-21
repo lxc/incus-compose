@@ -221,5 +221,6 @@ client.New(ctx, client.ClientProvideConnection(instanceServer, cacheServer))
 - [Client Package](architecture/client/README.md) - Resources, Stack, WorkerPool
 - [Instance Details](architecture/instance.md) - Pre/post devices, UID/GID shifting
 - [Images](architecture/images.md) - OCI image handling and caching
+- [Health Checking](architecture/healthchecking.md) - ic-healthd sidecar, config storage, restart handling
 - [Getting Started](getting-started.md) - Quick start guide
 - [Compose Compatibility](compose-compatibility.md) - Docker Compose support

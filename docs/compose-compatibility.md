@@ -85,15 +85,37 @@ services:
 
 ### Health Checks
 
+Health checks are supported via a sidecar container (`ic-healthd`) that monitors services and restarts unhealthy instances:
+
 ```yaml
-# Not implemented
 services:
-  app:
+  web:
+    image: docker.io/nginx:alpine
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 30s # default: 30s
+      timeout: 10s # default: 30s
+      retries: 3 # default: 3
 ```
 
-**Workaround:** Use Incus instance state monitoring or external health checks.
+When `incus-compose up` detects services with healthchecks, it automatically creates a `{project}-healthd` sidecar instance that:
+
+- Runs health check commands inside each service instance
+- Tracks consecutive failures
+- Restarts instances that exceed the retry threshold
+
+The healthd instance survives `incus-compose down` (only services are stopped) but is deleted with `incus-compose down --project`.
+
+To disable healthd creation:
+
+```bash
+incus-compose up --no-healthd
+```
+
+Not yet supported:
+
+- `start_period` - Grace period before checks start
+- `start_interval` - Interval during start period
 
 ### Resource Limits
 
