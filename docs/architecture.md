@@ -125,9 +125,13 @@ pool.Submit(func() error { return image2.Ensure(OptionCreate()) })
 pool.Run(PoolRunArgs{FailFast: false})
 ```
 
-### Priority-Based Ordering
+### Resource Ordering
 
-Resources execute by priority. Lower values run first for ensure, last for delete:
+Ordering works at two independent levels:
+
+**1. Cross-kind priority** — governs which resource types run before others.
+`Stack.ForAction` sets sort direction automatically based on the action:
+ensure/start sort ascending (low priority first), stop/delete sort descending.
 
 | Resource | Priority | Create Order | Delete Order |
 | -------- | -------- | ------------ | ------------ |
@@ -137,6 +141,11 @@ Resources execute by priority. Lower values run first for ensure, last for delet
 | Network  | 2048     | 4th          | 3rd          |
 | Volume   | 4096     | 5th          | 2nd          |
 | Instance | 8192     | Last         | 1st          |
+
+**2. Within-kind dependency order** — governs which services of the same kind
+run before others. `ToStackReverse()` reverses the topological sort of the
+service dependency graph. Use it for teardown so dependants stop before their
+dependencies. Without it, insertion order (dependency-first) is preserved.
 
 Images in the same batch run in parallel via WorkerPool.
 

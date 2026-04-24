@@ -173,7 +173,11 @@ func (s *Stack) Run(action Action, opts ...Option) error {
 func (s *Stack) ForAction(action Action) *Stack {
 	sortDescending := s.sortDescending
 
-	// Magic: automatically determine sort order based on action
+	// Automatically set priority sort direction based on action.
+	// This controls cross-kind ordering (e.g. instances before networks on start,
+	// networks before instances on stop). Within the same kind, insertion order
+	// is preserved — use ToStackReverse() on ToStack to reverse dependency-graph
+	// order for services of the same kind (e.g. stop dependants before dependencies).
 	switch action {
 	case ActionStop, ActionDelete:
 		sortDescending = true
@@ -182,7 +186,6 @@ func (s *Stack) ForAction(action Action) *Stack {
 	case ActionLog:
 		// ActionLog: no sort order change, logs run in parallel anyway
 	}
-	// default: unknown action, no modification
 
 	result := &Stack{
 		client:         s.client,

@@ -169,6 +169,9 @@ func newRootCommand() *cli.Command {
 		Commands: []*cli.Command{
 			upCommand,
 			downCommand,
+			startCommand,
+			stopCommand,
+			restartCommand,
 			listCommand,
 			configCommand,
 			logsCommand,

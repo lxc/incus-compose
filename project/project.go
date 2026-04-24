@@ -589,7 +589,10 @@ func ToStackOnlyServices(services []string) ToStackOption {
 	}
 }
 
-// ToStackReverse reverses the order of operations for teardown.
+// ToStackReverse reverses the service dependency graph order.
+// Use for teardown so dependants are stopped before their dependencies.
+// Note: cross-kind priority ordering (e.g. instances vs networks) is handled
+// automatically by Stack.ForAction and does not require this option.
 func ToStackReverse() ToStackOption {
 	return func(o *ToStackOptions) {
 		o.Reverse = true
