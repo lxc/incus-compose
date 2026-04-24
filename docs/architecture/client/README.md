@@ -2,15 +2,6 @@
 
 High-level Incus API wrapper with resource management and parallel execution.
 
-## Documentation
-
-- [Overview](overview.md) - Core types, ResourceStore, Options, Stack
-- [API](api.md) - Detailed API reference
-- [Errors](errors.md) - Sentinel errors and automatic context enrichment
-- [Hooks](hooks.md) - Hook system details
-- [Image](image.md) - Image resource
-- [Instance](instance.md) - Instance resource
-
 ## Overview
 
 This package provides a compose-spec friendly interface for managing Incus resources:
@@ -66,6 +57,14 @@ func main() {
     client.RunAction(instance, client.ActionStart)
 }
 ```
+
+## Documentation
+
+- [API](api.md) - Detailed API reference
+- [Errors](errors.md) - Sentinel errors and automatic context enrichment
+- [Hooks](hooks.md) - Hook system details
+- [Image](image.md) - Image resource
+- [Instance](instance.md) - Instance resource
 
 ## Core Types
 
