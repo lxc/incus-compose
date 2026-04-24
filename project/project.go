@@ -628,13 +628,16 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 
 	var errs error
 
-	if len(options.OnlyServices) > 1 {
+	if len(options.OnlyServices) >= 1 {
 		services := types.Services{}
-		for _, n := range options.OnlyServices {
-			s := p.Services[n]
-			services[n] = s
-			for depName := range s.DependsOn {
-				services[depName] = p.Services[depName]
+		for n, svc := range p.Services {
+			for _, on := range options.OnlyServices {
+				if n == on {
+					services[n] = svc
+					for depName := range svc.DependsOn {
+						services[depName] = p.Services[depName]
+					}
+				}
 			}
 		}
 
