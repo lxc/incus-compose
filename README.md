@@ -2,6 +2,16 @@
 
 Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` implements the Compose specification for the Incus ecosystem, allowing you to define and run multi-container applications using the same `docker-compose.yml` files you already know.
 
+## Why incus-compose?
+
+[Incus](https://linuxcontainers.org/incus/) provides powerful system containers and virtual machines with superior security and isolation, but lacks the declarative multi-container orchestration that Docker Compose offers. This tool bridges that gap:
+
+- Use existing `docker-compose.yml` files with Incus containers
+- Leverage Incus's native OCI registry support for image pulling
+- Run Docker/OCI images directly from registries
+- Manage complex multi-container applications with familiar commands
+- Benefit from Incus's resource efficiency and security model
+
 ## Quick Links
 
 - **[Getting Started](docs/getting-started.md)** - Install and run your first compose project
@@ -14,7 +24,7 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 
 ## Status
 
-**Active Development** - Core functionality is working and well-tested. The API is stabilizing but may still change.
+**Beta** - testing the beta1 release of incus-compose.
 
 **What works:**
 
@@ -33,27 +43,9 @@ Bring the familiar Docker Compose workflow to Incus containers. `incus-compose` 
 - Container image building via Podman/Docker
 - Advanced compose features (healthchecks, resource limits, etc.)
 
-## Why incus-compose?
-
-[Incus](https://linuxcontainers.org/incus/) provides powerful system containers and virtual machines with superior security and isolation, but lacks the declarative multi-container orchestration that Docker Compose offers. This tool bridges that gap:
-
-- Use existing `docker-compose.yml` files with Incus containers
-- Leverage Incus's native OCI registry support for image pulling
-- Run Docker/OCI images directly from registries
-- Manage complex multi-container applications with familiar commands
-- Benefit from Incus's resource efficiency and security model
-
 ## Architecture
 
-incus-compose uses a **resource-first design**:
-
-- **Unified Resource Interface** - Images, instances, networks, profiles, and volumes are all first-class resources
-- **Two-Phase Pattern** - Configuration (resource creation) then execution (ensure/start/stop/delete)
-- **Priority-Based Ordering** - Dependencies managed via numeric priorities, no complex graph resolution
-- **Stack Execution** - Batch operations with parallel image downloads
-- **Hook System** - Before/after action interception for logging and validation
-
-See [Architecture Documentation](docs/architecture.md) for details.
+incus-compose uses a **resource-first design**, see [Architecture Documentation](docs/architecture.md) for details.
 
 ## Quick Start
 
@@ -109,72 +101,6 @@ incus-compose down
 ```
 
 See [Getting Started](docs/getting-started.md) for detailed examples.
-
-## Design Principles
-
-**KISS** - Keep It Simple, Stupid. We prefer:
-
-- Shallow package structure over deep nesting
-- Direct code over abstractions
-- Working software over perfect architecture
-- Simple solutions over clever ones
-- Boring code that's easy to understand
-
-**Compose Specification First** - We follow the [Compose specification](https://compose-spec.io/) faithfully. Any deviation from Docker Compose behavior is either:
-
-- Intentional and documented in [Compose Compatibility](docs/compose-compatibility.md)
-- A bug that should be reported
-
-**Incus Native** - We use Incus's official Go client library and leverage its native features (OCI support, projects, profiles, storage pools).
-
-See [Contributing](CONTRIBUTING.md) for detailed guidelines.
-
-## Development
-
-```bash
-# Set up development environment
-just dev-install
-
-# Run tests
-just test
-
-# Run linters
-just lint
-
-# Build binary
-just build
-
-# Run against a compose file
-just run -f test/fixtures/simple-nginx/compose.yaml config
-```
-
-## Library Usage
-
-The `client` and `project` packages can be used programmatically:
-
-```go
-import (
-    "context"
-    "gitlab.com/r3j0/incus-compose/client"
-    "gitlab.com/r3j0/incus-compose/project"
-)
-
-// Create client
-globalClient := client.New(ctx,
-    client.ClientURL("unix:///var/lib/incus/unix.socket"),
-)
-globalClient.Connect()
-
-// Load compose project
-proj, _ := project.Load("compose.yaml")
-
-// Execute
-// ... see docs/architecture/client/ for full API
-```
-
-**Note:** The library API is not yet stable and may change.
-
-See [Client Package](docs/architecture/client/) for details.
 
 ## Credits
 

@@ -1,6 +1,12 @@
 # Architecture
 
-High-level architecture of incus-compose and how components fit together.
+High-level architecture of incus-compose and how components fit together, a **resource-first design**:
+
+- **Unified Resource Interface** - Images, instances, networks, profiles, and volumes are all first-class resources
+- **Two-Phase Pattern** - Configuration (resource creation) then execution (ensure/start/stop/delete)
+- **Priority-Based Ordering** - Dependencies managed via numeric priorities, no complex graph resolution
+- **Stack Execution** - Batch operations with parallel image downloads
+- **Hook System** - Before/after action interception for logging and validation
 
 ## Package Structure
 

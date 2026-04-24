@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+
+version: 2
+
+builds:
+  - id: "incus-compose"
+    main: ./cmd/incus-compose
+
+archives:
+  - formats: [tar.gz]
+    # this name template makes the OS and Arch compatible with the results of `uname`.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+nfpms:
+  - maintainer: "Rene Jochum <r3j0@jochum.dev>"
+    file_name_template: "{{ .ConventionalFileName }}" # optional, better file names
+    formats:
+      - deb
+      - apk
+      - rpm
+
+release:
+  footer: >-
+
+    ---
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
