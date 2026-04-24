@@ -374,6 +374,7 @@ func (r *Healthd) createInstance() error {
 		Image: r.image,
 		Type:  incusApi.InstanceTypeContainer,
 		Config: map[string]string{
+			"user.internal":           "true",
 			"user.healthcheck.daemon": "true",
 			"oci.entrypoint":          "/usr/bin/ic-healthd run" + strings.Join(flags, " "),
 		},
