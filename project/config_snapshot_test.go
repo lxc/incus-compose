@@ -161,6 +161,10 @@ func (s *ConfigSnapshotSuite) TestConfigSnapshots() {
 			Name:    "with-tmpfs_yaml",
 			Fixture: "with-tmpfs",
 		},
+		{
+			Name:    "with-resources_yaml",
+			Fixture: "with-resources",
+		},
 	}
 
 	for _, tc := range testCases {

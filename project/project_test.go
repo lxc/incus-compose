@@ -396,6 +396,28 @@ func (s *LoadProjectTestSuite) TestLoadMultipleComposeFilesCustomOrder() {
 	s.True(exists, "test-runner service should exist")
 }
 
+// TestLoadWithResourceLimits tests loading a compose file with deploy resource limits.
+func (s *LoadProjectTestSuite) TestLoadWithResourceLimits() {
+	proj, err := project.New().Load(
+		s.ctx, project.LoadWorkingDir(s.fixturePath("with-resources")),
+	)
+	s.Require().NoError(err)
+	s.Require().NotNil(proj)
+	s.Len(proj.Services, 2)
+
+	limited := proj.Services["limited"]
+	s.Require().NotNil(limited.Deploy)
+	s.Require().NotNil(limited.Deploy.Resources.Limits)
+	s.Equal(float32(0.5), limited.Deploy.Resources.Limits.NanoCPUs.Value())
+	s.Equal(int64(512<<20), int64(limited.Deploy.Resources.Limits.MemoryBytes))
+
+	pinned := proj.Services["pinned"]
+	s.Require().NotNil(pinned.Deploy)
+	s.Require().NotNil(pinned.Deploy.Resources.Limits)
+	s.Equal(float32(2), pinned.Deploy.Resources.Limits.NanoCPUs.Value())
+	s.Equal(int64(1<<30), int64(pinned.Deploy.Resources.Limits.MemoryBytes))
+}
+
 // TestLoadInvalidComposeFile tests invalid compose file.
 func (s *LoadProjectTestSuite) TestLoadInvalidComposeFile() {
 	_, err := project.New().Load(

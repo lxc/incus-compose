@@ -311,6 +311,11 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 		config["user.restart"] = service.Restart
 	}
 
+	// Resource limits
+	if service.Deploy != nil && service.Deploy.Resources.Limits != nil {
+		applyResourceLimits(config, service.Deploy.Resources.Limits)
+	}
+
 	// Healtcheck
 	if service.HealthCheck != nil {
 		config["user.healthcheck.status"] = "starting"
@@ -384,6 +389,49 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 	resources = append(resources, instance)
 
 	return resources, nil
+}
+
+// applyResourceLimits maps Docker Compose deploy.resources.limits to Incus config keys.
+//
+// CPU mapping:
+//   - Integer cpus (e.g. 2.0): limits.cpu = "2" (pin to N CPUs)
+//   - Fractional cpus (e.g. 0.5): limits.cpu.allowance = "50%"
+//
+// Memory mapping: limits.memory = human-readable size (GiB, MiB, KiB, or B).
+func applyResourceLimits(config map[string]string, limits *types.Resource) {
+	if limits == nil {
+		return
+	}
+	if limits.NanoCPUs != 0 {
+		cpus := limits.NanoCPUs.Value()
+		if cpus == float32(int(cpus)) {
+			config["limits.cpu"] = strconv.Itoa(int(cpus))
+		} else {
+			config["limits.cpu.allowance"] = fmt.Sprintf("%.0f%%", float64(cpus)*100)
+		}
+	}
+	if limits.MemoryBytes != 0 {
+		config["limits.memory"] = formatMemoryLimit(int64(limits.MemoryBytes))
+	}
+}
+
+// formatMemoryLimit converts bytes to a human-readable Incus memory limit string.
+func formatMemoryLimit(bytes int64) string {
+	const (
+		gib = 1 << 30
+		mib = 1 << 20
+		kib = 1 << 10
+	)
+	switch {
+	case bytes%gib == 0:
+		return fmt.Sprintf("%dGiB", bytes/gib)
+	case bytes%mib == 0:
+		return fmt.Sprintf("%dMiB", bytes/mib)
+	case bytes%kib == 0:
+		return fmt.Sprintf("%dKiB", bytes/kib)
+	default:
+		return fmt.Sprintf("%dB", bytes)
+	}
 }
 
 // applyRestartPolicy maps Docker Compose restart policies to Incus boot config.

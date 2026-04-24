@@ -1,0 +1,16 @@
+services:
+  limited:
+    image: docker.io/library/alpine:latest
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  pinned:
+    image: docker.io/library/alpine:latest
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
