@@ -274,7 +274,7 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 
 			postDevices = append(postDevices, client.InstanceDevice{Name: devName, Config: devConfig})
 		case "bind":
-			devName := fmt.Sprintf("bind-%s", cVol.Source)
+			devName := fmt.Sprintf("bind-%s", strings.ReplaceAll(cVol.Source, "/", "-"))
 			devConfig := client.InstanceDeviceConfig{
 				DeviceType: client.InstanceDeviceTypeDisk,
 				Disk: client.InstanceDeviceDiskConfig{
