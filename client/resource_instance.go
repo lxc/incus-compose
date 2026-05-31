@@ -399,7 +399,7 @@ func (r *Instance) buildDevices() (map[string]map[string]string, error) {
 			devices["root"] = map[string]string{
 				"type": "disk",
 				"path": "/",
-				"pool": "default",
+				"pool": r.client.Config().DefaultStoragePool,
 			}
 		}
 	}

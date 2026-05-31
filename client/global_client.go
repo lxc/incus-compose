@@ -146,7 +146,7 @@ type GlobalClient struct {
 func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 	config := ClientConfig{
 		Logger:             slog.Default(),
-		DefaultStoragePool: "default",
+		DefaultStoragePool: "detect",
 		NetworkPrefix:      "ic-",
 		DescriptionFormat:  "incus-compose: %s",
 	}
@@ -266,6 +266,13 @@ func (c *GlobalClient) connectProvided() error {
 	c.incus = pIncus
 	c.logger = c.logger.With("url", c.Config.URL)
 	c.connected = true
+
+	if c.Config.DefaultStoragePool == "detect" {
+		if err = c.detectStoragePool(); err != nil {
+			return err
+		}
+	}
+
 	return c.setupImageCache()
 }
 
@@ -313,7 +320,29 @@ func (c *GlobalClient) connectTLS() error {
 	c.unix = false
 	c.logger = c.logger.With("url", c.Config.URL)
 	c.connected = true
+
+	if c.Config.DefaultStoragePool == "detect" {
+		if err = c.detectStoragePool(); err != nil {
+			return err
+		}
+	}
+
 	return c.setupImageCache()
+}
+
+// detectStoragePool gets the first storage pool from the incus server.
+func (c *GlobalClient) detectStoragePool() error {
+	names, err := c.incus.GetStoragePoolNames()
+	if err != nil {
+		return fmt.Errorf("detecting storage pool: %w", err)
+	}
+
+	if len(names) == 0 {
+		return fmt.Errorf("detecting storage pool: no storage pools found on server")
+	}
+
+	c.Config.DefaultStoragePool = names[0]
+	return nil
 }
 
 // setupImageCache configures the image cache based on CacheProject or defaults.

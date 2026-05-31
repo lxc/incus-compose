@@ -15,6 +15,7 @@ CONTAINER_NAME="incus-compose-test"
 IMAGE="images:debian/trixie"
 INCUS_REPO="stable" # stable or lts
 FORCE="false"
+STORAGE_POOL="default"
 LISTEN=""
 
 # Track whether we created the container so we can cleanup on failure if desired
@@ -64,7 +65,7 @@ EOF
 }
 
 # Parse arguments
-while getopts "c:n:i:r:l:fh" opt; do
+while getopts "c:n:i:r:l:p:fh" opt; do
     case ${opt} in
     c)
         CLIENT_CERT="${OPTARG}"
@@ -81,6 +82,9 @@ while getopts "c:n:i:r:l:fh" opt; do
     l)
         LISTEN="${OPTARG}"
         ;;
+    p)
+        STORAGE_POOL="${OPTARG}"
+        ;;
     f)
         FORCE="true"
         ;;
@@ -88,7 +92,7 @@ while getopts "c:n:i:r:l:fh" opt; do
         usage
         ;;
     \?)
-        echo "Invalid option: -${OPTARG}" >&2
+        echo "Invalid option: -${opt}" >&2
         echo "Use -h for help" >&2
         exit 1
         ;;
@@ -144,6 +148,7 @@ echo "    Proxy listen: ${LISTEN}"
 echo "    Incus repository: ${INCUS_REPO}"
 echo "    Repository URL: ${REPO_URL}"
 echo "    Client certificate: ${CLIENT_CERT}"
+echo "    Storage pool: ${STORAGE_POOL}"
 echo ""
 
 if incus info "${CONTAINER_NAME}" >/dev/null 2>&1; then
@@ -245,7 +250,7 @@ networks:
     ipv4.address: auto
     ipv6.address: none
 storage_pools:
-- name: default
+- name: __STORAGE_POOL__
   driver: dir
 profiles:
 - name: default
@@ -262,6 +267,8 @@ PRESEED_EOF
 
 EOF
 )
+
+CONFIGURE_SCRIPT="$(echo "${CONFIGURE_SCRIPT}" | sed -e 's/__STORAGE_POOL__/'${STORAGE_POOL}'/')"
 
 # Stream the configure script as well (no temp files)
 echo "${CONFIGURE_SCRIPT}" | incus exec "${CONTAINER_NAME}" -- bash -s

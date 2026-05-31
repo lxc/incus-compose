@@ -9,7 +9,7 @@
 #   just run-local <args>
 #   just test-local
 
-set dotenv-load := true
+set dotenv-load
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
 [private]
@@ -35,12 +35,12 @@ update-snapshots folder="./...":
     CI=1 UPDATE_SNAPSHOTS=true go test {{ folder }} || true
 
 # Dev install creates your dev environment: `just dev-install [container] [listen] [project] [image]`
-dev-install container_name="local:incus-compose-test" listen='127.0.0.1:1443' project='default' image='images:debian/trixie':
-    @just make-nested "{{ container_name }}" "{{ image }}" "{{ listen }}" "{{ project }}"
+dev-install container_name="local:incus-compose-test" listen='127.0.0.1:1443' project='default' image='images:debian/trixie' storagepool='detect':
+    @just make-nested "{{ container_name }}" "{{ image }}" "{{ listen }}" "{{ project }}" "{{ storagepool }}"
 
 # Run commands in the nested incus.
 incus *args:
-    # @echo "Using remote '${INCUS_REMOTE-"local"}':"
+    @echo "Using remote '${INCUS_REMOTE-"local"}':"
     incus {{ args }}
 
 # Remove generated data
@@ -116,7 +116,7 @@ pre-commit:
     just test-local
 
 [private]
-make-nested container='local:incus-compose-test' image='images:debian/trixie' listen="" project="default":
+make-nested container='local:incus-compose-test' image='images:debian/trixie' listen="" project="default" storagepool="detect":
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -128,6 +128,7 @@ make-nested container='local:incus-compose-test' image='images:debian/trixie' li
     container="{{ container }}"
     image="{{ image }}"
     listen="{{ listen }}"
+    storagepool="{{ storagepool }}"
 
     key_file=""
     cert_file=""
@@ -139,7 +140,7 @@ make-nested container='local:incus-compose-test' image='images:debian/trixie' li
     # Run setup script (certificate injection is handled by the script)
     set +e
     echo "Trying to create a nested container:\n"
-    INCUS_PROJECT="{{ project }}" ./scripts/setup-nested-incus.sh -c "${cert_file}" -n "${container}" -i "${image}" -r stable -l "${listen}"
+    INCUS_PROJECT="{{ project }}" ./scripts/setup-nested-incus.sh -c "${cert_file}" -n "${container}" -i "${image}" -r stable -l "${listen}" -p "${storagepool}"
     set -e
 
     if [[ -z "${listen}" ]]; then

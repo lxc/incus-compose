@@ -151,6 +151,11 @@ func newRootCommand() *cli.Command {
 				Aliases: []string{"p"},
 				Usage:   `Project name`,
 			},
+			&cli.StringFlag{
+				Name:  "storage-pool",
+				Usage: `Default storage pool to use, 'detect' will auto detect the name`,
+				Value: "detect",
+			},
 			&cli.StringSliceFlag{
 				Name:    "file",
 				Aliases: []string{"f"},
@@ -215,6 +220,7 @@ func newRootCommand() *cli.Command {
 					client.ClientLogger(slog.Default()),
 					client.ClientProvideInstanceServer(server),
 					client.ClientCacheProject(cacheProject),
+					client.ClientDefaultStoragePool(cmd.String("storage-pool")),
 				}
 
 				c := client.New(ctx, opts...)
@@ -237,6 +243,7 @@ func newRootCommand() *cli.Command {
 					client.ClientURL(url),
 					client.ClientLogger(slog.Default()),
 					client.ClientInsecureSkipVerify(),
+					client.ClientDefaultStoragePool(cmd.String("storage-pool")),
 				}
 
 				// Add TLS client certificate if provided

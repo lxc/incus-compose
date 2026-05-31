@@ -330,7 +330,7 @@ func (s *StorageVolumeSuite) TestConfig_DefaultPool() {
 
 	vol, ok := r.(*StorageVolume)
 	s.Require().True(ok)
-	s.Equal("default", vol.Config.Pool)
+	s.Equal(s.client.Config().DefaultStoragePool, vol.Config.Pool)
 }
 
 func (s *StorageVolumeSuite) TestConfig_CustomPool() {
