@@ -194,48 +194,13 @@ func newRootCommand() *cli.Command {
 			}
 
 			// Connect to Incus server.
-			// Priority: INCUS_REMOTE/--remote -> INCUS_COMPOSE_URL -> "local" remote
-			remote := cmd.String("remote")
-
+			// Priority: INCUS_COMPOSE_URL -> INCUS_REMOTE/--remote -> incus CLI default remote
 			cacheProject := "default"
 			if v, ok := os.LookupEnv("INCUS_COMPOSE_IMAGE_CACHE"); ok {
 				cacheProject = v
 			}
 
-			// 1. If remote is explicitly set, use Incus CLI config
-			if remote != "" {
-				slog.Debug("Using connection", "remote", remote)
-
-				conf, err := cliconfig.LoadConfig("")
-				if err != nil {
-					return ctx, err
-				}
-
-				server, err := conf.GetInstanceServer(remote)
-				if err != nil {
-					return ctx, err
-				}
-
-				opts := []client.ClientOption{
-					client.ClientLogger(slog.Default()),
-					client.ClientProvideInstanceServer(server),
-					client.ClientCacheProject(cacheProject),
-					client.ClientDefaultStoragePool(cmd.String("storage-pool")),
-				}
-
-				c := client.New(ctx, opts...)
-				if err := c.Connect(); err != nil {
-					return ctx, err
-				}
-
-				if cmd.Bool("debug") {
-					addClientDebuggerHook(c)
-				}
-
-				return context.WithValue(ctx, clientKey{}, c), nil
-			}
-
-			// 2. If INCUS_COMPOSE_URL is set, use direct URL connection
+			// 1. If INCUS_COMPOSE_URL is set, use direct URL connection
 			if url, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok {
 				slog.Debug("Using connection", "url", url)
 
@@ -268,15 +233,20 @@ func newRootCommand() *cli.Command {
 				return context.WithValue(ctx, clientKey{}, c), nil
 			}
 
-			// 3. Fall back to "local" remote
-			slog.Debug("Using connection", "remote", "local")
-
+			// 2. Use Incus CLI config (explicit --remote flag, or configured default remote)
 			conf, err := cliconfig.LoadConfig("")
 			if err != nil {
 				return ctx, err
 			}
 
-			server, err := conf.GetInstanceServer("local")
+			remote := cmd.String("remote")
+			if remote == "" {
+				remote = conf.DefaultRemote
+			}
+
+			slog.Debug("Using connection", "remote", remote)
+
+			server, err := conf.GetInstanceServer(remote)
 			if err != nil {
 				return ctx, err
 			}
@@ -285,11 +255,16 @@ func newRootCommand() *cli.Command {
 				client.ClientLogger(slog.Default()),
 				client.ClientProvideInstanceServer(server),
 				client.ClientCacheProject(cacheProject),
+				client.ClientDefaultStoragePool(cmd.String("storage-pool")),
 			}
 
 			c := client.New(ctx, opts...)
 			if err := c.Connect(); err != nil {
 				return ctx, err
+			}
+
+			if cmd.Bool("debug") {
+				addClientDebuggerHook(c)
 			}
 
 			return context.WithValue(ctx, clientKey{}, c), nil
