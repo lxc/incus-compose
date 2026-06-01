@@ -66,6 +66,16 @@ var upCommand = &cli.Command{
 			globalClient.LogError("Getting the incus project", "error", err)
 			return errLogged.Wrap(err)
 		}
+		if err := c.RegisterScaleWatcher(); err != nil {
+			globalClient.LogError("Registering the scale watcher", "error", err)
+			return errLogged.Wrap(err)
+		}
+
+		if err := c.Open(); err != nil {
+			globalClient.LogError("Opening the project client", "error", err)
+			return errLogged.Wrap(err)
+		}
+		defer func() { _ = c.Close() }()
 
 		return runUp(globalClient, c, p, upParams{
 			services:      cmd.Args().Slice(),
@@ -127,8 +137,6 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 	var rErr error
 	stack := client.NewStack(c)
 
-	images := []client.Resource{}
-
 	// Prepare healthd early (before image loop) so we can add its image
 
 	var healthdConfig *client.HealthdConfig
@@ -174,7 +182,7 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 			continue
 		}
 
-		images = append(images, r)
+		stack.Add(r)
 	}
 	if rErr != nil {
 		return rErr
@@ -208,7 +216,7 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 		}
 
 		// Add the request to images
-		images = append(images, healthdImage)
+		stack.Add(healthdImage)
 
 		// Set image on config
 		healthdConfig.ImageResource = healthdImage
@@ -264,9 +272,6 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 			c.LogDebug("Deleting resources", "error", err)
 		}
 	}
-
-	// Add images after reCreate
-	stack.Add(images...)
 
 	// Add healthd after recreate (like images, so it doesn't get deleted during recreate)
 	if healthd != nil {

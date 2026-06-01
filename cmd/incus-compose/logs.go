@@ -163,6 +163,11 @@ var logsCommand = &cli.Command{
 			globalClient.LogError("Getting the incus project", "error", err)
 			return errLogged.Wrap(err)
 		}
+		if err := c.Open(); err != nil {
+			globalClient.LogError("Opening the project client", "error", err)
+			return errLogged.Wrap(err)
+		}
+		defer func() { _ = c.Close() }()
 
 		// Create log formatter with colorable output
 		// Use cmd.Root().Writer if it's a file, otherwise fallback to os.Stdout

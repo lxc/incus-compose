@@ -48,14 +48,25 @@ var downCommand = &cli.Command{
 		p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
 		if err != nil {
 			globalClient.LogError("Configuring the project", "error", err)
-			return err
+			return errLogged.Wrap(err)
 		}
 
 		// Get the per Project client early, gives early errors if the project does not exists
 		c, err := globalClient.EnsureProject(p.Name, false)
 		if err != nil {
 			globalClient.LogError("Getting the incus project", "error", err)
-			return errLogged
+			return errLogged.Wrap(err)
+		}
+		defer func() { _ = c.Close() }()
+
+		if err := c.RegisterScaleWatcher(); err != nil {
+			globalClient.LogError("Registering the scale watcher", "error", err)
+			return errLogged.Wrap(err)
+		}
+
+		if err := c.Open(); err != nil {
+			globalClient.LogError("Opening the project client", "error", err)
+			return errLogged.Wrap(err)
 		}
 
 		if deleteProject {

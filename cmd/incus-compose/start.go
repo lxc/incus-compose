@@ -46,6 +46,17 @@ var startCommand = &cli.Command{
 			globalClient.LogError("Getting the incus project", "error", err)
 			return errLogged
 		}
+		defer func() { _ = c.Close() }()
+
+		if err := c.RegisterScaleWatcher(); err != nil {
+			globalClient.LogError("Registering the scale watcher", "error", err)
+			return errLogged.Wrap(err)
+		}
+
+		if err := c.Open(); err != nil {
+			globalClient.LogError("Opening the project client", "error", err)
+			return errLogged.Wrap(err)
+		}
 
 		stack := client.NewStack(c)
 		err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()))
