@@ -174,7 +174,6 @@ func newRootCommand() *cli.Command {
 		Commands: []*cli.Command{
 			upCommand,
 			downCommand,
-			redeployCommand,
 			startCommand,
 			stopCommand,
 			restartCommand,

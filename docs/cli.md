@@ -50,24 +50,6 @@ incus-compose down [SERVICE...]
 | `--timeout`    | Stop timeout seconds (default: 10) |
 | `--no-healthd` | Don't stop/remove healthd sidecar  |
 
-## redeploy
-
-Recreate containers with refreshed images, in one shot: `down` (keeping volumes
-and the image cache) followed by `up --pull`. Use this to roll out an updated
-image.
-
-```
-incus-compose redeploy [SERVICE...]
-```
-
-| Option             | Description                                                             |
-| ------------------ | ----------------------------------------------------------------------- |
-| `--no-start`       | Don't start containers after creating                                   |
-| `--timeout`        | Stop/start timeout seconds (default: 10)                                |
-| `--scale`          | Scale service: `web=3` (repeatable)                                     |
-| `--no-healthd`     | Don't recreate healthd sidecar for healthchecks                         |
-| `--healthd-binary` | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image) |
-
 ## start
 
 Start stopped services.
