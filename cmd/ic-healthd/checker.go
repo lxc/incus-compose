@@ -109,6 +109,10 @@ func (c *Checker) check(ctx context.Context) bool {
 	}
 
 	// Build command based on test format
+	if len(c.config.Test) == 0 {
+		return true
+	}
+
 	var cmd []string
 	switch c.config.Test[0] {
 	case "CMD":
