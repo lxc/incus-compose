@@ -682,7 +682,53 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 	resources = client.FilterDuplicates(resources)
 	stack.Add(resources...)
 
-	return nil
+	return p.PruneInstances(c, options)
+}
+
+// PruneInstances removes scaled instances whose index exceeds the desired scale
+// for each service. It is called by ToStack after the target resource set is built.
+func (p *Project) PruneInstances(c *client.Client, options *ToStackOptions) error {
+	var errs error
+	for _, service := range p.Services {
+		if len(options.OnlyServices) > 0 && !slices.Contains(options.OnlyServices, service.Name) {
+			continue
+		}
+
+		scale := 1
+		if s, ok := options.Scale[service.Name]; ok {
+			scale = s
+		} else if service.Deploy != nil && service.Deploy.Replicas != nil {
+			scale = int(*service.Deploy.Replicas)
+		}
+
+		// Sentinel: if scale+1 doesn't exist there is nothing to prune.
+		exists, err := c.InstanceExists(fmt.Sprintf("%s-%d", service.Name, scale+1))
+		if err != nil || !exists {
+			continue
+		}
+
+		for i := scale + 1; ; i++ {
+			name := fmt.Sprintf("%s-%d", service.Name, i)
+			exists, err := c.InstanceExists(name)
+			if err != nil || !exists {
+				break
+			}
+
+			inst, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{})
+			if err != nil {
+				errs = errors.Join(errs, err)
+				continue
+			}
+			if err := client.RunAction(inst, client.ActionEnsure); err != nil {
+				continue
+			}
+			_ = client.RunAction(inst, client.ActionStop, client.OptionForce())
+			if err := client.RunAction(inst, client.ActionDelete, client.OptionForce()); err != nil {
+				errs = errors.Join(errs, err)
+			}
+		}
+	}
+	return errs
 }
 
 // buildProjectOptions creates cli.ProjectOptions from LoadOptions.

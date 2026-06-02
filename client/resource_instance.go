@@ -150,6 +150,12 @@ func (c *Client) Instance(name string, config InstanceConfig) (*Instance, error)
 	return inst, nil
 }
 
+// InstanceExists reports whether an instance with the given name exists in Incus.
+func (c *Client) InstanceExists(name string) (bool, error) {
+	_, _, err := c.incus.GetInstance(sanitizeInstanceName(name))
+	return err == nil, nil
+}
+
 // String is for debugging.
 func (r *Instance) String() string {
 	return fmt.Sprintf("%v(%v)", r.kind, r.incusName)
