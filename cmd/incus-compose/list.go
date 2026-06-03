@@ -12,6 +12,8 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.yaml.in/yaml/v4"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"gitlab.com/r3j0/incus-compose/client"
 	"gitlab.com/r3j0/incus-compose/project"
@@ -171,6 +173,8 @@ var listCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
+		titleCaser := cases.Title(language.English)
+
 		statuses := NewContainerStatuses(w)
 
 		for _, r := range stack.All() {
@@ -236,6 +240,11 @@ var listCommand = &cli.Command{
 							status.Addresses = append(status.Addresses, addr.Address)
 						}
 					}
+				}
+
+				// Use the healthcheck status if available.
+				if val, ok := instFull.Config["user.healthcheck.status"]; ok {
+					status.Status = titleCaser.String(val)
 				}
 			}
 

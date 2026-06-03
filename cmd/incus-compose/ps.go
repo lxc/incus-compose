@@ -10,6 +10,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/urfave/cli/v3"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"gitlab.com/r3j0/incus-compose/client"
 	"gitlab.com/r3j0/incus-compose/project"
@@ -73,10 +75,6 @@ var psCommand = &cli.Command{
 			globalClient.LogError("Getting the incus project", "error", err)
 			return errLogged.Wrap(err)
 		}
-		if err := c.Open(); err != nil {
-			globalClient.LogError("Opening the project client", "error", err)
-			return errLogged.Wrap(err)
-		}
 		defer func() { _ = c.Close() }()
 
 		// Build stack for the services we're interested in (only services).
@@ -112,6 +110,8 @@ var psCommand = &cli.Command{
 			}
 			entries = append(entries, e)
 		}
+
+		titleCaser := cases.Title(language.English)
 
 		seenServices := map[string]struct{}{}
 
@@ -166,6 +166,11 @@ var psCommand = &cli.Command{
 							entry.Addresses = append(entry.Addresses, a.Address)
 						}
 					}
+				}
+
+				// Use the healthcheck status if available.
+				if val, ok := full.Config["user.healthcheck.status"]; ok {
+					entry.Status = titleCaser.String(val)
 				}
 			}
 
