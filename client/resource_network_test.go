@@ -157,7 +157,9 @@ func (s *NetworkSuite) SetupTest() {
 
 // TearDownTest runs after each test - cleans up project.
 func (s *NetworkSuite) TearDownTest() {
-	_ = s.globalClient.DeleteProject(s.projectName, true)
+	if err := s.globalClient.DeleteProject(s.projectName, true); err != nil {
+		s.T().Fatalf("Failed to delete the project after run: %v", err)
+	}
 }
 
 // ----------------------------------------------------------------------------

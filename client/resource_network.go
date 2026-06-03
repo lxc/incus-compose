@@ -4,10 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"fmt"
+	"context"
 	"maps"
 	"net/netip"
 	"slices"
 	"strings"
+	"time"
 
 	incusApi "github.com/lxc/incus/v6/shared/api"
 )
@@ -172,12 +174,17 @@ func (r *Network) get() error {
 }
 
 func (r *Network) create() error {
+	// Use client's configured description format for consistency with other resources.
 	req := incusApi.NetworksPost{
 		Name: r.incusName,
 		Type: r.Config.Type,
+		NetworkPut: incusApi.NetworkPut{
+			Description: fmt.Sprintf(r.client.Config().DescriptionFormat, r.Name()),
+		},
 	}
 
 	if len(r.Config.Extensions) > 0 {
+		// Ensure Config map on embedded NetworkPut is set via the top-level Config field
 		req.Config = r.Config.Extensions
 	}
 
@@ -194,8 +201,35 @@ func (r *Network) create() error {
 	r.ETag = eTag
 	r.created = true
 
-	return r.applyDHCPRanges()
+	if err := r.applyDHCPRanges(); err != nil {
+		return err
+	}
+
+	// Wait for the network to become ready (Status == Created) using context-aware timeout.
+	// This mirrors the pattern used for instances to avoid races in tests that act
+	// on networks immediately after creation.
+	ctx, cancel := context.WithTimeout(r.client.globalClient.Ctx, 5*time.Second)
+	defer cancel()
+	interval := 100 * time.Millisecond
+	for {
+		nw, eTag, err := r.client.incus.GetNetwork(r.incusName)
+		if err == nil {
+			if nw.Status == incusApi.NetworkStatusCreated || nw.Status == "Created" {
+				r.IncusNetwork = nw
+				r.ETag = eTag
+				return nil
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for network %q readiness: %w", r.Name(), ctx.Err())
+		case <-time.After(interval):
+			// retry
+		}
+	}
 }
+
 
 // applyDHCPRanges calculates and sets DHCP ranges on the network after creation.
 // It is a no-op when the ranges are already configured (e.g., via x-incus extensions).
