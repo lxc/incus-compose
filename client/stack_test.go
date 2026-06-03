@@ -768,16 +768,13 @@ func (s *StackTestSuite) TestErrorAggregation() {
 func (s *StackTestSuite) TestScenarios() {
 	for _, scenario := range stackTests {
 		s.Run(scenario.name, func() {
-			// Create a fresh project for each scenario with unique name
-			projectName := "stack-test"
-
-			client, err := createProjectClient(s.globalClient, projectName)
+			client, err := createProjectClient(s.globalClient, scenario.name)
 
 			s.Require().NoError(err, "Failed to create test project")
 
 			// Clean up after test
 			defer func() {
-				_ = s.globalClient.DeleteProject(projectName, true)
+				_ = s.globalClient.DeleteProject(scenario.name, true)
 			}()
 
 			resources, err := scenario.resources(s, client)
