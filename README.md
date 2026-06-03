@@ -51,8 +51,18 @@ incus-compose uses a **resource-first design**, see [Architecture Documentation]
 
 ### Prerequisites
 
+Switch to https remotes (required for healthchecking).
+
 ```bash
-# Add OCI image remotes to Incus
+incus remote generate-certificate
+incus config trust add-certificate ~/.config/incus/client.crt
+incus remote add local-https 127.0.0.1
+incus remote switch local-https
+```
+
+Add OCI image remotes to Incus
+
+```bash
 incus remote add --protocol oci docker.io https://docker.io
 incus remote add --protocol oci ghcr.io https://ghcr.io
 incus remote add --protocol oci registry.gitlab.com https://registry.gitlab.com

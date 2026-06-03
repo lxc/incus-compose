@@ -57,6 +57,30 @@ When keys are missing, ic-healthd falls back to:
 | timeout  | 5s      |
 | retries  | 3       |
 
+## Dockerfile HEALTHCHECK Not Supported
+
+incus-compose does not read or inherit the `HEALTHCHECK` instruction embedded in Docker images.
+
+Incus imports OCI images via umoci, which converts the OCI image config into an OCI runtime spec.
+The Docker `HEALTHCHECK` extension is not part of the OCI image spec and is discarded during that
+conversion — by the time the image is cached in Incus, the healthcheck data no longer exists.
+
+Fetching it directly from the registry at `up` time would require registry access on every run
+and fails in air-gapped environments.
+
+**Workaround:** Always declare `healthcheck.test` explicitly in the compose file:
+
+```yaml
+services:
+  db:
+    image: docker.io/postgres:16-alpine
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+```
+
 ## Restart Without a Test
 
 `restart: always` or `restart: on-failure` without a `healthcheck` block is also
