@@ -83,6 +83,11 @@ func (s *E2ESuite) TestConfigCommand() {
 			wantErr: false,
 		},
 		{
+			name:    "with-incus-options",
+			args:    []string{"-f", "../../test/fixtures/with-project-options/compose.yaml", "config"},
+			wantErr: false,
+		},
+		{
 			name:    "nonexistent file",
 			args:    []string{"-f", "nonexistent.yaml", "config"},
 			wantErr: true,
@@ -308,6 +313,78 @@ func (s *E2ESuite) TestUpDownWithScale() {
 
 	defer func() {
 		_ = s.run("-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project")
+	}()
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
+func (s *E2ESuite) TestUpDownWithIncusOptions() {
+	s.skipIfLocal()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up with-incus-options",
+			args:    []string{"-f", "../../test/fixtures/with-incus-options/compose.yaml", "up", "--no-pull"},
+			wantErr: false,
+		},
+		{
+			name:    "list with-incus-options",
+			args:    []string{"-f", "../../test/fixtures/with-incus-options/compose.yaml", "list"},
+			wantErr: false,
+		},
+	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/with-incus-options/compose.yaml", "down", "--project")
+	}()
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
+func (s *E2ESuite) TestUpDownWithProjectOptions() {
+	s.skipIfLocal()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up with-project-options",
+			args:    []string{"-f", "../../test/fixtures/with-project-options/compose.yaml", "up", "--no-pull"},
+			wantErr: false,
+		},
+		{
+			name:    "list with-project-options",
+			args:    []string{"-f", "../../test/fixtures/with-project-options/compose.yaml", "list"},
+			wantErr: false,
+		},
+	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/with-project-options/compose.yaml", "down", "--project")
 	}()
 
 	for _, tt := range tests {

@@ -1,0 +1,40 @@
+services:
+  immich-server:
+    depends_on:
+      redis:
+        condition: service_healthy
+      database:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      test: ["CMD", "/usr/src/app/server/bin/immich-healthcheck"]
+    networks:
+      default:
+        ipv4_address: 10.131.32.17
+
+  immich-machine-learning:
+    healthcheck:
+      test: ["CMD", "python3", "/usr/src/healthcheck.py"]
+    networks:
+      default:
+        ipv4_address: 10.131.32.18
+
+  redis:
+    networks:
+      default:
+        ipv4_address: 10.131.32.19
+
+  database:
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      default:
+        ipv4_address: 10.131.32.20
+
+networks:
+  default:
+    x-incus:
+      ipv4.address: 10.131.32.1/24

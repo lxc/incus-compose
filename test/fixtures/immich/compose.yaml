@@ -17,18 +17,7 @@ services:
       - .env
     # ports:
     #   - "2283:2283"
-    depends_on:
-      redis:
-        condition: service_healthy
-      database:
-        condition: service_healthy
-        restart: true
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/usr/src/app/server/bin/immich-healthcheck"]
-    networks:
-      default:
-        ipv4_address: 10.131.32.17
 
   immich-machine-learning:
     container_name: immich_machine_learning
@@ -44,11 +33,6 @@ services:
     env_file:
       - .env
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python3", "/usr/src/healthcheck.py"]
-    networks:
-      default:
-        ipv4_address: 10.131.32.18
 
   redis:
     container_name: immich_redis
@@ -56,9 +40,6 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping", "||", "exit 1"]
-    networks:
-      default:
-        ipv4_address: 10.131.32.19
 
   database:
     container_name: immich_postgres
@@ -76,21 +57,8 @@ services:
       - ${DB_DATA_LOCATION}:/var/lib/postgresql/data
     shm_size: 128mb
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    networks:
-      default:
-        ipv4_address: 10.131.32.20
 
 volumes:
   library:
   immich-model-cache:
   postgres:
-
-networks:
-  default:
-    x-incus:
-      ipv4.address: 10.131.32.1/24

@@ -1,0 +1,23 @@
+name: grafana
+services:
+  grafana:
+    image: grafana/grafana
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 3000
+        published: "3000"
+        protocol: tcp
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: storage
+        target: /var/lib/grafana
+        volume: {}
+networks:
+  default:
+    name: grafana_default
+volumes:
+  storage:
+    name: grafana_storage

@@ -1,0 +1,15 @@
+name: nginx-scale
+services:
+  web:
+    deploy:
+      replicas: 2
+    image: docker.io/nginx:alpine
+    networks:
+      default: null
+  web2:
+    image: docker.io/nginx:alpine
+    networks:
+      default: null
+networks:
+  default:
+    name: nginx-scale_default

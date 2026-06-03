@@ -85,6 +85,8 @@ func LoadEnvFiles(files []string) LoadOption {
 // LoadProfiles sets the profiles to enable.
 func LoadProfiles(profiles []string) LoadOption {
 	return func(o *LoadOptions) {
+		// Always load the incus profile
+		profiles = append(profiles, "incus")
 		o.Profiles = profiles
 	}
 }
@@ -100,11 +102,17 @@ func LoadOsEnv() LoadOption {
 // NewLoadOptions creates LoadOptions with the given options applied.
 func NewLoadOptions(opts ...LoadOption) LoadOptions {
 	res := LoadOptions{
-		Files: []string{},
+		Files:    []string{},
+		Profiles: []string{},
 	}
 
 	for _, o := range opts {
 		o(&res)
+	}
+
+	// Always load the incus profile
+	if len(res.Profiles) == 0 {
+		res.Profiles = []string{"incus"}
 	}
 
 	return res

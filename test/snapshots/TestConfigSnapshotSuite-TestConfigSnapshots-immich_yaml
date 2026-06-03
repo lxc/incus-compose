@@ -1,0 +1,84 @@
+name: immich
+services:
+  database:
+    container_name: immich_postgres
+    environment:
+      POSTGRES_DB: immich
+      POSTGRES_INITDB_ARGS: --data-checksums
+      POSTGRES_PASSWORD: supersecretpassword
+      POSTGRES_USER: postgres
+    image: docker.io/pcdummy/immich-postgres:14-vectorchord0.4.3-pgvectors0.2.0
+    networks:
+      default: null
+    restart: unless-stopped
+    shm_size: "134217728"
+    volumes:
+      - type: volume
+        source: postgres
+        target: /var/lib/postgresql/data
+        volume: {}
+  immich-machine-learning:
+    container_name: immich_machine_learning
+    environment:
+      DB_DATA_LOCATION: postgres
+      DB_DATABASE_NAME: immich
+      DB_PASSWORD: supersecretpassword
+      DB_USERNAME: postgres
+      IMMICH_VERSION: v2
+      TZ: Europe/Paris
+      UPLOAD_LOCATION: library
+    env_file:
+      - path: $FIXTURE_PATH/.env
+    image: docker.io/pcdummy/immich-machine-learning:v2
+    networks:
+      default: null
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: immich-model-cache
+        target: /cache
+        volume: {}
+  immich-server:
+    container_name: immich_server
+    environment:
+      DB_DATA_LOCATION: postgres
+      DB_DATABASE_NAME: immich
+      DB_PASSWORD: supersecretpassword
+      DB_USERNAME: postgres
+      IMMICH_VERSION: v2
+      TZ: Europe/Paris
+      UPLOAD_LOCATION: library
+    env_file:
+      - path: $FIXTURE_PATH/.env
+    image: docker.io/pcdummy/immich-server:v2
+    networks:
+      default: null
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: library
+        target: /data
+        volume: {}
+  redis:
+    container_name: immich_redis
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+        - '||'
+        - exit 1
+    image: docker.io/valkey/valkey:9@sha256:3b55fbaa0cd93cf0d9d961f405e4dfcc70efe325e2d84da207a0a8e6d8fde4f9
+    networks:
+      default: null
+    restart: unless-stopped
+networks:
+  default:
+    name: immich_default
+volumes:
+  immich-model-cache:
+    name: immich_immich-model-cache
+  library:
+    name: immich_library
+  postgres:
+    name: immich_postgres

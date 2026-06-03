@@ -136,6 +136,19 @@ func (s *ConfigSnapshotSuite) TestConfigSnapshots() {
 			Format:  "json",
 		},
 		{
+			Name:    "grafana_yaml",
+			Fixture: "grafana",
+		},
+		{
+			Name:    "immich_yaml",
+			Fixture: "immich",
+		},
+		{
+			Name:    "immich_json",
+			Fixture: "immich",
+			Format:  "json",
+		},
+		{
 			Name:    "wordpress_yaml",
 			Fixture: "wordpress",
 		},
@@ -152,6 +165,10 @@ func (s *ConfigSnapshotSuite) TestConfigSnapshots() {
 		{
 			Name:    "nginx-proxy_yaml",
 			Fixture: "nginx-proxy",
+		},
+		{
+			Name:    "nginx-scale_yaml",
+			Fixture: "nginx-scale",
 		},
 		{
 			Name:    "dev-environment_yaml",
