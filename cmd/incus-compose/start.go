@@ -77,7 +77,7 @@ var startCommand = &cli.Command{
 			for _, sName := range services {
 				cSv, ok := p.Services[sName]
 				if ok && cSv.HealthCheck != nil {
-					healthd, err := c.Healthd("ic-healthd", client.HealthdConfig{})
+					healthd, err := c.Healthd("ic-healthd", client.HealthdConfig{}, false)
 					if err != nil {
 						c.LogError("Getting healthd resource", "error", err)
 						return errLogged.Wrap(err)

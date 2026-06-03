@@ -35,7 +35,7 @@ type HealthdConfig struct {
 	ImageResource *Image `json:"-"`
 
 	// Binary is the path to a local ic-healthd binary to push into the container.
-	// If set, this binary is pushed to /usr/bin/ic-healthd before start.
+	// If set, this binary is pushed to /usr/local/bin/ic-healthd before start.
 	Binary string `json:"-"`
 }
 
@@ -89,13 +89,20 @@ func newHealthd(c *Client, name string, configGetter Config) (*Healthd, error) {
 }
 
 // Healthd returns an existing Healthd resource or creates a new one.
-func (c *Client) Healthd(name string, config HealthdConfig) (*Healthd, error) {
+func (c *Client) Healthd(name string, config HealthdConfig, reCreate bool) (*Healthd, error) {
 	if existing := c.resources.Get(KindHealthd, name); existing != nil {
 		res, ok := existing.(*Healthd)
 		if !ok {
 			return nil, ErrUnknownConfig.WithKindName(KindHealthd, name)
 		}
-		return res, nil
+
+		if !reCreate {
+			return res, nil
+		}
+
+		if err := res.Delete(); err != nil {
+			return nil, err
+		}
 	}
 
 	h, err := newHealthd(c, name, &config)
@@ -376,7 +383,7 @@ func (r *Healthd) createInstance() error {
 		Config: map[string]string{
 			"user.internal":           "true",
 			"user.healthcheck.daemon": "true",
-			"oci.entrypoint":          "/usr/bin/ic-healthd run" + strings.Join(flags, " "),
+			"oci.entrypoint":          "/usr/local/bin/ic-healthd run" + strings.Join(flags, " "),
 		},
 	}
 
@@ -424,7 +431,7 @@ func (r *Healthd) createInstance() error {
 		// File will be closed after instance.Ensure() pushes files
 
 		instanceConfig.Files = map[string]InstanceFile{
-			"/usr/bin/ic-healthd": {
+			"/usr/local/bin/ic-healthd": {
 				Content: f,
 				Mode:    0o755,
 			},
@@ -452,7 +459,7 @@ func (r *Healthd) createInstance() error {
 
 	// Close binary file if opened
 	if r.config.Binary != "" {
-		if f, ok := instanceConfig.Files["/usr/bin/ic-healthd"].Content.(*os.File); ok {
+		if f, ok := instanceConfig.Files["/usr/local/bin/ic-healthd"].Content.(*os.File); ok {
 			f.Close()
 		}
 	}
@@ -532,11 +539,23 @@ func (r *Healthd) start() error {
 
 // execHealthd runs the healthd binary in the background (for native images).
 func (r *Healthd) execHealthd() error {
+	// Get Incus URL from network's gateway IP
+	if err := r.resolveIncusURL(); err != nil {
+		return fmt.Errorf("resolving incus URL: %w", err)
+	}
+
+	flags := []string{fmt.Sprintf(" --incus=%s --project=%s", r.config.IncusURL, r.client.IncusProject())}
+
+	// Passthrough debugging.
+	if r.client.globalClient.IsDebugging() {
+		flags = append(flags, " --debug")
+	}
+
 	// Wait for network to be ready, then run healthd in background.
 	// The network device might not be fully configured when the container starts.
 	cmd := []string{
 		"sh", "-c",
-		`nohup /usr/bin/ic-healthd run > /var/log/ic-healthd.log 2>&1 &`,
+		`nohup /usr/local/bin/ic-healthd run` + strings.Join(flags, " ") + `> /var/log/ic-healthd.log 2>&1 &`,
 	}
 
 	execReq := incusApi.InstanceExecPost{
