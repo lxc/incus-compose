@@ -1,0 +1,20 @@
+services:
+  web:
+    image: docker.io/nginx:alpine
+    ports:
+      - "2856:80"
+      - "2456:443"
+    networks:
+      - frontend
+    x-incus:
+      nat-proxy:
+        - port: 2856
+          listen:
+            - 127.0.0.1
+            - 192.168.1.1
+          connect: 80
+        - port: 2456
+          connect: 443
+
+networks:
+  frontend:

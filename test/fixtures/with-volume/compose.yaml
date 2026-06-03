@@ -1,6 +1,6 @@
 services:
   app:
-    image: simple-shifting
+    image: docker.io/library/nginx:alpine
     volumes:
       - type: volume
         source: appdata
