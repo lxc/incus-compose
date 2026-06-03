@@ -44,8 +44,8 @@ var upCommand = &cli.Command{
 			Usage: "Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)",
 		},
 		&cli.BoolFlag{
-			Name:  "pull",
-			Usage: "Refresh cached images from their source registry before creating",
+			Name:  "no-pull",
+			Usage: "Do not refresh cached images from their source registry before creating",
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -83,7 +83,7 @@ var upCommand = &cli.Command{
 			start:         !cmd.Bool("no-start"),
 			noHealthd:     cmd.Bool("no-healthd"),
 			healthdBinary: cmd.String("healthd-binary"),
-			pull:          cmd.Bool("pull"),
+			noPull:        cmd.Bool("pull"),
 			timeout:       int(cmd.Int("timeout")),
 			scale:         parseScale(cmd.StringSlice("scale")),
 		})
@@ -98,7 +98,7 @@ type upParams struct {
 	start         bool
 	noHealthd     bool
 	healthdBinary string
-	pull          bool
+	noPull        bool
 	timeout       int
 	scale         map[string]int
 }
@@ -123,6 +123,7 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 	timeout := params.timeout
 	start := params.start
 	noHealthd := params.noHealthd
+	noPull := params.noPull
 	healthdBinary := params.healthdBinary
 	scaleOverrides := params.scale
 
@@ -189,7 +190,6 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 	}
 
 	// Handle healthd image (same pattern as service images)
-	var healthd *client.Healthd
 	if healthdConfig != nil {
 		var imageName string
 		if healthdBinary != "" {
@@ -222,12 +222,15 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 		healthdConfig.ImageResource = healthdImage
 
 		healthdName := "ic-healthd"
-		healthd, err = c.Healthd(healthdName, *healthdConfig)
+		healthd, err := c.Healthd(healthdName, *healthdConfig, reCreate)
 		if err != nil {
 			c.LogError("Creating healthd resource", "error", err)
 			return errLogged.Wrap(err)
 		}
 		c.LogDebug("Prepared healthd sidecar image", "name", healthdName)
+
+		// Add healthd to the stack
+		stack.Add(healthd)
 	}
 
 	toStackOpts := []project.ToStackOption{project.ToStackOnlyServices(params.services)}
@@ -273,16 +276,11 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 		}
 	}
 
-	// Add healthd after recreate (like images, so it doesn't get deleted during recreate)
-	if healthd != nil {
-		stack.Add(healthd)
-	}
-
 	c.LogDebug("Ensure", "resources", stack.All())
 
 	// Ensure with create. --pull refreshes cached images first.
 	ensureOpts := []client.Option{client.OptionCreate()}
-	if params.pull {
+	if !noPull {
 		ensureOpts = append(ensureOpts, client.OptionPull())
 	}
 	if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure, ensureOpts...); err != nil {
