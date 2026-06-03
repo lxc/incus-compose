@@ -775,7 +775,7 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 		services := types.Services{}
 		for n, svc := range p.Services {
 			for _, on := range options.OnlyServices {
-				if n == on {
+				if strings.HasPrefix(on+"-", n+"-") {
 					services[n] = svc
 					for depName := range svc.DependsOn {
 						services[depName] = p.Services[depName]
@@ -833,7 +833,9 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 func (p *Project) PruneInstances(c *client.Client, options *ToStackOptions) error {
 	var errs error
 	for _, service := range p.Services {
-		if len(options.OnlyServices) > 0 && !slices.Contains(options.OnlyServices, service.Name) {
+		if len(options.OnlyServices) > 0 && !slices.ContainsFunc(options.OnlyServices, func(on string) bool {
+			return strings.HasPrefix(on+"-", service.Name+"-")
+		}) {
 			continue
 		}
 
