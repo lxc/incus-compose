@@ -136,7 +136,7 @@ daily)
     ;;
 *)
     echo "Error: Unknown repository '${INCUS_REPO}'" >&2
-    echo "Valid options: stable, lts" >&2
+    echo "Valid options: stable, lts-6.0, lts-7.0, daily" >&2
     exit 1
     ;;
 esac

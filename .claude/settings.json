@@ -17,7 +17,12 @@
       "Write(**)",
       "Edit(**)"
     ],
-    "deny": ["Bash(go:*)", "Bash(incus:*)", "Bash(incus-compose:*)"],
+    "deny": [
+      "Bash(go build:*)",
+      "Bash(go run:*)",
+      "Bash(incus:*)",
+      "Bash(incus-compose:*)"
+    ],
     "defaultMode": "acceptEdits"
   }
 }
