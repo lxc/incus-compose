@@ -205,6 +205,10 @@ var listCommand = &cli.Command{
 				Addresses:   []string{},
 			}
 
+			if r.Kind() == client.KindImage {
+				status.IncusName = ""
+			}
+
 			if r.Kind() == client.KindInstance {
 				if !r.IsEnsured() {
 					c.LogDebug("Getting an instance", "error", client.NewError("not ensured").WithResource(r))

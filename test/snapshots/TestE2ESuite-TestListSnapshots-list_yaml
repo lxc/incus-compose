@@ -1,7 +1,7 @@
 - kind: image
   name: docker.io/nginx:alpine
   description: ""
-  incus_name: docker.io/library/nginx:alpine
+  incus_name: ""
   image: ""
   status: Cached
   addresses: []
@@ -14,7 +14,7 @@
   addresses: []
 - kind: instance
   name: web-1
-  description: 'incus-compose: web-1'
+  description: 'incus-compose: simple-nginx:web-1'
   incus_name: web-1
   image: docker.io/library/nginx:alpine
   status: Running
