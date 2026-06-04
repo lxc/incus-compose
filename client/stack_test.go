@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/lxc/incus/v6/shared/cliconfig"
 	"github.com/stretchr/testify/assert"
@@ -768,38 +769,53 @@ func (s *StackTestSuite) TestErrorAggregation() {
 func (s *StackTestSuite) TestScenarios() {
 	for _, scenario := range stackTests {
 		s.Run(scenario.name, func() {
-			client, err := createProjectClient(s.globalClient, scenario.name)
-
+			projectName := fmt.Sprintf("%s-%d", scenario.name, time.Now().UnixNano())
+			client, err := createProjectClient(s.globalClient, projectName)
 			s.Require().NoError(err, "Failed to create test project")
 
-			// Clean up after test
-			defer func() {
-				_ = s.globalClient.DeleteProject(scenario.name, true)
-			}()
+			cleanup := func() {
+				if err := s.globalClient.DeleteProject(projectName, true); err != nil {
+					s.T().Errorf("Failed to delete test project %q: %v", projectName, err)
+				}
+			}
 
 			resources, err := scenario.resources(s, client)
-			s.Require().NoError(err)
+			if !s.NoError(err) {
+				cleanup()
+				return
+			}
 
 			allStack := NewStack(client)
 			allStack.Add(resources...)
 
 			for _, stackRun := range scenario.runs {
-				// Get a per action stack
 				stack := allStack.ForAction(stackRun.action)
-
 				err = stack.Run(stackRun.action, stackRun.options...)
-				if stackRun.wantError {
-					s.Require().Error(err)
-				} else {
-					s.Require().NoError(err)
 
-					if stackRun.wantEnsured {
-						for _, r := range stack.All() {
-							s.Require().True(r.IsEnsured(), "Should be ensured")
+				if stackRun.wantError {
+					if !s.Error(err) {
+						cleanup()
+						return
+					}
+					continue
+				}
+
+				if !s.NoError(err) {
+					cleanup()
+					return
+				}
+
+				if stackRun.wantEnsured {
+					for _, r := range stack.All() {
+						if !s.True(r.IsEnsured(), "Should be ensured") {
+							cleanup()
+							return
 						}
 					}
 				}
 			}
+
+			cleanup()
 		})
 	}
 }
