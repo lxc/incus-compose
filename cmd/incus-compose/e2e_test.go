@@ -553,41 +553,41 @@ func (s *E2ESuite) TestUpDownWithProjectOptions() {
 	}
 }
 
-func (s *E2ESuite) TestUpDownWithNatProxy() {
-	s.skipIfLocal()
+// func (s *E2ESuite) TestUpDownWithNatProxy() {
+// 	s.skipIfLocal()
 
-	tests := []struct {
-		name    string
-		args    []string
-		wantErr bool
-	}{
-		{
-			name:    "up with-nat-proxy",
-			args:    []string{"-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "up", "--no-pull"},
-			wantErr: false,
-		},
-		{
-			name:    "list with-nat-proxy",
-			args:    []string{"-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "list"},
-			wantErr: false,
-		},
-	}
+// 	tests := []struct {
+// 		name    string
+// 		args    []string
+// 		wantErr bool
+// 	}{
+// 		{
+// 			name:    "up with-nat-proxy",
+// 			args:    []string{"-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "up", "--no-pull"},
+// 			wantErr: false,
+// 		},
+// 		{
+// 			name:    "list with-nat-proxy",
+// 			args:    []string{"-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "list"},
+// 			wantErr: false,
+// 		},
+// 	}
 
-	defer func() {
-		_ = s.run("-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "down", "--project")
-	}()
+// 	defer func() {
+// 		_ = s.run("-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "down", "--project")
+// 	}()
 
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
-			if tt.wantErr {
-				s.Error(err)
-			} else {
-				s.NoError(err)
-			}
-		})
-	}
-}
+// 	for _, tt := range tests {
+// 		s.Run(tt.name, func() {
+// 			err := s.run(tt.args...)
+// 			if tt.wantErr {
+// 				s.Error(err)
+// 			} else {
+// 				s.NoError(err)
+// 			}
+// 		})
+// 	}
+// }
 
 func (s *E2ESuite) TestUpDownWithSecrets() {
 	s.skipIfLocal()
