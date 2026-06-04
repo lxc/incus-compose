@@ -160,10 +160,10 @@ func (c *Client) registerHealthdWatcher(h *Healthd) error {
 		if e := h.reload(); e == nil {
 			c.LogDebug("HealthdWatcher reloaded healthd", "healthd", h.IncusName())
 			return err
-		} else {
-			c.LogWarn("Reloading healthd failed, restarting", "healthd", h.IncusName(), "error", e)
-			return errors.Join(err, e, h.restart())
 		}
+
+		c.LogWarn("Reloading healthd failed, restarting", "healthd", h.IncusName(), "error", e)
+		return errors.Join(err, e, h.restart())
 	})
 
 	return nil
