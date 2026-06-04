@@ -206,6 +206,8 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 		return nil, err
 	}
 
+	AddDebuggerHook(c)
+
 	return c, nil
 }
 

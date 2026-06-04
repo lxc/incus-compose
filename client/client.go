@@ -329,6 +329,18 @@ func (c *Client) InstanceIPs(incusName string) (network string, ipv4 []string, i
 	return network, ipv4, ipv6, nil
 }
 
+func AddDebuggerHook(c *GlobalClient) {
+	c.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+		if err != nil {
+			c.LogDebug("Result with error", "name", r.Name(), "kind", r.Kind(), "action", action, "error", err)
+			return err
+		}
+
+		c.LogDebug("Done", "name", r.Name(), "kind", r.Kind(), "action", action)
+		return nil
+	})
+}
+
 // sanitizeProjectName converts a string to a valid Incus project name.
 // Replaces underscores with hyphens and removes special characters via slug.
 func sanitizeProjectName(name string) string {

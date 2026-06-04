@@ -86,18 +86,6 @@ func clientFromContext(ctx context.Context) (*client.GlobalClient, error) {
 	return c, nil
 }
 
-func addClientDebuggerHook(c *client.GlobalClient) {
-	c.AddHookAfter(func(action client.Action, r client.Resource, args client.Options, err error) error {
-		if err != nil {
-			c.LogDebug("Result with error", "name", r.Name(), "kind", r.Kind(), "action", action, "error", err)
-			return err
-		}
-
-		c.LogDebug("Done", "name", r.Name(), "kind", r.Kind(), "action", action)
-		return nil
-	})
-}
-
 func newRootCommand() *cli.Command {
 	return &cli.Command{
 		Usage: "Compose for incus",
@@ -227,7 +215,7 @@ func newRootCommand() *cli.Command {
 				}
 
 				if cmd.Bool("debug") {
-					addClientDebuggerHook(c)
+					client.AddDebuggerHook(c)
 				}
 
 				return context.WithValue(ctx, clientKey{}, c), nil
@@ -264,7 +252,7 @@ func newRootCommand() *cli.Command {
 			}
 
 			if cmd.Bool("debug") {
-				addClientDebuggerHook(c)
+				client.AddDebuggerHook(c)
 			}
 
 			return context.WithValue(ctx, clientKey{}, c), nil
