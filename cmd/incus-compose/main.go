@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 
 	"github.com/lmittmann/tint"
 	"github.com/lxc/incus/v6/shared/cliconfig"
@@ -18,6 +19,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"gitlab.com/r3j0/incus-compose/client"
+	"gitlab.com/r3j0/incus-compose/cmd/incus-compose/version"
 	"gitlab.com/r3j0/incus-compose/project"
 )
 
@@ -112,6 +114,10 @@ func initLogger(debug bool) {
 
 type clientKey struct{}
 
+func resolveHealthdImage(image string) string {
+	return strings.ReplaceAll(image, "{version}", version.Version)
+}
+
 func clientFromContext(ctx context.Context) (*client.GlobalClient, error) {
 	ca := ctx.Value(clientKey{})
 	c, ok := ca.(*client.GlobalClient)
@@ -180,6 +186,12 @@ func newRootCommand() *cli.Command {
 				Usage: `Default storage pool to use, 'detect' will auto detect the name`,
 				Value: "detect",
 			},
+			&cli.StringFlag{
+				Name:    "healthd-image",
+				Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
+				Value:   client.DefaultHealthdImage,
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
+			},
 			&cli.StringSliceFlag{
 				Name:    "file",
 				Aliases: []string{"f"},
@@ -206,12 +218,13 @@ func newRootCommand() *cli.Command {
 			configCommand,
 			execCommand,
 			logsCommand,
+			versionCommand,
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			initLogger(cmd.Bool("debug"))
 
 			// Commands that don't need an Incus client connection
-			noClientCommands := []string{"config"}
+			noClientCommands := []string{"config", "version"}
 
 			if slices.Contains(noClientCommands, cmd.Name) {
 				return ctx, nil

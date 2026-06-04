@@ -5,6 +5,8 @@ version: 2
 builds:
   - id: "incus-compose"
     main: ./cmd/incus-compose
+    ldflags:
+      - -s -w -X gitlab.com/r3j0/incus-compose/cmd/incus-compose/version.Version={{ .Version }}
 
 # archives:
 #   - formats: [tar.gz]

@@ -18,7 +18,7 @@ const KindHealthd Kind = "healthd"
 const PriorityHealthd = PriorityInstance + 1
 
 // DefaultHealthdImage is the default container image for healthd.
-const DefaultHealthdImage = "registry.gitlab.com:r3j0/incus-compose/ic-healthd:latest"
+const DefaultHealthdImage = "registry.gitlab.com/r3j0/incus-compose/ic-healthd:{version}"
 
 // HealthdConfig configures the healthd sidecar instance.
 type HealthdConfig struct {

@@ -82,6 +82,7 @@ var upCommand = &cli.Command{
 			start:         !cmd.Bool("no-start"),
 			noHealthd:     cmd.Bool("no-healthd"),
 			healthdBinary: cmd.String("healthd-binary"),
+			healthdImage:  resolveHealthdImage(cmd.String("healthd-image")),
 			noPull:        cmd.Bool("no-pull"),
 			timeout:       int(cmd.Int("timeout")),
 			scale:         parseScale(cmd.StringSlice("scale")),
@@ -97,6 +98,7 @@ type upParams struct {
 	start         bool
 	noHealthd     bool
 	healthdBinary string
+	healthdImage  string
 	noPull        bool
 	timeout       int
 	scale         map[string]int
@@ -124,6 +126,10 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 	noHealthd := params.noHealthd
 	noPull := params.noPull
 	healthdBinary := params.healthdBinary
+	healthdImage := params.healthdImage
+	if healthdImage == "" {
+		healthdImage = client.DefaultHealthdImage
+	}
 	scaleOverrides := params.scale
 
 	services := params.services
@@ -196,8 +202,10 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 			imageName = "images:alpine/edge"
 		} else {
 			// Use OCI image
-			imageName = client.DefaultHealthdImage
+			imageName = healthdImage
 		}
+
+		c.LogDebug("Using healthd image", "image", imageName)
 
 		// Setup the request
 		r, err := c.Resource(client.KindImage, imageName, imageConfig)
@@ -218,6 +226,7 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 		stack.Add(healthdImage)
 
 		// Set image on config
+		healthdConfig.Image = imageName
 		healthdConfig.ImageResource = healthdImage
 
 		healthdName := "ic-healthd"
