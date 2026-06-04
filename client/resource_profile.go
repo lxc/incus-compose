@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"maps"
 
 	incusClient "github.com/lxc/incus/v6/client"
 	incusApi "github.com/lxc/incus/v6/shared/api"
@@ -18,6 +19,9 @@ type ProfileConfig struct {
 
 	// SourceProfile is the name of the profile to copy from.
 	SourceProfile string
+
+	// NetworkOnly copies only NIC devices from the source profile.
+	NetworkOnly bool
 }
 
 // Profile represents an Incus profile resource.
@@ -101,6 +105,9 @@ func (r *Profile) Ensure(opts ...Option) error {
 	// Try to get existing
 	err := r.get()
 	if err == nil {
+		if r.Config.SourceProfile != "" {
+			err = r.updateFromSource()
+		}
 		if r.client.hookAfter != nil {
 			err = r.client.hookAfter(ActionEnsure, r, options, err)
 		}
@@ -140,23 +147,16 @@ func (r *Profile) get() error {
 func (r *Profile) create() error {
 	var postArgs incusApi.ProfilesPost
 	if r.Config.SourceProfile != "" {
-		sourceServer := r.Config.SourceServer
-		if sourceServer == nil {
-			sourceServer = r.client.GlobalConnection()
-		}
-
-		sourceProfile, _, err := sourceServer.GetProfile(r.Config.SourceProfile)
+		sourceProfile, err := r.sourceProfile()
 		if err != nil {
-			return fmt.Errorf("getting source profile %s: %w", r.Config.SourceProfile, err)
+			return err
 		}
 
+		profilePut := r.profilePutFromSource(sourceProfile)
+		profilePut.Description = fmt.Sprintf(r.client.Config().DescriptionFormat, r.Name())
 		postArgs = incusApi.ProfilesPost{
-			Name: r.incusName,
-			ProfilePut: incusApi.ProfilePut{
-				Config:      sourceProfile.Config,
-				Devices:     sourceProfile.Devices,
-				Description: fmt.Sprintf(r.client.Config().DescriptionFormat, r.Name()),
-			},
+			Name:       r.incusName,
+			ProfilePut: profilePut,
 		}
 	} else {
 		postArgs = incusApi.ProfilesPost{
@@ -180,6 +180,71 @@ func (r *Profile) create() error {
 	r.ETag = eTag
 	r.created = true
 	return nil
+}
+
+func (r *Profile) sourceProfile() (*incusApi.Profile, error) {
+	sourceServer := r.Config.SourceServer
+	if sourceServer == nil {
+		sourceServer = r.client.GlobalConnection()
+	}
+
+	if r.Config.SourceProject != "" {
+		projectServer, ok := sourceServer.UseProject(r.Config.SourceProject).(*incusClient.ProtocolIncus)
+		if !ok {
+			return nil, fmt.Errorf("using source project %s: cannot cast project-scoped client to ProtocolIncus", r.Config.SourceProject)
+		}
+		sourceServer = projectServer
+	}
+
+	sourceProfile, _, err := sourceServer.GetProfile(r.Config.SourceProfile)
+	if err != nil {
+		return nil, fmt.Errorf("getting source profile %s:%s: %w", r.Config.SourceProject, r.Config.SourceProfile, err)
+	}
+
+	return sourceProfile, nil
+}
+
+func (r *Profile) profilePutFromSource(sourceProfile *incusApi.Profile) incusApi.ProfilePut {
+	if !r.Config.NetworkOnly {
+		return incusApi.ProfilePut{
+			Config:      sourceProfile.Config,
+			Devices:     sourceProfile.Devices,
+			Description: fmt.Sprintf(r.client.Config().DescriptionFormat, r.Name()),
+		}
+	}
+
+	devices := map[string]map[string]string{}
+	for name, device := range sourceProfile.Devices {
+		if device["type"] == "nic" {
+			devices[name] = maps.Clone(device)
+		}
+	}
+
+	return incusApi.ProfilePut{Devices: devices}
+}
+
+func (r *Profile) updateFromSource() error {
+	sourceProfile, err := r.sourceProfile()
+	if err != nil {
+		return err
+	}
+
+	profilePut := r.profilePutFromSource(sourceProfile)
+	if r.Config.NetworkOnly {
+		profilePut.Config = maps.Clone(r.IncusProfile.Config)
+		profilePut.Description = r.IncusProfile.Description
+		for name, device := range r.IncusProfile.Devices {
+			if device["type"] != "nic" {
+				profilePut.Devices[name] = maps.Clone(device)
+			}
+		}
+	}
+
+	if err := r.client.incus.UpdateProfile(r.incusName, profilePut, r.ETag); err != nil {
+		return fmt.Errorf("updating profile %s from source %s:%s: %w", r.Name(), r.Config.SourceProject, r.Config.SourceProfile, err)
+	}
+
+	return r.get()
 }
 
 // HasDevice returns true if the profile has a device with the given name.

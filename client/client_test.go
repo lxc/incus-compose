@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -20,6 +21,21 @@ var errTestLocal = NewError("env INCUS_COMPOSE_TEST_LOCAL is set")
 // ----------------------------------------------------------------------------
 // Unit Tests
 // ----------------------------------------------------------------------------
+
+func TestClientDescriptionFormat(t *testing.T) {
+	client := NewOfflineClient(context.Background(), "my_project")
+
+	assert.Equal(t, "incus-compose: %s", client.globalClient.Config.DescriptionFormat)
+	assert.Equal(t, "incus-compose: my_project:%s", client.Config().DescriptionFormat)
+	assert.Equal(t, "incus-compose: my_project:web", fmt.Sprintf(client.Config().DescriptionFormat, "web"))
+}
+
+func TestClientCustomDescriptionFormat(t *testing.T) {
+	gc := New(context.Background(), ClientDescriptionFormat("managed-by-test: %s"))
+	config := gc.projectConfig("demo")
+
+	assert.Equal(t, "managed-by-test: demo:web", fmt.Sprintf(config.DescriptionFormat, "web"))
+}
 
 func TestSanitizeProjectName(t *testing.T) {
 	tests := []struct {

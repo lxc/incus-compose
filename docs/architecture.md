@@ -178,17 +178,20 @@ All key-value pairs are passed verbatim to Incus. See the [Incus instance option
 
 ### x-incus-compose (Compose-Specific Features)
 
-Reserved for compose-specific transformations and conveniences handled by incus-compose:
+Compose-specific transformations and conveniences handled by incus-compose:
 
 ```yaml
+x-incus-compose:
+  network-profile: default:default
+
 services:
   app:
     image: docker.io/myapp:latest
-    x-incus-compose:
-      # compose-specific features will be added here
 ```
 
-Currently placeholder for future compose-specific features (e.g., resource aliases, convenience wrappers).
+`network-profile` copies NIC devices from an existing Incus profile into the project-local `default` profile. The value uses `{project}:{profile}` syntax. When this option is set, incus-compose does not create compose-managed network resources for service network attachments; instances use networking from the copied profile instead.
+
+Service-level static IP assignments are rejected with `network-profile` because incus-compose does not create an explicit NIC device in that mode.
 
 ## Quick Reference
 

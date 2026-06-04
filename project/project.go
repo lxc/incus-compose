@@ -141,6 +141,10 @@ func LoadModel(ctx context.Context, opts ...LoadOption) (map[string]any, error) 
 // Volumes default to bind mounts for paths starting with / or ., otherwise named volumes.
 // The index parameter is used for instance naming ({service}-{index}).
 func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, full bool, index int) ([]client.Resource, error) {
+	return serviceToInstance(c, p, serviceName, full, index, nil)
+}
+
+func serviceToInstance(c *client.Client, p *types.Project, serviceName string, full bool, index int, networkProfile client.Resource) ([]client.Resource, error) {
 	service, ok := p.Services[serviceName]
 	if !ok {
 		return nil, fmt.Errorf("service %q not found", serviceName)
@@ -187,37 +191,46 @@ func ServiceToInstance(c *client.Client, p *types.Project, serviceName string, f
 	}
 
 	// Networks
-	ethIdx := 0
-	for name := range maps.Keys(service.Networks) {
-		netConfig := &client.NetworkConfig{}
-		if networkDef, ok := p.Networks[name]; ok {
-			netConfig.External = bool(networkDef.External)
-			netConfig.Extensions = networkExtensions(networkDef)
+	if networkProfile != nil {
+		resources = append(resources, networkProfile)
+		for name := range maps.Keys(service.Networks) {
+			if svcNet := service.Networks[name]; svcNet != nil && (svcNet.Ipv4Address != "" || svcNet.Ipv6Address != "") {
+				errs = errors.Join(errs, fmt.Errorf("service %q network %q uses static addresses, which are not supported with x-incus-compose.network-profile", service.Name, name))
+			}
 		}
+	} else {
+		ethIdx := 0
+		for name := range maps.Keys(service.Networks) {
+			netConfig := &client.NetworkConfig{}
+			if networkDef, ok := p.Networks[name]; ok {
+				netConfig.External = bool(networkDef.External)
+				netConfig.Extensions = networkExtensions(networkDef)
+			}
 
-		network, err := c.Resource(client.KindNetwork, name, netConfig)
-		if err != nil {
-			errs = errors.Join(errs, err)
-			continue
+			network, err := c.Resource(client.KindNetwork, name, netConfig)
+			if err != nil {
+				errs = errors.Join(errs, err)
+				continue
+			}
+
+			nicConfig := client.InstanceDeviceConfig{
+				DeviceType: client.InstanceDeviceTypeNic,
+				Network:    network,
+			}
+
+			if svcNet := service.Networks[name]; svcNet != nil {
+				nicConfig.Ipv4Address = svcNet.Ipv4Address
+				nicConfig.Ipv6Address = svcNet.Ipv6Address
+			}
+
+			devices = append(devices, client.InstanceDevice{
+				Name:   fmt.Sprintf("eth%d", ethIdx),
+				Config: nicConfig,
+			})
+			ethIdx++
+
+			resources = append(resources, network)
 		}
-
-		nicConfig := client.InstanceDeviceConfig{
-			DeviceType: client.InstanceDeviceTypeNic,
-			Network:    network,
-		}
-
-		if svcNet := service.Networks[name]; svcNet != nil {
-			nicConfig.Ipv4Address = svcNet.Ipv4Address
-			nicConfig.Ipv6Address = svcNet.Ipv6Address
-		}
-
-		devices = append(devices, client.InstanceDevice{
-			Name:   fmt.Sprintf("eth%d", ethIdx),
-			Config: nicConfig,
-		})
-		ethIdx++
-
-		resources = append(resources, network)
 	}
 
 	// natProxyEntries maps listen-port → {listen IPs, connect port}.
@@ -652,6 +665,20 @@ func networkExtensions(networkDef types.NetworkConfig) map[string]string {
 	return result
 }
 
+func projectXIncusComposeExtensions(p *Project) map[string]any {
+	if p == nil || p.Project == nil || p.Extensions == nil {
+		return nil
+	}
+
+	var raw map[string]any
+	ok, err := p.Extensions.Get("x-incus-compose", &raw)
+	if !ok || err != nil || len(raw) == 0 {
+		return nil
+	}
+
+	return raw
+}
+
 // serviceXIncusExtensions extracts the x-incus extension map from a compose service
 // definition and returns it as a flat map[string]string for use as Incus instance
 // config. Keys and values are taken verbatim from the x-incus YAML block.
@@ -807,6 +834,37 @@ func ToStackScale(scale map[string]int) ToStackOption {
 	}
 }
 
+// NetworkProfileConfig reads the top-level x-incus-compose.network-profile extension.
+func (p *Project) NetworkProfileConfig() (*client.ProfileConfig, error) {
+	extensions := projectXIncusComposeExtensions(p)
+	if extensions == nil {
+		return nil, nil
+	}
+
+	raw, ok := extensions["network-profile"]
+	if !ok {
+		return nil, nil
+	}
+
+	value, ok := raw.(string)
+	if !ok {
+		return nil, fmt.Errorf("x-incus-compose.network-profile must be a string in {project}:{profile} format")
+	}
+
+	parts := strings.SplitN(value, ":", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("x-incus-compose.network-profile %q must be in {project}:{profile} format", value)
+	}
+	if parts[0] == "" {
+		return nil, fmt.Errorf("x-incus-compose.network-profile %q has empty project", value)
+	}
+	if parts[1] == "" {
+		return nil, fmt.Errorf("x-incus-compose.network-profile %q has empty profile", value)
+	}
+
+	return &client.ProfileConfig{SourceProject: parts[0], SourceProfile: parts[1], NetworkOnly: true}, nil
+}
+
 // ProjectConfig reads `x-incus` extensions from the project and returns that.
 func (p *Project) ProjectConfig() map[string]string {
 	if p == nil || p.Project == nil || p.Extensions == nil {
@@ -841,6 +899,20 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 	}
 
 	var errs error
+
+	profileConfig, err := p.NetworkProfileConfig()
+	if err != nil {
+		return err
+	}
+
+	var networkProfile client.Resource
+	if profileConfig != nil {
+		networkProfile, err = c.Resource(client.KindProfile, "default", profileConfig)
+		if err != nil {
+			return err
+		}
+		resources = append(resources, networkProfile)
+	}
 
 	if len(options.OnlyServices) >= 1 {
 		services := types.Services{}
@@ -879,7 +951,7 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 		}
 
 		for i := 1; i <= scale; i++ {
-			instanceResources, err := ServiceToInstance(c, p.Project, serviceName, options.Full, i)
+			instanceResources, err := serviceToInstance(c, p.Project, serviceName, options.Full, i, networkProfile)
 			if err != nil {
 				errs = errors.Join(errs, err)
 				continue
@@ -895,6 +967,10 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 
 	resources = client.FilterDuplicates(resources)
 	stack.Add(resources...)
+
+	if !c.IsConnected() {
+		return nil
+	}
 
 	return p.PruneInstances(c, options)
 }

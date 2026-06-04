@@ -201,7 +201,8 @@ func (r *StorageVolume) create() error {
 		Type:        "custom",
 		ContentType: "filesystem",
 		StorageVolumePut: incusApi.StorageVolumePut{
-			Config: config,
+			Description: fmt.Sprintf(r.client.Config().DescriptionFormat, r.Name()),
+			Config:      config,
 		},
 	}
 

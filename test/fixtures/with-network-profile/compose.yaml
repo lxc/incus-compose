@@ -1,0 +1,6 @@
+x-incus-compose:
+  network-profile: default:default
+
+services:
+  web:
+    image: docker.io/nginx:alpine

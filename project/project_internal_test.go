@@ -3,10 +3,13 @@ package project
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/stretchr/testify/suite"
+
+	"gitlab.com/r3j0/incus-compose/client"
 )
 
 type ProjectInternalSuite struct {
@@ -183,6 +186,121 @@ func (s *ProjectInternalSuite) TestProjectConfigReturnsNilWithoutExtensions() {
 	proj, err := New().Load(s.ctx, LoadWorkingDir(s.fixturePath("simple-nginx")))
 	s.Require().NoError(err)
 	s.Nil(proj.ProjectConfig())
+}
+
+func (s *ProjectInternalSuite) TestNetworkProfileConfigExtractsXIncusCompose() {
+	proj, err := New().Load(s.ctx, LoadWorkingDir(s.fixturePath("with-network-profile")))
+	s.Require().NoError(err)
+
+	config, err := proj.NetworkProfileConfig()
+	s.Require().NoError(err)
+	s.Equal("default", config.SourceProject)
+	s.Equal("default", config.SourceProfile)
+	s.True(config.NetworkOnly)
+}
+
+func (s *ProjectInternalSuite) TestNetworkProfileConfigReturnsNilWithoutExtension() {
+	s.Nil((*Project)(nil).ProjectConfig())
+	s.Nil((&Project{}).ProjectConfig())
+
+	proj, err := New().Load(s.ctx, LoadWorkingDir(s.fixturePath("simple-nginx")))
+	s.Require().NoError(err)
+
+	config, err := proj.NetworkProfileConfig()
+	s.NoError(err)
+	s.Nil(config)
+}
+
+func (s *ProjectInternalSuite) TestNetworkProfileConfigRejectsInvalidValues() {
+	tests := []struct {
+		name    string
+		value   any
+		wantErr string
+	}{
+		{name: "missing separator", value: "default", wantErr: "format"},
+		{name: "empty project", value: ":default", wantErr: "empty project"},
+		{name: "empty profile", value: "default:", wantErr: "empty profile"},
+		{name: "not string", value: 1, wantErr: "must be a string"},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			proj := &Project{Project: &types.Project{Extensions: types.Extensions{
+				"x-incus-compose": map[string]any{"network-profile": tt.value},
+			}}}
+
+			_, err := proj.NetworkProfileConfig()
+			s.Error(err)
+			s.Contains(err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func (s *ProjectInternalSuite) TestToStackUsesNetworkProfileWithoutNetworkResources() {
+	proj, err := New().Load(s.ctx, LoadWorkingDir(s.fixturePath("with-network-profile")))
+	s.Require().NoError(err)
+
+	c := client.NewOfflineClient(s.ctx, proj.Name)
+	stack := client.NewStack(c)
+	s.Require().NoError(proj.ToStack(c, stack))
+
+	var hasNetwork bool
+	var profile *client.Profile
+	var instance *client.Instance
+	for _, resource := range stack.All() {
+		s.False(resource.Kind() == client.KindNetwork, "network resource %s should be omitted", resource.Name())
+		if resource.Kind() == client.KindNetwork {
+			hasNetwork = true
+		}
+		if resource.Kind() == client.KindProfile {
+			var ok bool
+			profile, ok = resource.(*client.Profile)
+			s.True(ok)
+		}
+		if resource.Kind() == client.KindInstance {
+			var ok bool
+			instance, ok = resource.(*client.Instance)
+			s.True(ok)
+		}
+	}
+
+	s.False(hasNetwork)
+	s.Require().NotNil(profile)
+	s.Equal("default", profile.Name())
+	s.Equal("default", profile.Config.SourceProject)
+	s.Equal("default", profile.Config.SourceProfile)
+	s.True(profile.Config.NetworkOnly)
+	s.Require().NotNil(instance)
+	s.Empty(instance.Config.Devices)
+	s.Contains(instance.Config.Resources, profile)
+}
+
+func (s *ProjectInternalSuite) TestToStackKeepsNetworkResourcesWithoutNetworkProfile() {
+	proj, err := New().Load(s.ctx, LoadWorkingDir(s.fixturePath("simple-nginx")))
+	s.Require().NoError(err)
+
+	c := client.NewOfflineClient(s.ctx, proj.Name)
+	stack := client.NewStack(c)
+	s.Require().NoError(proj.ToStack(c, stack))
+
+	var hasNetwork bool
+	for _, resource := range stack.All() {
+		if resource.Kind() == client.KindNetwork {
+			hasNetwork = true
+		}
+	}
+	s.True(hasNetwork)
+}
+
+func (s *ProjectInternalSuite) TestToStackRejectsStaticIPsWithNetworkProfile() {
+	proj, err := New().Load(s.ctx, LoadWorkingDir(s.fixturePath("with-network-profile")))
+	s.Require().NoError(err)
+	proj.Services["web"].Networks["default"] = &types.ServiceNetworkConfig{Ipv4Address: "10.0.0.10"}
+
+	c := client.NewOfflineClient(s.ctx, proj.Name)
+	err = proj.ToStack(c, client.NewStack(c))
+	s.Error(err)
+	s.True(strings.Contains(err.Error(), "static addresses"))
 }
 
 func (s *ProjectInternalSuite) TestNetworkExtensionsExtractsXIncus() {

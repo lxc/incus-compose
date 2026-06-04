@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -14,6 +15,7 @@ import (
 // Client wraps a project-scoped Incus client with resource management.
 type Client struct {
 	globalClient *GlobalClient
+	config       ClientConfig
 
 	project      string
 	incusProject string
@@ -43,6 +45,8 @@ type Client struct {
 }
 
 func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*Client, error) {
+	config := c.projectConfig(name)
+
 	incus := c.incus.UseProject(incusName)
 	pIncus, ok := incus.(*incusClient.ProtocolIncus)
 	if !ok {
@@ -51,6 +55,7 @@ func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*
 
 	cp := &Client{
 		globalClient: c,
+		config:       config,
 		project:      name,
 		incusProject: incusName,
 		created:      created,
@@ -146,7 +151,33 @@ func (c *Client) GlobalConnection() *incusClient.ProtocolIncus {
 
 // Config returns the client config.
 func (c *Client) Config() ClientConfig {
-	return c.globalClient.Config
+	return c.config
+}
+
+func (c *GlobalClient) projectConfig(name string) ClientConfig {
+	config := c.Config
+	config.DescriptionFormat = fmt.Sprintf(config.DescriptionFormat, name) + ":%s"
+	return config
+}
+
+// IsConnected reports whether the project client can run Incus operations.
+func (c *Client) IsConnected() bool {
+	return c != nil && c.incus != nil
+}
+
+// NewOfflineClient creates a disconnected project client for resource planning.
+// It can create in-memory resources, but cannot run Incus operations.
+func NewOfflineClient(ctx context.Context, name string) *Client {
+	gc := New(ctx)
+	config := gc.projectConfig(name)
+
+	return &Client{
+		globalClient: gc,
+		config:       config,
+		project:      name,
+		incusProject: sanitizeProjectName(name),
+		logger:       gc.logger.With("project", name),
+	}
 }
 
 // Resource returns an existing resource or creates a new one.
@@ -259,8 +290,12 @@ func (c *Client) InstanceIPs(incusName string) (network string, ipv4 []string, i
 		return "", nil, nil, err
 	}
 
+	if state.Status != "Running" {
+		return "", nil, nil, errors.New("instance not running")
+	}
+
 	for sDevice, sNetwork := range state.Network {
-		if sNetwork.Type == "loopback" {
+		if sNetwork.Type == "loopback" || sNetwork.Addresses == nil {
 			continue
 		}
 
@@ -270,11 +305,16 @@ func (c *Client) InstanceIPs(incusName string) (network string, ipv4 []string, i
 		}
 
 		inst, ok := res.(*Instance)
-		if !ok {
-			return "", nil, nil, ErrUnknownResource.WithText(string(KindInstance))
+		if !ok || !inst.IsEnsured() {
+			continue
 		}
 
-		network = inst.IncusInstance.Devices[sDevice]["network"]
+		devices, ok := inst.IncusInstance.Devices[sDevice]
+		if !ok {
+			return "", []string{}, []string{}, nil
+		}
+
+		network = devices["network"]
 
 		for _, addr := range sNetwork.Addresses {
 			if addr.Scope == "global" && addr.Family == "inet" {

@@ -18,6 +18,7 @@ incus-compose implements a subset of the Compose Specification. This doc lists w
 - `deploy.replicas` - Service scaling (instances named `{service}-{index}`)
 - `restart` - Restart policies (`no`, `always`, `on-failure`, `unless-stopped`)
 - `x-incus` extension — pass any Incus project, network and instance option directly (see below)
+- Top-level `x-incus-compose.network-profile` — reuse NIC devices from an existing Incus profile
 
 #### x-incus Instance Extensions
 
@@ -53,6 +54,23 @@ services:
 ```
 
 Any [Project option](https://linuxcontainers.org/incus/docs/main/reference/projects/) is accepted.
+
+#### x-incus-compose Network Profile
+
+Set top-level `x-incus-compose.network-profile` to copy NIC devices from an existing Incus profile into the project-local `default` profile:
+
+```yaml
+x-incus-compose:
+  network-profile: default:default
+
+services:
+  web:
+    image: docker.io/nginx:alpine
+```
+
+The value must use `{project}:{profile}` syntax. For example, `default:default` reads the `default` profile from the Incus `default` project.
+
+When this option is set, incus-compose does not create compose-managed Incus network resources for service network attachments. Instances use the network devices provided by the copied profile instead. Service-level static IP assignments (`ipv4_address` / `ipv6_address`) are not supported in this mode because incus-compose does not create explicit NIC devices.
 
 ### Networks
 
