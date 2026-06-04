@@ -145,6 +145,13 @@ var listCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
+		if ok, err := c.InstanceExists("ic-healthd"); ok && err == nil {
+			inst, err := c.Resource(client.KindInstance, "ic-healthd", &client.InstanceConfig{})
+			if err == nil {
+				stack.Add(inst)
+			}
+		}
+
 		err = stack.Run(client.ActionEnsure)
 		if err != nil {
 			c.LogError(err.Error())
