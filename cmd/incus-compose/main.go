@@ -33,31 +33,45 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 	}
 
 	files := cmd.StringSlice("file")
-	cfile, _ := filepath.Abs("compose.yaml")
+	dir := cmd.String("project-directory")
 
-	for _, f := range files {
-		if filepath.Base(f) == "compose.yaml" {
-			cfile = f
-			break
+	cfile := ""
+	if len(files) == 0 {
+		cfile = "compose.yaml"
+		if dir != "" {
+			cfile = filepath.Join(dir, cfile)
+		} else {
+			cfile, _ = filepath.Abs(cfile)
+		}
+		if _, err := os.Stat(cfile); err == nil {
+			files = append(files, cfile)
+		}
+	} else {
+		for _, f := range files {
+			if filepath.Base(f) == "compose.yaml" {
+				cfile = f
+				break
+			}
 		}
 	}
 
-	incusCFile := filepath.Join(filepath.Dir(cfile), "compose.incus.yaml")
-
-	_, err := os.Stat(incusCFile)
-	if err == nil {
-		files = append(files, incusCFile)
-	} else if dir := cmd.String("project-directory"); dir != "" {
-		incusCFile = filepath.Join(dir, "compose.incus.yaml")
-		_, err := os.Stat(incusCFile)
-		if err == nil {
+	if cfile != "" {
+		incusCFile := filepath.Join(filepath.Dir(cfile), "compose.incus.yaml")
+		if _, err := os.Stat(incusCFile); err == nil {
+			files = append(files, incusCFile)
+		}
+	} else if dir != "" {
+		incusCFile := filepath.Join(dir, "compose.incus.yaml")
+		if _, err := os.Stat(incusCFile); err == nil {
 			files = append(files, incusCFile)
 		}
 	}
 
-	loadOpts = append(loadOpts, project.LoadFiles(files))
+	if len(files) > 0 {
+		loadOpts = append(loadOpts, project.LoadFiles(files))
+	}
 
-	if dir := cmd.String("project-directory"); dir != "" {
+	if dir != "" {
 		loadOpts = append(loadOpts, project.LoadWorkingDir(dir))
 	}
 
