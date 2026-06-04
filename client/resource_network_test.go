@@ -80,6 +80,56 @@ func TestNetworkNameForProject(t *testing.T) {
 	assert.NotEqual(t, p1n1, p2n1, "Same name different projects should give different names")
 }
 
+func TestNetworkCreateConfig(t *testing.T) {
+	tests := []struct {
+		name       string
+		extensions map[string]string
+		want       map[string]string
+	}{
+		{
+			name: "empty",
+		},
+		{
+			name:       "auto addresses are left to incus",
+			extensions: map[string]string{"ipv4.address": "auto", "ipv6.address": "auto"},
+			want:       map[string]string{"ipv4.address": "auto", "ipv6.address": "auto"},
+		},
+		{
+			name:       "explicit IPv4 gets DHCP range",
+			extensions: map[string]string{"ipv4.address": "10.200.0.1/24"},
+			want:       map[string]string{"ipv4.address": "10.200.0.1/24", "ipv4.dhcp.ranges": "10.200.0.64-10.200.0.254"},
+		},
+		{
+			name:       "explicit IPv6 gets DHCP range and stateful DHCP",
+			extensions: map[string]string{"ipv6.address": "fd42:1::1/64"},
+			want: map[string]string{
+				"ipv6.address":       "fd42:1::1/64",
+				"ipv6.dhcp.ranges":   "fd42:1::100-fd42:1::ffff",
+				"ipv6.dhcp.stateful": "true",
+			},
+		},
+		{
+			name: "existing ranges are preserved",
+			extensions: map[string]string{
+				"ipv4.address":     "10.200.0.1/24",
+				"ipv4.dhcp.ranges": "10.200.0.100-10.200.0.200",
+			},
+			want: map[string]string{
+				"ipv4.address":     "10.200.0.1/24",
+				"ipv4.dhcp.ranges": "10.200.0.100-10.200.0.200",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := networkCreateConfig(tt.extensions)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestDNSmasqRecords(t *testing.T) {
 	tests := []struct {
 		name       string

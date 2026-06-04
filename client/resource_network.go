@@ -174,18 +174,19 @@ func (r *Network) get() error {
 }
 
 func (r *Network) create() error {
+	config, err := networkCreateConfig(r.Config.Extensions)
+	if err != nil {
+		return fmt.Errorf("preparing network config for %q: %w", r.Name(), err)
+	}
+
 	// Use client's configured description format for consistency with other resources.
 	req := incusApi.NetworksPost{
 		Name: r.incusName,
 		Type: r.Config.Type,
 		NetworkPut: incusApi.NetworkPut{
 			Description: fmt.Sprintf(r.client.Config().DescriptionFormat, r.Name()),
+			Config:      config,
 		},
-	}
-
-	if len(r.Config.Extensions) > 0 {
-		// Ensure Config map on embedded NetworkPut is set via the top-level Config field
-		req.Config = r.Config.Extensions
 	}
 
 	if err := r.client.incus.CreateNetwork(req); err != nil {
@@ -200,10 +201,6 @@ func (r *Network) create() error {
 	r.IncusNetwork = network
 	r.ETag = eTag
 	r.created = true
-
-	if err := r.applyDHCPRanges(); err != nil {
-		return err
-	}
 
 	// Wait for the network to become ready (Status == Created) using context-aware timeout.
 	// This mirrors the pattern used for instances to avoid races in tests that act
@@ -230,62 +227,37 @@ func (r *Network) create() error {
 	}
 }
 
-// applyDHCPRanges calculates and sets DHCP ranges on the network after creation.
-// It is a no-op when the ranges are already configured (e.g., via x-incus extensions).
-// IPv4: first 20% of usable addresses are reserved for static; the rest is the DHCP range.
-// IPv6: first 256 addresses are reserved for static; DHCP runs from ::100 to ::ffff.
-func (r *Network) applyDHCPRanges() error {
-	cfg := r.IncusNetwork.Config
-	updates := map[string]string{}
+// networkCreateConfig returns the Incus network config to use during creation.
+// DHCP ranges are added only when the address is explicit. Auto addresses are
+// resolved by Incus during creation, and updating immediately afterward restarts
+// dnsmasq and can race with the old dnsmasq process still holding its socket.
+func networkCreateConfig(extensions map[string]string) (map[string]string, error) {
+	if len(extensions) == 0 {
+		return nil, nil
+	}
 
-	if addr := cfg["ipv4.address"]; addr != "" && addr != "none" && addr != "auto" {
-		if cfg["ipv4.dhcp.ranges"] == "" {
-			dhcpRange, err := calcIPv4DHCPRange(addr)
-			if err != nil {
-				return fmt.Errorf("calculating IPv4 DHCP range for network %q: %w", r.Name(), err)
-			}
-			updates["ipv4.dhcp.ranges"] = dhcpRange
+	config := maps.Clone(extensions)
+
+	if addr := config["ipv4.address"]; addr != "" && addr != "none" && addr != "auto" && config["ipv4.dhcp.ranges"] == "" {
+		dhcpRange, err := calcIPv4DHCPRange(addr)
+		if err != nil {
+			return nil, fmt.Errorf("calculating IPv4 DHCP range: %w", err)
+		}
+		config["ipv4.dhcp.ranges"] = dhcpRange
+	}
+
+	if addr := config["ipv6.address"]; addr != "" && addr != "none" && addr != "auto" && config["ipv6.dhcp.ranges"] == "" {
+		dhcpRange, err := calcIPv6DHCPRange(addr)
+		if err != nil {
+			return nil, fmt.Errorf("calculating IPv6 DHCP range: %w", err)
+		}
+		config["ipv6.dhcp.ranges"] = dhcpRange
+		if config["ipv6.dhcp.stateful"] == "" {
+			config["ipv6.dhcp.stateful"] = "true"
 		}
 	}
 
-	if addr := cfg["ipv6.address"]; addr != "" && addr != "none" && addr != "auto" {
-		if cfg["ipv6.dhcp.ranges"] == "" {
-			dhcpRange, err := calcIPv6DHCPRange(addr)
-			if err != nil {
-				return fmt.Errorf("calculating IPv6 DHCP range for network %q: %w", r.Name(), err)
-			}
-			updates["ipv6.dhcp.ranges"] = dhcpRange
-			if cfg["ipv6.dhcp.stateful"] == "" {
-				updates["ipv6.dhcp.stateful"] = "true"
-			}
-		}
-	}
-
-	if len(updates) == 0 {
-		return nil
-	}
-
-	put := r.IncusNetwork.Writable()
-	if put.Config == nil {
-		put.Config = map[string]string{}
-	}
-	for k, v := range updates {
-		put.Config[k] = v
-	}
-
-	if err := r.client.incus.UpdateNetwork(r.incusName, put, r.ETag); err != nil {
-		return fmt.Errorf("applying DHCP ranges to network %q: %w", r.Name(), err)
-	}
-
-	network, eTag, err := r.client.incus.GetNetwork(r.incusName)
-	if err != nil {
-		return fmt.Errorf("fetching network after DHCP range update %q: %w", r.Name(), err)
-	}
-
-	r.IncusNetwork = network
-	r.ETag = eTag
-
-	return nil
+	return config, nil
 }
 
 // Delete removes the network from Incus.
