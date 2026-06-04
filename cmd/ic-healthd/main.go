@@ -121,15 +121,34 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	reload := make(chan struct{}, 1)
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+	defer signal.Stop(sigChan)
 
 	go func() {
-		sig := <-sigChan
-		log.Printf("received signal %v, shutting down", sig)
-		cancel()
+		for {
+			select {
+			case sig := <-sigChan:
+				switch sig {
+				case syscall.SIGHUP:
+					log.Printf("received signal %v, reloading", sig)
+					select {
+					case reload <- struct{}{}:
+					default:
+						log.Println("reload already pending")
+					}
+				default:
+					log.Printf("received signal %v, shutting down", sig)
+					cancel()
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
 	}()
 
 	// Run health checks
-	return runner.Run(ctx)
+	return runner.Run(ctx, reload)
 }

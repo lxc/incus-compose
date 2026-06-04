@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -57,6 +58,11 @@ type Healthd struct {
 	created bool
 }
 
+type healthdWatcherState struct {
+	existed bool
+	changed bool
+}
+
 func newHealthd(c *Client, name string, configGetter Config) (*Healthd, error) {
 	if configGetter == nil {
 		return nil, ErrUnknownConfig.WithKindName(KindHealthd, name)
@@ -110,8 +116,88 @@ func (c *Client) Healthd(name string, config HealthdConfig, reCreate bool) (*Hea
 		return nil, err
 	}
 
+	if err := c.registerHealthdWatcher(h); err != nil {
+		return nil, err
+	}
+
 	c.resources.Add(h)
 	return h, nil
+}
+
+func (c *Client) registerHealthdWatcher(h *Healthd) error {
+	st := &healthdWatcherState{}
+	c.snapshotHealthdWatcher(h, st)
+
+	c.AddHookConnected(func(err error) error {
+		c.snapshotHealthdWatcher(h, st)
+		return err
+	})
+
+	c.AddHookAfter(func(action Action, r Resource, _ Options, err error) error {
+		if healthdInstanceChanged(h, action, r, err) {
+			st.changed = true
+			c.LogDebug("HealthdWatcher instance changed", "action", action, "instance", r.IncusName())
+		}
+		return err
+	})
+
+	c.AddHookDisconnecting(func(err error) error {
+		c.LogDebug("HealthdWatcher disconnecting", "healthd", h.IncusName(), "existed", st.existed, "changed", st.changed)
+		if !st.existed || !st.changed {
+			return err
+		}
+
+		state, _, e := c.incus.GetInstanceState(h.IncusName())
+		if e != nil {
+			c.LogDebug("HealthdWatcher healthd missing, skipping reload", "healthd", h.IncusName(), "error", e)
+			return err
+		}
+		if state.StatusCode != incusApi.Running {
+			c.LogDebug("HealthdWatcher healthd not running, skipping reload", "healthd", h.IncusName(), "status", state.Status)
+			return err
+		}
+
+		if e := h.reload(); e == nil {
+			c.LogDebug("HealthdWatcher reloaded healthd", "healthd", h.IncusName())
+			return err
+		} else {
+			c.LogWarn("Reloading healthd failed, restarting", "healthd", h.IncusName(), "error", e)
+			return errors.Join(err, e, h.restart())
+		}
+	})
+
+	return nil
+}
+
+func (c *Client) snapshotHealthdWatcher(h *Healthd, st *healthdWatcherState) {
+	if c.incus == nil {
+		st.existed = false
+		return
+	}
+
+	_, _, err := c.incus.GetInstance(h.IncusName())
+	st.existed = err == nil
+	c.LogDebug("HealthdWatcher snapshot", "healthd", h.IncusName(), "existed", st.existed)
+}
+
+func healthdInstanceChanged(h *Healthd, action Action, r Resource, err error) bool {
+	if err != nil || r.Kind() != KindInstance {
+		return false
+	}
+
+	inst, ok := r.(*Instance)
+	if !ok || inst.IncusName() == h.IncusName() {
+		return false
+	}
+
+	switch action {
+	case ActionEnsure:
+		return inst.Created()
+	case ActionStart, ActionStop, ActionDelete:
+		return true
+	default:
+		return false
+	}
 }
 
 // String is for debugging.
@@ -569,6 +655,51 @@ func (r *Healthd) execHealthd() error {
 		return err
 	}
 
+	return op.Wait()
+}
+
+func (r *Healthd) reload() error {
+	req := incusApi.InstanceExecPost{
+		Command:     []string{"sh", "-c", "pids=\"$(pidof ic-healthd)\" && for pid in $pids; do kill -HUP \"$pid\"; done"},
+		WaitForWS:   false,
+		Interactive: false,
+	}
+
+	op, err := r.client.incus.ExecInstance(r.incusName, req, nil)
+	if err != nil {
+		return err
+	}
+
+	return op.Wait()
+}
+
+func (r *Healthd) restart() error {
+	state, _, err := r.client.incus.GetInstanceState(r.incusName)
+	if err != nil {
+		return err
+	}
+
+	if state.StatusCode != incusApi.Stopped {
+		op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
+			Action:  "stop",
+			Timeout: -1,
+			Force:   true,
+		}, "")
+		if err != nil {
+			return err
+		}
+		if err := op.Wait(); err != nil {
+			return err
+		}
+	}
+
+	op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
+		Action:  "start",
+		Timeout: -1,
+	}, "")
+	if err != nil {
+		return err
+	}
 	return op.Wait()
 }
 

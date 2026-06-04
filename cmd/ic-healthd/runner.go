@@ -42,7 +42,7 @@ func NewRunner(cfg *Config) (*Runner, error) {
 }
 
 // Run starts all health checkers and blocks until context is cancelled.
-func (r *Runner) Run(ctx context.Context) error {
+func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 	client, err := r.connect()
 	if err != nil {
 		return fmt.Errorf("connecting to incus: %w", err)
@@ -53,10 +53,29 @@ func (r *Runner) Run(ctx context.Context) error {
 		log.Printf("connected to incus, project=%s", r.config.Projects[0])
 	}
 
+	for {
+		runCtx, cancel := context.WithCancel(ctx)
+		done := r.startCheckers(runCtx)
+
+		select {
+		case <-ctx.Done():
+			cancel()
+			<-done
+			return nil
+		case <-reload:
+			log.Println("reloading health daemon")
+			cancel()
+			<-done
+		}
+	}
+}
+
+func (r *Runner) startCheckers(ctx context.Context) <-chan struct{} {
 	if err := r.config.Discover(r.client); err != nil {
 		log.Printf("service discovery had errors: %v", err)
 	}
 
+	done := make(chan struct{})
 	var wg sync.WaitGroup
 	for name, svc := range r.config.Services {
 		checker := NewChecker(r.client, name, svc, r.config.Debug)
@@ -74,9 +93,13 @@ func (r *Runner) Run(ctx context.Context) error {
 
 	log.Printf("health daemon running, monitoring %d services", len(r.config.Services))
 
-	wg.Wait()
-	log.Println("all checkers stopped")
-	return nil
+	go func() {
+		wg.Wait()
+		log.Println("all checkers stopped")
+		close(done)
+	}()
+
+	return done
 }
 
 // connect returns an authenticated Incus client.
