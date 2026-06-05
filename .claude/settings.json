@@ -12,6 +12,7 @@
       "Bash(fd:*)",
       "Bash(grep:*)",
       "Bash(rg:*)",
+      "Bash(go doc:*)",
       "Bash(diff:*)",
       "Read(**)",
       "Write(**)",
