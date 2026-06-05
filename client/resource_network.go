@@ -193,15 +193,6 @@ func (r *Network) create() error {
 		return fmt.Errorf("creating network %q: %w", r.Name(), err)
 	}
 
-	network, eTag, err := r.client.incus.GetNetwork(r.incusName)
-	if err != nil {
-		return fmt.Errorf("fetching created network %q: %w", r.Name(), err)
-	}
-
-	r.IncusNetwork = network
-	r.ETag = eTag
-	r.created = true
-
 	// Wait for the network to become ready (Status == Created) using context-aware timeout.
 	// This mirrors the pattern used for instances to avoid races in tests that act
 	// on networks immediately after creation.
