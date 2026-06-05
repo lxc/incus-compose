@@ -218,6 +218,7 @@ func newRootCommand() *cli.Command {
 			configCommand,
 			execCommand,
 			logsCommand,
+			incusCommand,
 			healthdCommand,
 			versionCommand,
 		},
@@ -225,7 +226,7 @@ func newRootCommand() *cli.Command {
 			initLogger(cmd.Bool("debug"))
 
 			// Commands that don't need an Incus client connection
-			noClientCommands := []string{"config", "version"}
+			noClientCommands := []string{"config", "version", "incus"}
 
 			if slices.Contains(noClientCommands, cmd.Name) {
 				return ctx, nil

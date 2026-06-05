@@ -161,6 +161,25 @@ incus-compose ps [SERVICE...]
 | `--services`    | Display compose service names instead of instances   |
 | `--format`      | table (default) or json                              |
 
+## incus
+
+Run any `incus` command scoped to the current compose project. All flags and arguments are passed through verbatim; only `INCUS_PROJECT` is injected.
+
+```
+incus-compose incus COMMAND [ARGS...]
+```
+
+Examples:
+
+```bash
+incus-compose incus list                        # list instances in this project
+incus-compose incus config show web-1           # show instance config
+incus-compose incus config set web-1 limits.memory 512MB
+incus-compose incus exec web-1 -- bash
+```
+
+Equivalent to `INCUS_PROJECT=<project> incus COMMAND [ARGS...]`.
+
 ## healthd
 
 Manage the ic-healthd sidecar. See [Health Checking](healthd.md) for full details.
