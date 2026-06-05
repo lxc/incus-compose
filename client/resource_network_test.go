@@ -665,6 +665,8 @@ func (s *NetworkSuite) TestUpdateDNSAliases_SetsRawDnsmasq() {
 	checkNet, ok := check.(*Network)
 	s.Require().True(ok)
 	s.Equal("address=/database/10.0.0.2\n", checkNet.IncusNetwork.Config["raw.dnsmasq"])
+
+	s.Require().NoError(network.Delete(OptionForce()))
 }
 
 func (s *NetworkSuite) TestUpdateDNSAliases_ExternalIsNoOp() {
@@ -689,6 +691,8 @@ func (s *NetworkSuite) TestUpdateDNSAliases_ExternalIsNoOp() {
 	err = extNet.UpdateDNSAliases(map[string][]string{"database": {"10.0.0.2"}})
 	s.Require().NoError(err)
 	s.Empty(extNet.IncusNetwork.Config["raw.dnsmasq"])
+
+	s.Require().NoError(network.Delete(OptionForce()))
 }
 
 // ----------------------------------------------------------------------------

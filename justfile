@@ -85,8 +85,8 @@ release-healthd-image tag="registry.gitlab.com/r3j0/incus-compose/ic-healthd:lat
 
 # Release incus-compose
 release tag="v0.0.1-dev0" healthd_image="registry.gitlab.com/r3j0/incus-compose/ic-healthd": build-healthd-image
-    git tag {{ tag }}
-    git push --tags
+    git tag {{ tag }} || exit 0
+    git push --tags || exit 0
     podman push {{ healthd_image }}:latest
     podman tag {{ healthd_image }}:latest {{ healthd_image }}:{{ tag }}
     podman push {{ healthd_image }}:{{ tag }}
