@@ -87,36 +87,10 @@ func newHealthd(c *Client, name string, configGetter Config) (*Healthd, error) {
 		image:        image,
 	}
 
-	return h, nil
-}
-
-// Healthd returns an existing Healthd resource or creates a new one.
-func (c *Client) Healthd(name string, config HealthdConfig, reCreate bool) (*Healthd, error) {
-	if existing := c.resources.Get(KindHealthd, name); existing != nil {
-		res, ok := existing.(*Healthd)
-		if !ok {
-			return nil, ErrUnknownConfig.WithKindName(KindHealthd, name)
-		}
-
-		if !reCreate {
-			return res, nil
-		}
-
-		if err := res.Delete(); err != nil {
-			return nil, err
-		}
-	}
-
-	h, err := newHealthd(c, name, &config)
-	if err != nil {
-		return nil, err
-	}
-
 	if err := c.registerHealthdWatcher(h); err != nil {
 		return nil, err
 	}
 
-	c.resources.Add(h)
 	return h, nil
 }
 
@@ -525,7 +499,7 @@ func (r *Healthd) createInstance() error {
 			Config: InstanceDeviceConfig{
 				DeviceType: InstanceDeviceTypeDisk,
 				Disk: InstanceDeviceDiskConfig{
-					StorageVolumeConfig: &StorageVolumeConfig{Pool: "default"}, // TODO(r3j0): Why is "default" required here???
+					StorageVolumeConfig: &StorageVolumeConfig{Pool: r.client.config.DefaultStoragePool},
 					Source:              r.incusName,
 					Path:                "/var/lib/ic-healthd",
 					Shift:               true,

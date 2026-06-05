@@ -12,7 +12,7 @@ import (
 func TestHealthdOfflineClient(t *testing.T) {
 	c := NewOfflineClient(context.Background(), "test")
 
-	healthd, err := c.Healthd("ic-healthd", HealthdConfig{}, false)
+	healthd, err := c.Resource(KindHealthd, "ic-healthd", &HealthdConfig{})
 
 	require.NoError(t, err)
 	assert.Equal(t, "ic-healthd", healthd.IncusName())
