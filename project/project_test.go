@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
+	"gitlab.com/r3j0/incus-compose/client"
 	"gitlab.com/r3j0/incus-compose/project"
 )
 
@@ -545,6 +546,54 @@ func (s *LoadProjectTestSuite) TestLoadWithXIncusOptions() {
 	database, exists := proj.Services["database"]
 	s.True(exists, "database service should exist")
 	s.Equal("docker.io/nginx:alpine", database.Image)
+}
+
+func (s *LoadProjectTestSuite) TestExternalNetworkOverrideNameParsed() {
+	proj, err := project.New().Load(
+		s.ctx, project.LoadWorkingDir(s.fixturePath("with-external-network")),
+	)
+	s.Require().NoError(err)
+
+	c := client.NewOfflineClient(s.ctx, proj.Name)
+	stack := client.NewStack(c)
+	s.Require().NoError(proj.ToStack(c, stack))
+
+	var namedOverride *client.Network
+	for _, r := range stack.All() {
+		net, ok := r.(*client.Network)
+		if ok && net.Name() == "named-override" {
+			namedOverride = net
+			break
+		}
+	}
+
+	s.Require().NotNil(namedOverride, "named-override network should be in stack")
+	s.Equal("my-production-net", namedOverride.Config.OverrideName)
+	s.Equal("my-production-net", namedOverride.IncusName(), "initial incusName uses raw override")
+}
+
+func (s *LoadProjectTestSuite) TestExternalNetworkNoOverride() {
+	proj, err := project.New().Load(
+		s.ctx, project.LoadWorkingDir(s.fixturePath("with-external-network")),
+	)
+	s.Require().NoError(err)
+
+	c := client.NewOfflineClient(s.ctx, proj.Name)
+	stack := client.NewStack(c)
+	s.Require().NoError(proj.ToStack(c, stack))
+
+	var shared *client.Network
+	for _, r := range stack.All() {
+		net, ok := r.(*client.Network)
+		if ok && net.Name() == "shared" {
+			shared = net
+			break
+		}
+	}
+
+	s.Require().NotNil(shared, "shared network should be in stack")
+	s.Equal("", shared.Config.OverrideName)
+	s.Equal("shared", shared.IncusName(), "initial incusName is raw compose name when no override")
 }
 
 // TestLoadProjectSuite runs the test suite.

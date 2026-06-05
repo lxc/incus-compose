@@ -1,0 +1,17 @@
+name: with-external-network
+
+services:
+  web:
+    image: docker.io/nginx:alpine
+    networks:
+      - shared
+      - named-override
+
+networks:
+  shared:
+    external: true
+
+  named-override:
+    external: true
+    x-incus-compose:
+      network: my-production-net

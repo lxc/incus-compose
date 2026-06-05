@@ -193,6 +193,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, f
 			if networkDef, ok := p.Networks[name]; ok {
 				netConfig.External = bool(networkDef.External)
 				netConfig.Extensions = networkExtensions(networkDef)
+				netConfig.OverrideName = networkXIncusComposeNetwork(networkDef)
 			}
 
 			network, err := c.Resource(client.KindNetwork, name, netConfig)
@@ -633,6 +634,21 @@ func parseSecretMode(mode *types.FileMode) int {
 		return 0
 	}
 	return int(*mode)
+}
+
+// networkXIncusComposeNetwork extracts the x-incus-compose.network string override
+// from a compose network definition. Returns "" if not set.
+func networkXIncusComposeNetwork(networkDef types.NetworkConfig) string {
+	var raw map[string]any
+	ok, err := networkDef.Extensions.Get("x-incus-compose", &raw)
+	if !ok || err != nil {
+		return ""
+	}
+	n, ok := raw["network"].(string)
+	if !ok {
+		return ""
+	}
+	return n
 }
 
 // networkExtensions extracts the x-incus extension map from a compose network

@@ -574,6 +574,20 @@ func (s *NetworkSuite) TestExternal_InitialIncusNameIsRaw() {
 	s.Equal("incusbr0", network.IncusName())
 }
 
+func (s *NetworkSuite) TestExternal_Incusbr0Resolves() {
+	// incusbr0 is the default Incus bridge present on all installations.
+	// It must be found via the raw compose-name candidate.
+	r, err := s.client.Resource(KindNetwork, "incusbr0", &NetworkConfig{External: true})
+	s.Require().NoError(err)
+
+	s.Require().NoError(RunAction(r, ActionEnsure))
+	s.True(r.IsEnsured())
+
+	network, ok := r.(*Network)
+	s.Require().True(ok)
+	s.Equal("incusbr0", network.IncusName())
+}
+
 func (s *NetworkSuite) TestExternal_EnsureFailsIfNotExists() {
 	r, err := s.client.Resource(KindNetwork, "non-existent-external", &NetworkConfig{External: true})
 	s.Require().NoError(err)

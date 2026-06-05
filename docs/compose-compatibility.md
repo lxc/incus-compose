@@ -133,6 +133,38 @@ networks:
 
 Any [Incus bridge network option](https://linuxcontainers.org/incus/docs/main/reference/network_bridge/) is accepted.
 
+#### External Networks
+
+Mark a network as `external: true` to attach services to a pre-existing Incus network.
+incus-compose will never create or delete an external network.
+
+```yaml
+networks:
+  shared:
+    external: true
+```
+
+**Name resolution** — incus-compose probes the following candidates in order and uses
+the first one that exists in Incus:
+
+1. `x-incus-compose.network` value — raw (literal)
+2. `x-incus-compose.network` value — sanitized (`{project}-{name}` / hash)
+3. Compose network name — raw
+4. Compose network name — sanitized
+
+Use `x-incus-compose.network` when the Incus network name does not follow the compose
+naming convention:
+
+```yaml
+networks:
+  frontend:
+    external: true
+    x-incus-compose:
+      network: my-production-net   # tried as-is first, then sanitized
+```
+
+If none of the candidates match an existing network, `up` fails with a not-found error.
+
 #### Automatic DHCP Ranges
 
 When a managed bridge network is created, incus-compose automatically configures DHCP ranges if they are not already set:
