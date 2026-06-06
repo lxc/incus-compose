@@ -136,27 +136,6 @@ func newInstance(c *Client, name string, configGetter Config) (*Instance, error)
 	return inst, nil
 }
 
-// Instance returns an existing Instance resource or creates a new one.
-func (c *Client) Instance(name string, config InstanceConfig) (*Instance, error) {
-	// Check if already in store
-	if existing := c.resources.Get(KindInstance, name); existing != nil {
-		res, ok := existing.(*Instance)
-		if !ok {
-			return nil, ErrUnknownConfig.WithKindName(KindInstance, name)
-		}
-
-		return res, nil
-	}
-
-	inst, err := newInstance(c, name, &config)
-	if err != nil {
-		return nil, err
-	}
-
-	c.resources.Add(inst)
-	return inst, nil
-}
-
 // String is for debugging.
 func (r *Instance) String() string {
 	return fmt.Sprintf("%v(%v)", r.kind, r.incusName)
@@ -321,8 +300,8 @@ func (r *Instance) create(opts ...Option) error {
 		return ErrDependencyNotEnsured.WithResource(image)
 	}
 
-	// Get image info from cache
-	incusImage, _, err := image.Config.cache.GetImage(image.IncusAlias.Target)
+	// Get image info from project
+	incusImage, _, err := r.client.incus.GetImage(image.IncusAlias.Target)
 	if err != nil {
 		return ErrNotFound.WithText("getting image").Wrap(err)
 	}
@@ -347,8 +326,8 @@ func (r *Instance) create(opts ...Option) error {
 
 	options := NewOptions(opts...)
 
-	// Create instance from cache image
-	op, err := r.client.incus.CreateInstanceFromImage(image.Config.cache, *incusImage, req)
+	// Create instance from project image
+	op, err := r.client.incus.CreateInstanceFromImage(r.client.incus, *incusImage, req)
 	if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, options, op, err); err != nil {
 		return err
 	}
@@ -463,7 +442,7 @@ func (r *Instance) attachPostDevices() error {
 
 			volI, err := r.client.Resource(KindStorageVolume, dev.Config.Disk.Source, &volConfig)
 			if err != nil {
-				return ErrCreate.WithText("creating volume resource").Wrap(err)
+				return ErrBadDeviceConfig.WithText("getting storage-volume resource").Wrap(err)
 			}
 
 			vol, ok := volI.(*StorageVolume)
@@ -477,8 +456,8 @@ func (r *Instance) attachPostDevices() error {
 			vol.Config.UID = r.UID
 			vol.Config.GID = r.GID
 
-			if err := RunAction(volI, ActionEnsure, OptionCreate()); err != nil {
-				return ErrCreate.WithText("ensuring volume").Wrap(err)
+			if err := RunAction(volI, ActionPostEnsure, OptionCreate()); err != nil {
+				return ErrCreate.WithText("post-ensuring volume").Wrap(err)
 			}
 
 			// Update disk config with volume details

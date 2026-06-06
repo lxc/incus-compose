@@ -198,9 +198,6 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 		}
 	}
 
-	// Use own cache project for tests.
-	opts = append(opts, ClientCacheProject("incus-compose-tests-cache"))
-
 	c := New(ctx, opts...)
 	if err := c.Connect(); err != nil {
 		return nil, err
@@ -287,12 +284,6 @@ func (s *ClientSuite) TestProject_GlobalClientKeepsDefaultProfile() {
 	gInfo, err = project.GlobalConnection().GetConnectionInfo()
 	s.Require().NoError(err)
 	s.Require().Equal("default", gInfo.Project)
-}
-
-func (s *ClientSuite) TestProject_ImageCacheIsInCacheProfile() {
-	gInfo, err := s.globalClient.imageCache.GetConnectionInfo()
-	s.Require().NoError(err)
-	s.Require().Equal("incus-compose-tests-cache", gInfo.Project)
 }
 
 func (s *ClientSuite) TestProject_EnsureWithCreate() {

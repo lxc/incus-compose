@@ -42,13 +42,6 @@ type ClientConfig struct {
 
 	// ProvidedInstanceServer allows injecting an existing connection (for testing).
 	ProvidedInstanceServer incusClient.InstanceServer
-
-	// ProvidedImageCache allows injecting an existing image cache (for testing).
-	ProvidedImageCache incusClient.InstanceServer
-
-	// CacheProject is the project name to use as image cache.
-	// If set, the project will be created if it doesn't exist.
-	CacheProject string
 }
 
 // ClientOption is a functional option for configuring the Client.
@@ -108,11 +101,6 @@ func ClientProvideInstanceServer(server incusClient.InstanceServer) ClientOption
 	}
 }
 
-// ClientCacheProject sets the project name to use as image cache.
-func ClientCacheProject(n string) ClientOption {
-	return func(c *ClientConfig) { c.CacheProject = n }
-}
-
 // GlobalClient provides a high-level interface to Incus operations.
 type GlobalClient struct {
 	Ctx    context.Context
@@ -122,10 +110,9 @@ type GlobalClient struct {
 	projects  []*Client
 	cliConfig *cliconfig.Config
 
-	incus      *incusClient.ProtocolIncus
-	imageCache incusClient.InstanceServer
-	unix       bool
-	connected  bool
+	incus     *incusClient.ProtocolIncus
+	unix      bool
+	connected bool
 
 	// hookBefore is called hookBefore any action.
 	hookBefore func(action Action, r Resource, args Options, err error) error
@@ -146,7 +133,7 @@ type GlobalClient struct {
 func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 	config := ClientConfig{
 		Logger:             slog.Default(),
-		DefaultStoragePool: "detect",
+		DefaultStoragePool: "auto",
 		NetworkPrefix:      "ic-",
 		DescriptionFormat:  "incus-compose: %s",
 	}
@@ -267,13 +254,13 @@ func (c *GlobalClient) connectProvided() error {
 	c.logger = c.logger.With("url", c.Config.URL)
 	c.connected = true
 
-	if c.Config.DefaultStoragePool == "detect" {
+	if c.Config.DefaultStoragePool == "auto" {
 		if err = c.detectStoragePool(); err != nil {
 			return err
 		}
 	}
 
-	return c.setupImageCache()
+	return nil
 }
 
 func (c *GlobalClient) connectTLS() error {
@@ -327,7 +314,7 @@ func (c *GlobalClient) connectTLS() error {
 		}
 	}
 
-	return c.setupImageCache()
+	return nil
 }
 
 // detectStoragePool gets the first storage pool from the incus server.
@@ -342,25 +329,6 @@ func (c *GlobalClient) detectStoragePool() error {
 	}
 
 	c.Config.DefaultStoragePool = names[0]
-	return nil
-}
-
-// setupImageCache configures the image cache based on CacheProject or defaults.
-func (c *GlobalClient) setupImageCache() error {
-	if c.Config.CacheProject != "" {
-		// Use dedicated cache project (create if needed)
-		cacheClient, err := c.EnsureProject(c.Config.CacheProject, EnsureProjectWithCreate())
-		if err != nil {
-			return fmt.Errorf("ensuring cache project %s: %w", c.Config.CacheProject, err)
-		}
-		c.imageCache = cacheClient.incus
-	} else if c.Config.ProvidedImageCache != nil {
-		// Use provided cache (for testing)
-		c.imageCache = c.Config.ProvidedImageCache.UseProject("default")
-	} else {
-		// Default: use "default" project as cache
-		c.imageCache = c.incus.UseProject("default")
-	}
 	return nil
 }
 

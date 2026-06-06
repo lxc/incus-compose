@@ -22,9 +22,8 @@ type Client struct {
 	incusProject string
 	created      bool
 
-	incus      *incusClient.ProtocolIncus
-	imageCache incusClient.InstanceServer
-	logger     *slog.Logger
+	incus  *incusClient.ProtocolIncus
+	logger *slog.Logger
 
 	// Resource storage
 	resources ResourceStore
@@ -61,7 +60,6 @@ func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*
 		incusProject: incusName,
 		created:      created,
 		incus:        pIncus,
-		imageCache:   c.imageCache,
 		logger:       c.logger.With("project", name),
 
 		hookBefore: c.hookBefore,
@@ -182,12 +180,9 @@ func NewOfflineClient(ctx context.Context, name string) *Client {
 }
 
 // Resource returns an existing resource or creates a new one.
+// Deduplication uses IncusName so differently-formatted inputs that resolve
+// to the same Incus resource (e.g. "nginx:alpine" vs "docker.io/library/nginx:alpine") return the same object.
 func (c *Client) Resource(kind Kind, name string, config Config) (Resource, error) {
-	// Check if already in store
-	if res := c.resources.Get(kind, name); res != nil {
-		return res, nil
-	}
-
 	var (
 		res Resource
 		err error
@@ -206,13 +201,16 @@ func (c *Client) Resource(kind Kind, name string, config Config) (Resource, erro
 		res, err = newInstance(c, name, config)
 	case KindHealthd:
 		res, err = newHealthd(c, name, config)
-
 	default:
 		return nil, ErrUnknownResource.WithText(string(kind))
 	}
 
 	if err != nil {
 		return nil, err
+	}
+
+	if existing := c.resources.Get(kind, res.IncusName()); existing != nil {
+		return existing, nil
 	}
 
 	c.resources.Add(res)
