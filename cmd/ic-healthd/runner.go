@@ -115,7 +115,7 @@ func (r *Runner) connect() (incus.InstanceServer, error) {
 	certDataPath := filepath.Join(r.config.DataDir, certFile)
 	keyDataPath := filepath.Join(r.config.DataDir, keyFile)
 
-	if fileExists(tokenPath) {
+	if !fileExists(certDataPath) && fileExists(tokenPath) {
 		if r.config.Debug {
 			log.Println("fresh token performing first-run registration")
 		}
