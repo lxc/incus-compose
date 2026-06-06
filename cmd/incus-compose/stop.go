@@ -21,14 +21,9 @@ var stopCommand = &cli.Command{
 			Usage: "Timeout in seconds for stopping",
 			Value: 10,
 		},
-		&cli.BoolFlag{
-			Name:  "no-healthd",
-			Usage: "Don't stop the healthd sidecar",
-		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
 		timeout := cmd.Int("timeout")
-		noHealthd := cmd.Bool("no-healthd")
 
 		globalClient, err := clientFromContext(ctx)
 		if err != nil {
@@ -64,35 +59,6 @@ var stopCommand = &cli.Command{
 		if err != nil {
 			c.LogError("Adding the project to a stack", "error", err)
 			return errLogged
-		}
-
-		if !noHealthd {
-			services := cmd.Args().Slice()
-			if len(services) == 0 {
-				services = make([]string, 0, len(p.Services))
-				for _, n := range p.Services {
-					services = append(services, n.Name)
-				}
-			}
-
-			for _, sName := range services {
-				cSv, ok := p.Services[sName]
-				if ok && cSv.HealthCheck != nil {
-					if name, err := c.FindHealthdName(); err != nil {
-						c.LogError("Finding healthd", "error", err)
-						return errLogged.Wrap(err)
-					} else if name != "" {
-						healthd, err := c.Resource(client.KindHealthd, name, &client.HealthdConfig{})
-						if err != nil {
-							c.LogError("Getting healthd resource", "error", err)
-							return errLogged.Wrap(err)
-						}
-						stack.Add(healthd)
-						c.LogDebug("Added healthd sidecar to stack")
-					}
-					break
-				}
-			}
 		}
 
 		var errs error

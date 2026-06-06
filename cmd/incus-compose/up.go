@@ -161,29 +161,13 @@ type upParams struct {
 }
 
 func mkUpStack(params upParams, p *project.Project, globalClient *client.GlobalClient, c *client.Client) (*client.Stack, error) {
-	services := params.services
-	if len(services) == 0 {
-		services = make([]string, 0, len(p.Services))
-		for _, n := range p.Services {
-			services = append(services, n.Name)
-		}
-	}
-
 	var rErr error
 	stack := client.NewStack(c)
 
 	// Use CliConfig from globalClient for automatic image server resolution
 	imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
 
-	for _, sName := range services {
-		cSv, ok := p.Services[sName]
-		if !ok {
-			err := errors.New("Unknown service")
-			c.LogError("Getting image", "service", sName, "error", err)
-			rErr = errors.Join(rErr, errLogged.Wrap(err))
-			continue
-		}
-
+	for _, cSv := range p.Services {
 		if cSv.Image == "" {
 			err := errors.New("Empty image, building is not yet supported")
 			c.LogError("Getting image", "service", cSv.Name, "error", err)
@@ -205,7 +189,7 @@ func mkUpStack(params upParams, p *project.Project, globalClient *client.GlobalC
 		return nil, rErr
 	}
 
-	if !params.noHealthd && params.start && projectUsesHealthd(p, services) {
+	if !params.noHealthd && params.start && projectUsesHealthd(p) {
 		c.LogDebug("Found healthchecks")
 		healthd, img, err := prepareHealthd(globalClient, c, healthdParams{
 			binary:   params.healthdBinary,
@@ -221,7 +205,10 @@ func mkUpStack(params upParams, p *project.Project, globalClient *client.GlobalC
 		stack.Add(healthd)
 	}
 
-	toStackOpts := []project.ToStackOption{project.ToStackOnlyServices(params.services)}
+	toStackOpts := []project.ToStackOption{}
+	if len(params.services) > 0 {
+		toStackOpts = append(toStackOpts, project.ToStackOnlyServices(params.services))
+	}
 	if len(params.scale) > 0 {
 		toStackOpts = append(toStackOpts, project.ToStackScale(params.scale))
 	}

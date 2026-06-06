@@ -143,21 +143,12 @@ func runDown(globalClient *client.GlobalClient, c *client.Client, p *project.Pro
 		return errLogged
 	}
 
-	services := params.services
-	if len(services) == 0 {
-		services = make([]string, 0, len(p.Services))
-		for _, n := range p.Services {
-			services = append(services, n.Name)
-		}
-	}
-
 	// Remove the per-project image copies so the next up re-copies fresh from
 	// the (possibly auto-updated) cache. Cache images live in a separate project
 	// and are not affected. See issue #29.
 	imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
-	for _, sName := range services {
-		cSv, ok := p.Services[sName]
-		if !ok || cSv.Image == "" {
+	for _, cSv := range p.Services {
+		if cSv.Image == "" {
 			continue
 		}
 
@@ -169,7 +160,7 @@ func runDown(globalClient *client.GlobalClient, c *client.Client, p *project.Pro
 		stack.Add(image)
 	}
 
-	if projectUsesHealthd(p, services) {
+	if projectUsesHealthd(p) {
 		if name, err := c.FindHealthdName(); err != nil {
 			c.LogError("Finding healthd", "error", err)
 			return errLogged.Wrap(err)

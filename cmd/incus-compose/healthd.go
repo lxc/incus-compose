@@ -24,22 +24,14 @@ type healthdParams struct {
 
 // projectUsesHealthd reports whether any of the named services declares a healthcheck.
 // If services is empty, all project services are checked.
-func projectUsesHealthd(p *project.Project, services []string) bool {
-	if len(services) == 0 {
-		for _, svc := range p.Services {
-			// https://github.com/compose-spec/compose-spec/blob/main/05-services.md#restart
-			if svc.Restart != "no" {
-				return true
-			}
-
-			if svc.HealthCheck != nil {
-				return true
-			}
+func projectUsesHealthd(p *project.Project) bool {
+	for _, svc := range p.Services {
+		// https://github.com/compose-spec/compose-spec/blob/main/05-services.md#restart
+		if svc.Restart != "no" {
+			return true
 		}
-		return false
-	}
-	for _, name := range services {
-		if svc, ok := p.Services[name]; ok && svc.HealthCheck != nil {
+
+		if svc.HealthCheck != nil {
 			return true
 		}
 	}
@@ -60,7 +52,7 @@ func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params 
 	imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
 	r, err := c.Resource(client.KindImage, imageName, imageConfig)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting healthd image '%v': %w", imageName, err)
+		return nil, nil, fmt.Errorf("getting the healthd image '%v': %w", imageName, err)
 	}
 
 	img, ok := r.(*client.Image)
@@ -79,7 +71,7 @@ func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params 
 
 	healthd, err := c.Resource(client.KindHealthd, "ic-healthd", config)
 	if err != nil {
-		return nil, nil, fmt.Errorf("creating healthd resource: %w", err)
+		return nil, nil, fmt.Errorf("getting the healthd resource: %w", err)
 	}
 
 	return healthd, img, nil
@@ -344,7 +336,7 @@ var healthdUpCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		if !projectUsesHealthd(p, nil) {
+		if !projectUsesHealthd(p) {
 			return fmt.Errorf("no service in this project declares a healthcheck")
 		}
 

@@ -21,14 +21,9 @@ var restartCommand = &cli.Command{
 			Usage: "Timeout in seconds for stopping and starting",
 			Value: 10,
 		},
-		&cli.BoolFlag{
-			Name:  "no-healthd",
-			Usage: "Don't restart the healthd sidecar",
-		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
 		timeout := cmd.Int("timeout")
-		noHealthd := cmd.Bool("no-healthd")
 
 		globalClient, err := clientFromContext(ctx)
 		if err != nil {
@@ -64,21 +59,6 @@ var restartCommand = &cli.Command{
 		if err != nil {
 			c.LogError("Adding the project to a stack", "error", err)
 			return errLogged
-		}
-
-		if !noHealthd && projectUsesHealthd(p, cmd.Args().Slice()) {
-			if name, err := c.FindHealthdName(); err != nil {
-				c.LogError("Finding healthd", "error", err)
-				return errLogged.Wrap(err)
-			} else if name != "" {
-				healthd, err := c.Resource(client.KindHealthd, name, &client.HealthdConfig{})
-				if err != nil {
-					c.LogError("Getting healthd resource", "error", err)
-					return errLogged.Wrap(err)
-				}
-				stack.Add(healthd)
-				c.LogDebug("Added healthd sidecar to stack")
-			}
 		}
 
 		var errs error
