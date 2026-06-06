@@ -14,7 +14,7 @@ services:
       timeout: 5s
       interval: 10s
       retries: 3
-    image: docker.io/pcdummy/immich-postgres:14-vectorchord0.4.3-pgvectors0.2.0
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
     networks:
       default: null
     restart: unless-stopped
@@ -41,7 +41,7 @@ services:
         - CMD
         - python3
         - /usr/src/healthcheck.py
-    image: docker.io/pcdummy/immich-machine-learning:v2
+    image: ghcr.io/immich-app/immich-machine-learning:v2
     networks:
       default: null
     restart: unless-stopped
@@ -74,7 +74,7 @@ services:
       test:
         - CMD
         - /usr/src/app/server/bin/immich-healthcheck
-    image: docker.io/pcdummy/immich-server:v2
+    image: ghcr.io/immich-app/immich-server:v2
     networks:
       default:
         ipv4_address: 10.131.32.17
