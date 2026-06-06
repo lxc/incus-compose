@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
+
+	"gitlab.com/r3j0/incus-compose/cmd/ic-healthd/version"
 )
 
 const (
@@ -80,7 +82,7 @@ var versionCommand = &cli.Command{
 	Name:  "version",
 	Usage: "Print version information",
 	Action: func(ctx context.Context, cmd *cli.Command) error {
-		log.Println("ic-healthd version 0.1.0")
+		log.Printf("ic-healthd version %s", version.Current())
 		return nil
 	},
 }
@@ -107,6 +109,8 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 	cfg.Debug = cmd.Bool("debug")
 	cfg.IncusURL = cmd.String("incus")
 	cfg.Projects = cmd.StringSlice("project")
+
+	log.Printf("version: %s", version.Current())
 
 	if cfg.Debug {
 		log.Println("debug mode enabled")
