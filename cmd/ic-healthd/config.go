@@ -85,10 +85,14 @@ func (c *Config) Discover(client incus.InstanceServer) error {
 	var errs error
 
 	for _, inst := range instances {
+		if inst.Config["user.healthcheck.daemon"] == "true" {
+			continue
+		}
+
 		log.Printf("%s, %v, %v", inst.Name, inst.Config["user.restart"], inst.Config["user.healthcheck.test"])
 
 		restart := false
-		if slices.Contains([]string{"always", "on-failure", "on-failure:3", "unless-stopped"}, inst.Config["user-restart"]) {
+		if slices.Contains([]string{"always", "on-failure", "on-failure:3", "unless-stopped"}, inst.Config["user.restart"]) {
 			restart = true
 			if inst.Config["user.healthcheck.test"] == "" {
 				inst.Config["user.healthcheck.test"] = "[\"NONE\"]"
@@ -149,7 +153,7 @@ func parseServiceConfig(cfg map[string]string) (ServiceConfig, error) {
 		svc.Retries = int(n)
 	}
 
-	if v := cfg["user.restart"]; v == "always" || v == "on-failure" {
+	if slices.Contains([]string{"always", "on-failure", "on-failure:3", "unless-stopped"}, cfg["user.restart"]) {
 		svc.Restart = true
 	}
 

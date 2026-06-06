@@ -23,7 +23,7 @@ var stopCommand = &cli.Command{
 		},
 		&cli.BoolFlag{
 			Name:  "no-healthd",
-			Usage: "Don't stop healthd sidecar",
+			Usage: "Don't stop the healthd sidecar",
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -78,13 +78,18 @@ var stopCommand = &cli.Command{
 			for _, sName := range services {
 				cSv, ok := p.Services[sName]
 				if ok && cSv.HealthCheck != nil {
-					healthd, err := c.Resource(client.KindHealthd, "ic-healthd", &client.HealthdConfig{})
-					if err != nil {
-						c.LogError("Getting healthd resource", "error", err)
+					if name, err := c.FindHealthdName(); err != nil {
+						c.LogError("Finding healthd", "error", err)
 						return errLogged.Wrap(err)
+					} else if name != "" {
+						healthd, err := c.Resource(client.KindHealthd, name, &client.HealthdConfig{})
+						if err != nil {
+							c.LogError("Getting healthd resource", "error", err)
+							return errLogged.Wrap(err)
+						}
+						stack.Add(healthd)
+						c.LogDebug("Added healthd sidecar to stack")
 					}
-					stack.Add(healthd)
-					c.LogDebug("Added healthd sidecar to stack")
 					break
 				}
 			}

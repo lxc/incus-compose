@@ -88,21 +88,21 @@ func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params 
 // resolveHealthd returns the existing Healthd resource or errors if the sidecar
 // is not running. Used by management sub-commands that require ic-healthd to exist.
 func resolveHealthd(c *client.Client) (*client.Healthd, error) {
-	exists, err := c.InstanceExists("ic-healthd")
+	name, err := c.FindHealthdName()
 	if err != nil {
-		return nil, fmt.Errorf("checking ic-healthd: %w", err)
+		return nil, fmt.Errorf("finding healthd: %w", err)
 	}
-	if !exists {
-		return nil, errors.New("ic-healthd is not running")
+	if name == "" {
+		return nil, errors.New("healthd is not running")
 	}
 
-	res, err := c.Resource(client.KindHealthd, "ic-healthd", &client.HealthdConfig{})
+	res, err := c.Resource(client.KindHealthd, name, &client.HealthdConfig{})
 	if err != nil {
 		return nil, err
 	}
 	h, ok := res.(*client.Healthd)
 	if !ok {
-		return nil, errors.New("unexpected resource type for ic-healthd")
+		return nil, errors.New("unexpected resource type for healthd")
 	}
 	return h, nil
 }
@@ -166,7 +166,7 @@ var healthdLogsCommand = &cli.Command{
 			out = cmd.Root().Writer
 		}
 		formatter := newLogFormatter(out, noColor)
-		formatter.registerService("ic-healthd")
+		formatter.registerService(h.IncusName())
 		globalClient.SetOutputHandler(formatter.write)
 
 		var opts []client.Option

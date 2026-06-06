@@ -48,11 +48,6 @@ var psCommand = &cli.Command{
 				return nil
 			},
 		},
-		&cli.StringFlag{
-			Name:  "remote",
-			Usage: "Incus remote to use",
-			Value: "local",
-		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
 		globalClient, err := clientFromContext(ctx)

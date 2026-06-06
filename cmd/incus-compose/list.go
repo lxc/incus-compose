@@ -108,11 +108,6 @@ var listCommand = &cli.Command{
 				return nil
 			},
 		},
-		&cli.StringFlag{
-			Name:  "remote",
-			Usage: "Incus remote to use",
-			Value: "local",
-		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
 		globalClient, err := clientFromContext(ctx)
@@ -145,7 +140,7 @@ var listCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		if ok, err := c.InstanceExists("ic-healthd"); ok && err == nil {
+		if name, err := c.FindHealthdName(); err == nil && name != "" {
 			// Use CliConfig from globalClient for automatic image server resolution
 			imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
 
@@ -154,7 +149,7 @@ var listCommand = &cli.Command{
 			if err == nil {
 				stack.Add(img)
 
-				inst, err := c.Resource(client.KindInstance, "ic-healthd", &client.InstanceConfig{Image: healthdImage, Full: true})
+				inst, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{Image: healthdImage, Full: true})
 				if err != nil {
 					c.LogWarn(err.Error())
 					return errLogged.Wrap(err)

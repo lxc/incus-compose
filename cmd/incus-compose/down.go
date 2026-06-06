@@ -27,11 +27,6 @@ var downCommand = &cli.Command{
 			Usage: "Timeout in seconds for stopping",
 			Value: 10,
 		},
-		&cli.StringFlag{
-			Name:  "remote",
-			Usage: "Incus remote to use",
-			Value: "local",
-		},
 		&cli.BoolFlag{
 			Name:  "no-healthd",
 			Usage: "Don't stop/remove healthd sidecar",
@@ -178,13 +173,18 @@ func runDown(globalClient *client.GlobalClient, c *client.Client, p *project.Pro
 	}
 
 	if !params.noHealthd && projectUsesHealthd(p, services) {
-		healthd, err := c.Resource(client.KindHealthd, "ic-healthd", &client.HealthdConfig{})
-		if err != nil {
-			c.LogError("Getting healthd resource", "error", err)
+		if name, err := c.FindHealthdName(); err != nil {
+			c.LogError("Finding healthd", "error", err)
 			return errLogged.Wrap(err)
+		} else if name != "" {
+			healthd, err := c.Resource(client.KindHealthd, name, &client.HealthdConfig{})
+			if err != nil {
+				c.LogError("Getting healthd resource", "error", err)
+				return errLogged.Wrap(err)
+			}
+			stack.Add(healthd)
+			c.LogDebug("Added healthd sidecar to stack")
 		}
-		stack.Add(healthd)
-		c.LogDebug("Added healthd sidecar to stack")
 	}
 
 	var errs error

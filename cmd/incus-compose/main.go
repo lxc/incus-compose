@@ -272,7 +272,7 @@ func newRootCommand() *cli.Command {
 				return ctx, err
 			}
 
-			remote := cmd.String("remote")
+			remote := cmd.Root().String("remote")
 			if remote == "" {
 				remote = conf.DefaultRemote
 			}

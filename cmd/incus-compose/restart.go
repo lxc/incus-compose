@@ -23,7 +23,7 @@ var restartCommand = &cli.Command{
 		},
 		&cli.BoolFlag{
 			Name:  "no-healthd",
-			Usage: "Don't stop/start healthd sidecar",
+			Usage: "Don't restart the healthd sidecar",
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -67,13 +67,18 @@ var restartCommand = &cli.Command{
 		}
 
 		if !noHealthd && projectUsesHealthd(p, cmd.Args().Slice()) {
-			healthd, err := c.Resource(client.KindHealthd, "ic-healthd", &client.HealthdConfig{})
-			if err != nil {
-				c.LogError("Getting healthd resource", "error", err)
+			if name, err := c.FindHealthdName(); err != nil {
+				c.LogError("Finding healthd", "error", err)
 				return errLogged.Wrap(err)
+			} else if name != "" {
+				healthd, err := c.Resource(client.KindHealthd, name, &client.HealthdConfig{})
+				if err != nil {
+					c.LogError("Getting healthd resource", "error", err)
+					return errLogged.Wrap(err)
+				}
+				stack.Add(healthd)
+				c.LogDebug("Added healthd sidecar to stack")
 			}
-			stack.Add(healthd)
-			c.LogDebug("Added healthd sidecar to stack")
 		}
 
 		var errs error

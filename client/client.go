@@ -285,6 +285,27 @@ func (c *Client) Done() error {
 	return c.hookDone(nil)
 }
 
+// FindHealthdName returns the name of the healthd instance in the project,
+// identified by user.healthcheck.daemon=true. Returns ("", nil) if not found.
+func (c *Client) FindHealthdName() (string, error) {
+	if c.incus == nil {
+		return "", nil
+	}
+
+	instances, err := c.incus.GetInstances("")
+	if err != nil {
+		return "", fmt.Errorf("listing instances: %w", err)
+	}
+
+	for _, inst := range instances {
+		if inst.Config["user.healthcheck.daemon"] == "true" {
+			return inst.Name, nil
+		}
+	}
+
+	return "", nil
+}
+
 // InstanceIPs fetches the global IPv4 and IPv6 addresses of a named
 // instance directly from Incus, without going through an Instance resource.
 func (c *Client) InstanceIPs(incusName string) (network string, ipv4 []string, ipv6 []string, err error) {
