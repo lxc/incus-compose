@@ -48,9 +48,19 @@ var upCommand = &cli.Command{
 			Value:   client.DefaultHealthdImage,
 			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
 		},
+		&cli.StringFlag{
+			Name:    "healthd-binary",
+			Usage:   "Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)",
+			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_BINARY"),
+		},
 		&cli.BoolFlag{
 			Name:  "no-pull",
 			Usage: "Do not refresh cached images from their source registry before creating",
+		},
+		&cli.StringFlag{
+			Name:    "healthd-network",
+			Usage:   "Incus bridge for healthd to use (default: auto-detect)",
+			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_NETWORK"),
 		},
 		&cli.BoolFlag{
 			Name:    "detach",
@@ -66,7 +76,7 @@ var upCommand = &cli.Command{
 
 		p, err := project.New().Load(ctx, buildLoadOptions(cmd)...)
 		if err != nil {
-			globalClient.LogError("Configuring the project", "error", err)
+			globalClient.LogError("Loading the project", "error", err)
 			return errLogged.Wrap(err)
 		}
 
@@ -91,17 +101,29 @@ var upCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
+		// CLI/env takes priority; fall back to compose-file extension.
+		healthdNetwork := cmd.String("healthd-network")
+		if healthdNetwork == "" {
+			n, err := p.HealthdNetworkConfig()
+			if err != nil {
+				globalClient.LogError("Reading healthd-network from compose file", "error", err)
+				return errLogged.Wrap(err)
+			}
+			healthdNetwork = n
+		}
+
 		params := upParams{
-			services:      cmd.Args().Slice(),
-			reCreate:      cmd.Bool("recreate"),
-			start:         !cmd.Bool("no-start"),
-			noHealthd:     cmd.Bool("no-healthd"),
-			healthdBinary: cmd.String("healthd-binary"),
-			healthdImage:  resolveHealthdImage(cmd.Root().String("healthd-image")),
-			noPull:        cmd.Bool("no-pull"),
-			timeout:       int(cmd.Int("timeout")),
-			scale:         parseScale(cmd.StringSlice("scale")),
-			detach:        cmd.Bool("detach"),
+			services:       cmd.Args().Slice(),
+			reCreate:       cmd.Bool("recreate"),
+			start:          !cmd.Bool("no-start"),
+			noHealthd:      cmd.Bool("no-healthd"),
+			healthdBinary:  cmd.String("healthd-binary"),
+			healthdImage:   resolveHealthdImage(cmd.String("healthd-image")),
+			healthdNetwork: healthdNetwork,
+			noPull:         cmd.Bool("no-pull"),
+			timeout:        int(cmd.Int("timeout")),
+			scale:          parseScale(cmd.StringSlice("scale")),
+			detach:         cmd.Bool("detach"),
 		}
 		if err := runUp(globalClient, c, p, params); err != nil {
 			_ = c.Done()
@@ -124,16 +146,17 @@ var upCommand = &cli.Command{
 // upParams holds the parsed arguments for an up run.
 // services is the raw service filter (empty means all services).
 type upParams struct {
-	services      []string
-	reCreate      bool
-	start         bool
-	noHealthd     bool
-	healthdBinary string
-	healthdImage  string
-	noPull        bool
-	timeout       int
-	scale         map[string]int
-	detach        bool
+	services       []string
+	reCreate       bool
+	start          bool
+	noHealthd      bool
+	healthdBinary  string
+	healthdImage   string
+	healthdNetwork string
+	noPull         bool
+	timeout        int
+	scale          map[string]int
+	detach         bool
 }
 
 func mkUpStack(params upParams, p *project.Project, globalClient *client.GlobalClient, c *client.Client) (*client.Stack, error) {
@@ -187,6 +210,7 @@ func mkUpStack(params upParams, p *project.Project, globalClient *client.GlobalC
 			binary:   params.healthdBinary,
 			image:    params.healthdImage,
 			reCreate: params.reCreate,
+			network:  params.healthdNetwork,
 		})
 		if err != nil {
 			c.LogError("Preparing healthd", "error", err)

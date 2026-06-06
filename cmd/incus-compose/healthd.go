@@ -19,6 +19,7 @@ type healthdParams struct {
 	binary   string
 	image    string // already resolved via resolveHealthdImage
 	reCreate bool
+	network  string // Incus bridge name; empty = auto-detect
 }
 
 // projectUsesHealthd reports whether any of the named services declares a healthcheck.
@@ -26,6 +27,11 @@ type healthdParams struct {
 func projectUsesHealthd(p *project.Project, services []string) bool {
 	if len(services) == 0 {
 		for _, svc := range p.Services {
+			// https://github.com/compose-spec/compose-spec/blob/main/05-services.md#restart
+			if svc.Restart != "no" {
+				return true
+			}
+
 			if svc.HealthCheck != nil {
 				return true
 			}
@@ -65,6 +71,7 @@ func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params 
 	config := &client.HealthdConfig{
 		Image:         imageName,
 		ImageResource: img,
+		Network:       params.network,
 	}
 	if params.binary != "" {
 		config.Binary = params.binary
@@ -277,9 +284,10 @@ func mkHealthdStack(cmd *cli.Command, p *project.Project, globalClient *client.G
 	}
 
 	params := healthdParams{
-		binary:   cmd.String("healthd-binary"),
-		image:    resolveHealthdImage(cmd.Root().String("healthd-image")),
+		binary:   cmd.String("binary"),
+		image:    resolveHealthdImage(cmd.String("image")),
 		reCreate: cmd.Bool("recreate"),
+		network:  cmd.String("network"),
 	}
 
 	healthd, img, err := prepareHealthd(globalClient, c, params)
@@ -303,9 +311,20 @@ var healthdUpCommand = &cli.Command{
 			Usage: "Recreate the sidecar even if it already exists",
 		},
 		&cli.StringFlag{
-			Name:    "healthd-binary",
+			Name:    "image",
+			Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
+			Value:   client.DefaultHealthdImage,
+			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
+		},
+		&cli.StringFlag{
+			Name:    "binary",
 			Usage:   "Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)",
 			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_BINARY"),
+		},
+		&cli.StringFlag{
+			Name:    "network",
+			Usage:   "Incus bridge for healthd to use (default: auto-detect)",
+			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_NETWORK"),
 		},
 		&cli.BoolFlag{
 			Name:  "no-pull",

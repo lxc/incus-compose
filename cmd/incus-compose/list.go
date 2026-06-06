@@ -166,8 +166,7 @@ var listCommand = &cli.Command{
 
 		err = stack.Run(client.ActionEnsure)
 		if err != nil {
-			c.LogError(err.Error())
-			return errLogged.Wrap(err)
+			c.LogWarn(err.Error())
 		}
 
 		var rErr error

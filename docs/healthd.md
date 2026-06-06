@@ -7,11 +7,12 @@ Incus has no native healthcheck support, so ic-healthd fills that role.
 
 When `incus-compose up` finds services with a `healthcheck` directive, it:
 
-1. Creates a restricted Incus trust token scoped to the project.
-2. Starts an `ic-healthd` sidecar container and injects the token as a secret.
-3. ic-healthd authenticates once (token consumed), persists the resulting cert.
-4. ic-healthd discovers which instances to watch by reading the Incus API.
-5. ic-healthd runs the health loop and updates instance config keys with the result.
+1. Resolves the Incus bridge healthd should attach to (see [Network Configuration](#network-configuration)).
+2. Creates a restricted Incus trust token scoped to the project.
+3. Starts an `ic-healthd` sidecar container, attaches it to the bridge, and injects the token as a secret.
+4. ic-healthd authenticates once (token consumed), persists the resulting cert.
+5. ic-healthd discovers which instances to watch by reading the Incus API.
+6. ic-healthd runs the health loop and updates instance config keys with the result.
 
 The sidecar starts after all regular instances (priority = `PriorityInstance + 1`)
 and is removed when `incus-compose down` runs.
@@ -86,6 +87,39 @@ services:
 handled. ic-healthd monitors the instance state and restarts it when stopped,
 without running an exec-based test command.
 
+## Network Configuration
+
+ic-healthd needs an Incus bridge for its NIC device and uses that bridge's gateway
+IP to reach the Incus HTTPS API (`:8443`).
+
+### Auto-detection
+
+When no network is specified, incus-compose probes in order:
+
+1. **`incusbr0`** — the default Incus bridge, present on most installations
+2. **`eth0` of the `default` profile** — reads the network name from the profile's `eth0` device
+3. **First compose-managed network** — falls back to the first network defined in the compose file
+
+### Explicit override
+
+Set via CLI flag, environment variable, or compose-file extension.
+CLI/env takes priority over the compose file.
+
+```bash
+incus-compose up --healthd-network incusbr0
+# or
+INCUS_COMPOSE_HEALTHD_NETWORK=incusbr0 incus-compose up
+```
+
+```yaml
+x-incus-compose:
+  healthd-network: incusbr0
+```
+
+When set explicitly, the named network must exist — incus-compose errors out if not found.
+
+The same flag is available on `incus-compose healthd up --network`.
+
 ## Security
 
 The restricted token gives ic-healthd project-scoped access only:
@@ -114,7 +148,7 @@ incus-compose healthd down
 | `up [--recreate]` | Create or recreate the sidecar                        |
 | `down`            | Stop and remove the sidecar                           |
 
-`healthd up` accepts `--healthd-image` and `--healthd-binary` (same as `incus-compose up`).
+`healthd up` accepts `--image`, `--binary`, and `--network`.
 `healthd up` refuses with an error when no service in the project declares a `healthcheck`.
 
 ## Disabling the Sidecar

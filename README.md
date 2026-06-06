@@ -53,11 +53,33 @@ incus-compose uses a **resource-first design**, see [Architecture Documentation]
 
 Switch to a https remote (required for healthchecking).
 
+incus-compose auto-detects the bridge healthd should use (incusbr0, then the default profile's eth0).
+Use --healthd-network or x-incus-compose.healthd-network if your setup differs — see [Network Configuration](docs/healthd.md#network-configuration).
+
+1.) Get the IP Address of your main bridge (incusbr0 or the one in the default profile).
+
 ```bash
-incus config set core.https_address=:8443 # This will listen on all interfaces
+incus network list
+```
+
+2.) Either set that IP as `$IP:8443` or listen on all interface `:8443`
+
+```bash
+incus config set core.https_address=<ip>:8443
+```
+
+3.) Generate a cert and add it to the trust store as admin cert.
+
+```bash
+# Generate and trust a certificate
 incus remote generate-certificate
 incus config trust add-certificate ~/.config/incus/client.crt
+
+incus remote add local-https <ip>
+# or
 incus remote add local-https 127.0.0.1
+
+# Switch to local-https as default remote
 incus remote switch local-https
 ```
 

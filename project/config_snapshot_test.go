@@ -141,6 +141,10 @@ func (s *ConfigSnapshotSuite) TestConfigSnapshots() {
 			Format:  "json",
 		},
 		{
+			Name:    "test-external-network_yaml",
+			Fixture: "test-external-network",
+		},
+		{
 			Name:    "grafana_yaml",
 			Fixture: "grafana",
 		},

@@ -1,0 +1,11 @@
+services:
+  web:
+    image: docker.io/nginx:alpine
+    networks:
+      - br0
+
+networks:
+  br0:
+    external: true
+    x-incus-compose:
+      network: incusbr0

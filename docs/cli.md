@@ -33,8 +33,9 @@ incus-compose up [SERVICE...]
 | `--no-pull`        | Skip refreshing cached images from their source registry (pull is on by default) |
 | `--timeout`        | Stop/start timeout seconds (default: 10)                                |
 | `--scale`          | Scale service: `web=3` (repeatable)                                     |
-| `--no-healthd`     | Don't create healthd sidecar for healthchecks                           |
-| `--healthd-binary` | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image) |
+| `--no-healthd`      | Don't create healthd sidecar for healthchecks                           |
+| `--healthd-binary`  | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image) |
+| `--healthd-network` | Incus bridge for healthd (`INCUS_COMPOSE_HEALTHD_NETWORK`); overrides `x-incus-compose.healthd-network`; auto-detects if unset |
 
 Without `--detach`, `up` streams logs from all started services (equivalent to running `logs --follow` immediately after). Use `--detach` to return as soon as containers are started.
 
@@ -196,7 +197,7 @@ incus-compose healthd <subcommand>
 | `up [--recreate]`   | Create or recreate the sidecar                       |
 | `down`              | Stop and remove the sidecar                          |
 
-`healthd up` also accepts `--healthd-image` and `--healthd-binary`.
+`healthd up` also accepts `--image`, `--binary`, and `--network`.
 
 ## list
 

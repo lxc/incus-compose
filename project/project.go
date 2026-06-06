@@ -869,6 +869,24 @@ func (p *Project) NetworkProfileConfig() (*client.ProfileConfig, error) {
 	return &client.ProfileConfig{SourceProject: parts[0], SourceProfile: parts[1], NetworkOnly: true}, nil
 }
 
+// HealthdNetworkConfig reads the top-level x-incus-compose.healthd-network extension.
+// Returns an empty string when the key is absent.
+func (p *Project) HealthdNetworkConfig() (string, error) {
+	extensions := projectXIncusComposeExtensions(p)
+	if extensions == nil {
+		return "", nil
+	}
+	raw, ok := extensions["healthd-network"]
+	if !ok {
+		return "", nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("x-incus-compose.healthd-network must be a string")
+	}
+	return value, nil
+}
+
 // ProjectConfig reads `x-incus` extensions from the project and returns that.
 func (p *Project) ProjectConfig() map[string]string {
 	if p == nil || p.Project == nil || p.Extensions == nil {

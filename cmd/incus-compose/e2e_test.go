@@ -301,6 +301,42 @@ func (s *E2ESuite) TestLifecycleSimpleNginx() {
 	}
 }
 
+func (s *E2ESuite) TestExternalNetwork() {
+	s.skipIfLocal()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up test-external-network",
+			args:    []string{"-f", "../../test/fixtures/test-external-network/compose.yaml", "up", "--detach", "--no-pull"},
+			wantErr: false,
+		},
+		{
+			name:    "list test-external-network",
+			args:    []string{"-f", "../../test/fixtures/test-external-network/compose.yaml", "list"},
+			wantErr: false,
+		},
+	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/test-external-network/compose.yaml", "down", "--project")
+	}()
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
 func (s *E2ESuite) TestUpDownGrafana() {
 	s.skipIfLocal()
 

@@ -84,8 +84,7 @@ var psCommand = &cli.Command{
 
 		// Run ensure (without create) to populate resource metadata/state where possible.
 		if err := stack.Run(client.ActionEnsure); err != nil {
-			c.LogError("Ensuring the stack", "error", err)
-			return errLogged.Wrap(err)
+			c.LogWarn("Ensuring the stack", "error", err)
 		}
 
 		// Collect instance statuses.

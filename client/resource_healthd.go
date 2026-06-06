@@ -23,6 +23,10 @@ type HealthdConfig struct {
 	// IncusURL is the Incus API endpoint (network gateway IP).
 	IncusURL string `json:"incus_url"`
 
+	// Network is the Incus bridge name healthd should attach to and use to reach
+	// the Incus API. When empty, resolveNetwork() auto-detects the bridge.
+	Network string `json:"network,omitempty"`
+
 	// Image overrides the default healthd container image name.
 	Image string `json:"-"`
 
@@ -363,7 +367,6 @@ func (r *Healthd) revokeCert() error {
 // findNetwork looks for a network resource in the client's resource store.
 // Returns the first network resource if found, nil otherwise.
 func (r *Healthd) findNetwork() *Network {
-	// Look for any network resource that's been registered
 	for _, res := range r.client.resources.All() {
 		if res.Kind() == KindNetwork {
 			if net, ok := res.(*Network); ok {
@@ -374,35 +377,69 @@ func (r *Healthd) findNetwork() *Network {
 	return nil
 }
 
-// resolveIncusURL gets the Incus URL from the network's gateway IP.
+// resolveNetwork resolves and caches the Incus bridge name healthd should attach to.
+// When r.config.Network is already set it is verified to exist and an error is returned
+// if not found. Otherwise the bridge is auto-detected in order:
+//  1. incusbr0
+//  2. eth0 device in the Incus default profile
+//  3. first compose-managed network in the resource store
+func (r *Healthd) resolveNetwork() error {
+	if r.config.Network != "" {
+		if _, _, err := r.client.incus.GetNetwork(r.config.Network); err != nil {
+			return fmt.Errorf("healthd network %q not found: %w", r.config.Network, err)
+		}
+		return nil
+	}
+
+	// 1. incusbr0
+	if _, _, err := r.client.incus.GetNetwork("incusbr0"); err == nil {
+		r.config.Network = "incusbr0"
+		return nil
+	}
+
+	// 2. eth0 of the default profile
+	if profile, _, err := r.client.globalClient.incus.GetProfile("default"); err == nil {
+		if eth0, ok := profile.Devices["eth0"]; ok {
+			if name := eth0["network"]; name != "" {
+				if _, _, err := r.client.incus.GetNetwork(name); err == nil {
+					r.config.Network = name
+					return nil
+				}
+			}
+		}
+	}
+
+	// 3. first compose-managed network
+	if network := r.findNetwork(); network != nil {
+		r.config.Network = network.IncusName()
+		return nil
+	}
+
+	return fmt.Errorf("no network found for healthd: set --healthd-network or x-incus-compose.healthd-network")
+}
+
+// resolveIncusURL gets the Incus API URL via the resolved bridge's gateway IP.
 func (r *Healthd) resolveIncusURL() error {
-	// If already set, skip
 	if r.config.IncusURL != "" {
 		return nil
 	}
 
-	// Find the network we're using
-	network := r.findNetwork()
-	if network == nil {
-		return fmt.Errorf("no network found for healthd")
+	if err := r.resolveNetwork(); err != nil {
+		return err
 	}
 
-	// Get network details to find IPv4 address
-	netInfo, _, err := r.client.incus.GetNetwork(network.IncusName())
+	netInfo, _, err := r.client.incus.GetNetwork(r.config.Network)
 	if err != nil {
-		return fmt.Errorf("getting network info: %w", err)
+		return fmt.Errorf("getting network info for %s: %w", r.config.Network, err)
 	}
 
-	// Get IPv4 address (format: "10.15.162.1/24")
 	ipv4 := netInfo.Config["ipv4.address"]
 	if ipv4 == "" {
-		return fmt.Errorf("network %s has no ipv4.address", network.IncusName())
+		return fmt.Errorf("network %s has no ipv4.address", r.config.Network)
 	}
 
-	// Strip the CIDR suffix
 	ip := strings.Split(ipv4, "/")[0]
 
-	// Get server port (default 8443)
 	server, _, err := r.client.globalClient.incus.GetServer()
 	if err != nil {
 		return fmt.Errorf("getting server info: %w", err)
@@ -410,7 +447,6 @@ func (r *Healthd) resolveIncusURL() error {
 
 	port := "8443"
 	if addr := server.Config["core.https_address"]; addr != "" {
-		// Format could be ":8443" or "[::]:8443" or "0.0.0.0:8443"
 		if idx := strings.LastIndex(addr, ":"); idx != -1 {
 			port = addr[idx+1:]
 		}
@@ -478,14 +514,14 @@ func (r *Healthd) createInstance() error {
 		Files: map[string]InstanceFile{},
 	}
 
-	// Add network device - find a network from the client's resources
-	if network := r.findNetwork(); network != nil {
+	// Add network device — r.config.Network is already set by resolveIncusURL above.
+	if r.config.Network != "" {
 		instanceConfig.Devices = []InstanceDevice{
 			{
 				Name: "eth0",
 				Config: InstanceDeviceConfig{
-					DeviceType: InstanceDeviceTypeNic,
-					Network:    network,
+					DeviceType:  InstanceDeviceTypeNic,
+					NetworkName: r.config.Network,
 				},
 			},
 		}

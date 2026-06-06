@@ -70,8 +70,13 @@ type InstanceDeviceConfig struct {
 	// DeviceType identifies the device type (nic, disk, proxy, tmpfs).
 	DeviceType string
 
-	// Network is the network resource for nic devices.
+	// Network is the network resource for nic devices (compose-managed).
 	Network Resource
+
+	// NetworkName is a raw Incus network name for nic devices that reference an
+	// existing bridge directly, without a compose-managed Resource.
+	// Only one of Network or NetworkName should be set.
+	NetworkName string
 
 	// Ipv4Address assigns a static IPv4 address to the NIC via the bridge DHCP server.
 	Ipv4Address string
@@ -134,14 +139,19 @@ func (d *InstanceDevice) ToIncusDevice() (string, map[string]string, *Error) {
 }
 
 func (d *InstanceDevice) toNicDevice() (map[string]string, error) {
-	if d.Config.Network == nil {
+	networkName := ""
+	if d.Config.Network != nil {
+		networkName = d.Config.Network.IncusName()
+	} else if d.Config.NetworkName != "" {
+		networkName = d.Config.NetworkName
+	} else {
 		return map[string]string{}, ErrBadDeviceConfig.WithText("network not given")
 	}
 
 	device := map[string]string{
 		"type":    "nic",
 		"name":    d.Name,
-		"network": d.Config.Network.IncusName(),
+		"network": networkName,
 	}
 
 	if d.Config.Ipv4Address != "" {
