@@ -30,7 +30,7 @@ incus-compose up [SERVICE...]
 | `-d`, `--detach`   | Detached mode: run containers in the background                         |
 | `--recreate`       | Recreate containers even if they exist                                  |
 | `--no-start`       | Don't start containers after creating                                   |
-| `--no-pull`        | Skip refreshing cached images from their source registry (pull is on by default) |
+| `--pull`           | Pull policy: `always` (refresh from registry), `missing`/`policy` (use cache if present), `never` (never pull); default: `policy` |
 | `--timeout`        | Stop/start timeout seconds (default: 10)                                |
 | `--scale`          | Scale service: `web=3` (repeatable)                                     |
 | `--no-healthd`      | Don't create healthd sidecar for healthchecks                           |

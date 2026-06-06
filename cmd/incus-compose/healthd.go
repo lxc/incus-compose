@@ -326,9 +326,10 @@ var healthdUpCommand = &cli.Command{
 			Usage:   "Incus bridge for healthd to use (default: auto-detect)",
 			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_NETWORK"),
 		},
-		&cli.BoolFlag{
-			Name:  "no-pull",
-			Usage: "Do not refresh cached images from their source registry before creating",
+		&cli.StringFlag{
+			Name:  "pull",
+			Usage: `Pull image before running ("always"|"missing"|"never"|"policy")`,
+			Value: "policy",
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -385,9 +386,9 @@ var healthdUpCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		// Ensure with create. --no-pull doesn't refresh the cached image first.
+		// Ensure with create. --pull=always refreshes cached images from registry.
 		ensureOpts := []client.Option{client.OptionCreate()}
-		if !cmd.Bool("no-pull") {
+		if cmd.String("pull") == "always" {
 			ensureOpts = append(ensureOpts, client.OptionPull())
 		}
 

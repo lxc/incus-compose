@@ -53,9 +53,10 @@ var upCommand = &cli.Command{
 			Usage:   "Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)",
 			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_BINARY"),
 		},
-		&cli.BoolFlag{
-			Name:  "no-pull",
-			Usage: "Do not refresh cached images from their source registry before creating",
+		&cli.StringFlag{
+			Name:  "pull",
+			Usage: `Pull image before running ("always"|"missing"|"never"|"policy")`,
+			Value: "policy",
 		},
 		&cli.StringFlag{
 			Name:    "healthd-network",
@@ -120,7 +121,7 @@ var upCommand = &cli.Command{
 			healthdBinary:  cmd.String("healthd-binary"),
 			healthdImage:   resolveHealthdImage(cmd.String("healthd-image")),
 			healthdNetwork: healthdNetwork,
-			noPull:         cmd.Bool("no-pull"),
+			pull:           cmd.String("pull"),
 			timeout:        int(cmd.Int("timeout")),
 			scale:          parseScale(cmd.StringSlice("scale")),
 			detach:         cmd.Bool("detach"),
@@ -153,7 +154,7 @@ type upParams struct {
 	healthdBinary  string
 	healthdImage   string
 	healthdNetwork string
-	noPull         bool
+	pull           string
 	timeout        int
 	scale          map[string]int
 	detach         bool
@@ -252,7 +253,7 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 	reCreate := params.reCreate
 	timeout := params.timeout
 	start := params.start
-	noPull := params.noPull
+	pull := params.pull
 
 	// defer func() {
 	// 	if c.Errors() != nil {
@@ -300,9 +301,10 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 
 	c.LogDebug("Ensure", "resources", stack.All())
 
-	// Ensure with create. --pull refreshes cached images first.
+	// Ensure with create. --pull=always refreshes cached images from registry.
+	// policy and missing only use the local cache (pull if not present).
 	ensureOpts := []client.Option{client.OptionCreate()}
-	if !noPull {
+	if pull == "always" {
 		ensureOpts = append(ensureOpts, client.OptionPull())
 	}
 	if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure, ensureOpts...); err != nil {
