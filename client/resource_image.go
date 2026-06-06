@@ -2,6 +2,8 @@ package client
 
 import (
 	"fmt"
+	"maps"
+	"strconv"
 	"strings"
 
 	"github.com/distribution/reference"
@@ -49,6 +51,12 @@ type Image struct {
 	// State - nil means not ensured.
 	IncusAlias *incusApi.ImageAliasesEntry
 	ETag       string
+
+	// OCI metadata extracted from the image (empty/0 for native Incus images).
+	UID        uint32
+	GID        uint32
+	Entrypoint string
+	Cwd        string
 }
 
 // newImage returns an existing Image resource or creates a new one.
@@ -235,6 +243,11 @@ func (r *Image) get() error {
 
 	r.IncusAlias = alias
 	r.ETag = eTag
+
+	if img, _, err := r.client.incus.GetImage(alias.Target); err == nil {
+		r.readOCIConfigFromProperties(img.Properties)
+	}
+
 	return nil
 }
 
@@ -307,7 +320,116 @@ func (r *Image) create(args Options) error {
 	r.IncusAlias = alias
 	r.ETag = eTag
 	r.created = true
+
+	if err := r.extractAndStoreOCIConfig(); err != nil {
+		r.client.LogDebug("extracting OCI config from image", "image", r.incusName, "error", err)
+	}
+
 	return nil
+}
+
+// extractAndStoreOCIConfig creates a temporary stopped container from this image,
+// reads oci.uid/oci.gid/oci.entrypoint/oci.cwd from its config, stores them as
+// image properties, then deletes the container.
+// Non-fatal: callers should log and continue on error.
+func (r *Image) extractAndStoreOCIConfig() error {
+	tempName := sanitizeInstanceName("ic-uid-" + r.IncusAlias.Target)
+
+	req := incusApi.InstancesPost{
+		Name: tempName,
+		Type: incusApi.InstanceTypeContainer,
+		Source: incusApi.InstanceSource{
+			Type:        "image",
+			Fingerprint: r.IncusAlias.Target,
+		},
+		InstancePut: incusApi.InstancePut{
+			Devices: map[string]map[string]string{
+				"root": {
+					"type": "disk",
+					"path": "/",
+					"pool": r.client.Config().DefaultStoragePool,
+				},
+			},
+		},
+	}
+
+	createOp, err := r.client.incus.CreateInstance(req)
+	if err != nil {
+		return fmt.Errorf("creating temp instance: %w", err)
+	}
+	if err = createOp.Wait(); err != nil {
+		return fmt.Errorf("waiting for temp instance: %w", err)
+	}
+
+	// Always delete the temp container, even on error below.
+	defer func() {
+		if deleteOp, err := r.client.incus.DeleteInstance(tempName); err == nil {
+			_ = deleteOp.Wait()
+		}
+	}()
+
+	instance, _, err := r.client.incus.GetInstance(tempName)
+	if err != nil {
+		return fmt.Errorf("getting temp instance: %w", err)
+	}
+
+	uid, gid, err := extractUIDGID(instance)
+	if err != nil {
+		return fmt.Errorf("extracting uid/gid: %w", err)
+	}
+
+	entrypoint := instance.Config["oci.entrypoint"]
+	cwd := instance.Config["oci.cwd"]
+
+	if uid == 0 && gid == 0 && entrypoint == "" && cwd == "" {
+		return nil
+	}
+
+	img, eTag, err := r.client.incus.GetImage(r.IncusAlias.Target)
+	if err != nil {
+		return fmt.Errorf("getting image for property update: %w", err)
+	}
+
+	props := maps.Clone(img.Properties)
+	if props == nil {
+		props = make(map[string]string)
+	}
+	props["oci.uid"] = strconv.FormatUint(uint64(uid), 10)
+	props["oci.gid"] = strconv.FormatUint(uint64(gid), 10)
+	props["oci.entrypoint"] = entrypoint
+	props["oci.cwd"] = cwd
+
+	if err := r.client.incus.UpdateImage(r.IncusAlias.Target, incusApi.ImagePut{
+		AutoUpdate: img.AutoUpdate,
+		Properties: props,
+		Public:     img.Public,
+		ExpiresAt:  img.ExpiresAt,
+		Profiles:   img.Profiles,
+	}, eTag); err != nil {
+		return fmt.Errorf("storing OCI config as image properties: %w", err)
+	}
+
+	r.UID = uid
+	r.GID = gid
+	r.Entrypoint = entrypoint
+	r.Cwd = cwd
+	return nil
+}
+
+// readOCIConfigFromProperties reads oci.* values from image properties.
+func (r *Image) readOCIConfigFromProperties(props map[string]string) {
+	if uidStr, ok := props["oci.uid"]; ok {
+		if uid64, err := strconv.ParseUint(uidStr, 10, 32); err == nil {
+			r.UID = uint32(uid64)
+		}
+	}
+	if gidStr, ok := props["oci.gid"]; ok {
+		if gid64, err := strconv.ParseUint(gidStr, 10, 32); err == nil {
+			r.GID = uint32(gid64)
+		}
+	}
+	r.Entrypoint = props["oci.entrypoint"]
+	r.Cwd = props["oci.cwd"]
 }
 
 // Delete removes the image from the active project.

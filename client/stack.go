@@ -168,7 +168,7 @@ func (s *Stack) ForAction(action Action) *Stack {
 	// is preserved — use ToStackReverse() on ToStack to reverse dependency-graph
 	// order for services of the same kind (e.g. stop dependants before dependencies).
 	switch action {
-	case ActionStop, ActionDelete, ActionPostEnsure:
+	case ActionStop, ActionDelete:
 		sortDescending = true
 	case ActionEnsure, ActionStart:
 		sortDescending = false

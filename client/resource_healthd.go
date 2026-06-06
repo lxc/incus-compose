@@ -538,20 +538,18 @@ func (r *Healthd) createInstance() error {
 
 	// Persistent data volume for config.json and the registered cert/key.
 	// Survives container restarts so re-registration is not required after restart.
-	instanceConfig.PostDevices = []InstanceDevice{
-		{
-			Name: "data",
-			Config: InstanceDeviceConfig{
-				DeviceType: InstanceDeviceTypeDisk,
-				Disk: InstanceDeviceDiskConfig{
-					StorageVolumeConfig: &r.config.StorageVolume.Config,
-					Source:              "ic-healthd",
-					Path:                "/var/lib/ic-healthd",
-					Shift:               true,
-				},
+	instanceConfig.Devices = append(instanceConfig.Devices, InstanceDevice{
+		Name: "data",
+		Config: InstanceDeviceConfig{
+			DeviceType: InstanceDeviceTypeDisk,
+			Disk: InstanceDeviceDiskConfig{
+				StorageVolumeConfig: &r.config.StorageVolume.Config,
+				Source:              "ic-healthd",
+				Path:                "/var/lib/ic-healthd",
+				Shift:               true,
 			},
 		},
-	}
+	})
 
 	// Add image resource as dependency if using OCI image
 	if r.config.ImageResource != nil {

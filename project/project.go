@@ -144,7 +144,6 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 
 	resources := []client.Resource{}
 	devices := []client.InstanceDevice{}
-	postDevices := []client.InstanceDevice{}
 	postStartDevices := []client.InstanceDevice{}
 
 	// Environment variables
@@ -388,7 +387,10 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 
 		switch cVol.Type {
 		case "volume":
-			volConfig := &client.StorageVolumeConfig{}
+			volConfig := &client.StorageVolumeConfig{
+				Shifted:       true,
+				ImageResource: image,
+			}
 
 			v, err := c.Resource(client.KindStorageVolume, cVol.Source, volConfig)
 			if err != nil {
@@ -415,7 +417,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 				devConfig.Disk.ReadOnly = true
 			}
 
-			postDevices = append(postDevices, client.InstanceDevice{Name: devName, Config: devConfig})
+			devices = append(devices, client.InstanceDevice{Name: devName, Config: devConfig})
 		case "bind":
 			devName := fmt.Sprintf("bind-%s", strings.ReplaceAll(cVol.Source, "/", "-"))
 			devConfig := client.InstanceDeviceConfig{
@@ -431,7 +433,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 				devConfig.Disk.ReadOnly = true
 			}
 
-			postDevices = append(postDevices, client.InstanceDevice{Name: devName, Config: devConfig})
+			devices = append(devices, client.InstanceDevice{Name: devName, Config: devConfig})
 		case "tmpfs":
 			devName := fmt.Sprintf("tmpfs-%s", strings.ReplaceAll(cVol.Target, "/", "-"))
 			devConfig := client.InstanceDeviceConfig{
@@ -538,9 +540,9 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 
 	var instanceConfig *client.InstanceConfig
 	if image != nil {
-		instanceConfig = &client.InstanceConfig{Full: options.Full, Resources: append(slices.Clone(resources), image), Image: image.Name(), Config: config, Devices: devices, PostDevices: postDevices, PostStartDevices: postStartDevices, Secrets: instanceSecrets}
+		instanceConfig = &client.InstanceConfig{Full: options.Full, Resources: append(slices.Clone(resources), image), Image: image.Name(), Config: config, Devices: devices, PostStartDevices: postStartDevices, Secrets: instanceSecrets}
 	} else {
-		instanceConfig = &client.InstanceConfig{Full: options.Full, Resources: slices.Clone(resources), Config: config, Devices: devices, PostDevices: postDevices, PostStartDevices: postStartDevices, Secrets: instanceSecrets}
+		instanceConfig = &client.InstanceConfig{Full: options.Full, Resources: slices.Clone(resources), Config: config, Devices: devices, PostStartDevices: postStartDevices, Secrets: instanceSecrets}
 	}
 	instance, err := c.Resource(client.KindInstance, instanceName, instanceConfig)
 	if err != nil {

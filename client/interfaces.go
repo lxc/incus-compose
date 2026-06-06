@@ -18,12 +18,11 @@ type Action string
 
 // Action constants for resource actions.
 const (
-	ActionEnsure     Action = "ensure"
-	ActionPostEnsure Action = "post-ensure"
-	ActionDelete     Action = "delete"
-	ActionStart      Action = "start"
-	ActionStop       Action = "stop"
-	ActionLog        Action = "log"
+	ActionEnsure Action = "ensure"
+	ActionDelete Action = "delete"
+	ActionStart  Action = "start"
+	ActionStop   Action = "stop"
+	ActionLog    Action = "log"
 )
 
 // Resource defines the common interface for all Incus resources.
@@ -63,13 +62,6 @@ type EnsureAble interface {
 	// Ensure fetches an existing Resource or creates a new one.
 	// If a Resource with the same name exists, it is returned.
 	Ensure(opts ...Option) error
-}
-
-// PostEnsureAble is implemented by resources that can be post ensured.
-type PostEnsureAble interface {
-	// PostEnsure will be called after for example an instance has been ensured.
-	// This is needed for StorageVolume's which need the oci.UID/oci.GID set.
-	PostEnsure(opts ...Option) error
 }
 
 // StartAble is implemented by resources that can be started.

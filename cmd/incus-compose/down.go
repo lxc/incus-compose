@@ -133,33 +133,23 @@ func deleteProjectNetworks(c *client.Client, networks []*client.Network) error {
 // services is the raw service filter (empty means all services).
 type downParams struct {
 	services []string
+	images   bool
 	timeout  int
 }
 
 // runDown stops and removes the instances of a loaded project, along with their
 // per-project image copies. Volumes and the image cache are left untouched.
 func runDown(globalClient *client.GlobalClient, c *client.Client, p *project.Project, params downParams) error {
-	stack := client.NewStack(c)
-	if err := p.ToStack(c, stack, project.ToStackOnlyServices(params.services), project.ToStackReverse()); err != nil {
-		c.LogError("Adding the project to a stack", "error", err)
-		return errLogged
+	stackOpts := []project.ToStackOption{project.ToStackOnlyServices(params.services)}
+
+	if !params.images {
+		stackOpts = append(stackOpts, project.ToStackNoImages())
 	}
 
-	// Remove the per-project image copies so the next up re-copies fresh from
-	// the (possibly auto-updated) cache. Cache images live in a separate project
-	// and are not affected. See issue #29.
-	imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
-	for _, cSv := range p.Services {
-		if cSv.Image == "" {
-			continue
-		}
-
-		image, err := c.Resource(client.KindImage, cSv.Image, imageConfig)
-		if err != nil {
-			c.LogWarn("Getting image", "service", cSv.Name, "image", cSv.Image, "error", err)
-			continue
-		}
-		stack.Add(image)
+	stack := client.NewStack(c)
+	if err := p.ToStack(c, stack, stackOpts...); err != nil {
+		c.LogError("Adding the project to a stack", "error", err)
+		return errLogged
 	}
 
 	if projectUsesHealthd(p) {

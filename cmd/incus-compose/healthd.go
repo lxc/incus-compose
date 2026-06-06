@@ -51,12 +51,16 @@ func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params 
 	c.LogDebug("Using healthd image", "image", imageName)
 
 	imageConfig := &client.ImageConfig{CliConfig: globalClient.CliConfig()}
-	r, err := c.Resource(client.KindImage, imageName, imageConfig)
+	imgRes, err := c.Resource(client.KindImage, imageName, imageConfig)
 	if err != nil {
 		return nil, fmt.Errorf("getting the healthd image '%v': %w", imageName, err)
 	}
 
-	volRes, err := c.Resource(client.KindStorageVolume, "ic-healthd", &client.StorageVolumeConfig{})
+	volRes, err := c.Resource(
+		client.KindStorageVolume,
+		"ic-healthd",
+		&client.StorageVolumeConfig{Shifted: true, ImageResource: imgRes},
+	)
 	if err != nil {
 		return nil, client.ErrUnknown.WithKindName(client.KindStorageVolume, "ic-healthd").Wrap(err)
 	}
@@ -65,9 +69,9 @@ func prepareHealthd(globalClient *client.GlobalClient, c *client.Client, params 
 		return nil, client.ErrUnknown.WithResource(volRes)
 	}
 
-	img, ok := r.(*client.Image)
+	img, ok := imgRes.(*client.Image)
 	if !ok {
-		return nil, client.ErrUnknown.WithResource(r)
+		return nil, client.ErrUnknown.WithResource(imgRes)
 	}
 
 	config := &client.HealthdConfig{

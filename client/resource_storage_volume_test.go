@@ -97,10 +97,15 @@ func (s *StorageVolumeSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
 }
 
 func (s *StorageVolumeSuite) TestEnsure_ShiftedVolume() {
+	ir, err := s.client.Resource(KindImage, "docker.io/library/nginx:latest", &ImageConfig{})
+	s.Require().NoError(err)
+
+	// Create the image
+	s.Require().NoError(RunAction(ir, ActionEnsure, OptionCreate()))
+
 	r, err := s.client.Resource(KindStorageVolume, "test-shifted", &StorageVolumeConfig{
-		Shifted: true,
-		UID:     1000,
-		GID:     1000,
+		Shifted:       true,
+		ImageResource: ir,
 	})
 	s.Require().NoError(err)
 

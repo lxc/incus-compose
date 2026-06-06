@@ -17,11 +17,9 @@ type StorageVolumeConfig struct {
 	// Shifted enables UID/GID shifting for the volume.
 	Shifted bool
 
-	// UID is the initial UID for shifted volumes.
-	UID uint32
-
-	// GID is the initial GID for shifted volumes.
-	GID uint32
+	// ImageResource to take UID/GID from for shifting, only
+	// needed if shifting is true.
+	ImageResource Resource
 
 	// ExtraConfig contains additional volume configuration options.
 	ExtraConfig map[string]string
@@ -73,9 +71,7 @@ func newStorageVolume(c *Client, name string, configGetter Config) (*StorageVolu
 		Config:       *config,
 	}
 
-	// Prefix volume name with project name for isolation
-	vol.incusName = c.project + "-" + name
-
+	vol.incusName = sanitizeInstanceName(name)
 	return vol, nil
 }
 
@@ -99,8 +95,12 @@ func (r *StorageVolume) Created() bool {
 	return r.created
 }
 
-// Ensure does get only, PostEnsure does create.
+// Ensure retrieves an existing storage volume or creates a new one if Create option is set.
 func (r *StorageVolume) Ensure(opts ...Option) error {
+	if r.IncusVolume != nil {
+		return nil
+	}
+
 	args := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
@@ -109,48 +109,17 @@ func (r *StorageVolume) Ensure(opts ...Option) error {
 		}
 	}
 
-	// Try to get existing
 	err := r.get()
-	if err != nil && !args.Create {
-		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ActionEnsure, r, args, err)
+	if err != nil {
+		if args.Create {
+			err = r.create()
 		}
-
-		r.ensured = true
-		return err
 	}
 
 	r.ensured = true
-	return nil
-}
-
-// PostEnsure retrieves an existing storage volume or creates a new one if Create option is set.
-func (r *StorageVolume) PostEnsure(opts ...Option) error {
-	if r.IncusVolume != nil {
-		return nil
-	}
-
-	args := NewOptions(opts...)
-
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionPostEnsure, r, args, nil); err != nil {
-			return err
-		}
-	}
-
-	var err error
-	if !args.Create {
-		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ActionPostEnsure, r, args, err)
-		}
-
-		return err
-	}
-
-	err = r.create()
 
 	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ActionPostEnsure, r, args, err)
+		err = r.client.hookAfter(ActionEnsure, r, args, err)
 	}
 
 	return err
@@ -180,14 +149,23 @@ func (r *StorageVolume) validate(volume *incusApi.StorageVolume) error {
 		return nil
 	}
 
+	if r.Config.ImageResource == nil {
+		return ErrVolumeMismatch.WithText("no image resource given")
+	}
+
+	img, ok := r.Config.ImageResource.(*Image)
+	if !ok {
+		return ErrUnknownResource.WithResource(r.Config.ImageResource)
+	}
+
 	// Check shifted is enabled
 	if volume.Config["security.shifted"] != "true" {
 		return ErrVolumeMismatch.WithText("expected security.shifted=true")
 	}
 
 	// Check UID/GID match
-	expectedUID := strconv.FormatUint(uint64(r.Config.UID), 10)
-	expectedGID := strconv.FormatUint(uint64(r.Config.GID), 10)
+	expectedUID := strconv.FormatUint(uint64(img.UID), 10)
+	expectedGID := strconv.FormatUint(uint64(img.GID), 10)
 
 	if volume.Config["initial.uid"] != expectedUID {
 		return ErrVolumeMismatch.WithText("UID mismatch, expected " + expectedUID + " got " + volume.Config["initial.uid"])
@@ -210,9 +188,18 @@ func (r *StorageVolume) create() error {
 	}
 
 	if r.Config.Shifted {
+		if r.Config.ImageResource == nil {
+			return ErrVolumeMismatch.WithText("no image resource given")
+		}
+
+		img, ok := r.Config.ImageResource.(*Image)
+		if !ok {
+			return ErrUnknownResource.WithResource(r.Config.ImageResource)
+		}
+
 		config["security.shifted"] = "true"
-		config["initial.uid"] = strconv.FormatUint(uint64(r.Config.UID), 10)
-		config["initial.gid"] = strconv.FormatUint(uint64(r.Config.GID), 10)
+		config["initial.uid"] = strconv.FormatUint(uint64(img.UID), 10)
+		config["initial.gid"] = strconv.FormatUint(uint64(img.GID), 10)
 	}
 
 	volReq := incusApi.StorageVolumesPost{
@@ -272,8 +259,7 @@ func (r *StorageVolume) Delete(opts ...Option) error {
 }
 
 var (
-	_ Resource       = (*StorageVolume)(nil)
-	_ EnsureAble     = (*StorageVolume)(nil)
-	_ PostEnsureAble = (*StorageVolume)(nil)
-	_ DeleteAble     = (*StorageVolume)(nil)
+	_ Resource   = (*StorageVolume)(nil)
+	_ EnsureAble = (*StorageVolume)(nil)
+	_ DeleteAble = (*StorageVolume)(nil)
 )

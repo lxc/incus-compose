@@ -146,11 +146,6 @@ func RunAction(r Resource, action Action, opts ...Option) error {
 			return e.Ensure(opts...)
 		}
 		return ErrUnsupportedAction.WithAction(ActionEnsure).WithResource(r)
-	case ActionPostEnsure:
-		if e, ok := r.(PostEnsureAble); ok {
-			return e.PostEnsure(opts...)
-		}
-		return ErrUnsupportedAction.WithAction(ActionPostEnsure).WithResource(r)
 	case ActionDelete:
 		if e, ok := r.(DeleteAble); ok {
 			return e.Delete(opts...)
