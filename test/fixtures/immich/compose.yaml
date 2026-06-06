@@ -16,6 +16,12 @@ services:
       - .env
     ports:
       - "2283:2283"
+    depends_on:
+      redis:
+        condition: service_healthy
+      database:
+        condition: service_healthy
+        restart: true
     restart: unless-stopped
 
   immich-machine-learning:

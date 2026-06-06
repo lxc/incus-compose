@@ -16,8 +16,7 @@ services:
       retries: 3
     image: docker.io/pcdummy/immich-postgres:14-vectorchord0.4.3-pgvectors0.2.0
     networks:
-      default:
-        ipv4_address: 10.131.32.20
+      default: null
     restart: unless-stopped
     shm_size: "134217728"
     volumes:
@@ -44,8 +43,7 @@ services:
         - /usr/src/healthcheck.py
     image: docker.io/pcdummy/immich-machine-learning:v2
     networks:
-      default:
-        ipv4_address: 10.131.32.18
+      default: null
     restart: unless-stopped
     volumes:
       - type: volume
@@ -97,8 +95,7 @@ services:
         - exit 1
     image: docker.io/valkey/valkey:9@sha256:3b55fbaa0cd93cf0d9d961f405e4dfcc70efe325e2d84da207a0a8e6d8fde4f9
     networks:
-      default:
-        ipv4_address: 10.131.32.19
+      default: null
     restart: unless-stopped
 networks:
   default:
