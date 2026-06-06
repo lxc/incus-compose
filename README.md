@@ -83,7 +83,7 @@ incus remote add local-https 127.0.0.1
 incus remote switch local-https
 ```
 
-Add OCI image remotes to Incus
+Add OCI image remotes to Incus, read [OCI Registry Cache](/oci-registry-cache) first as you wish.
 
 ```bash
 incus remote add --protocol oci docker.io https://docker.io
