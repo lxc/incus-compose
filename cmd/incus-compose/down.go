@@ -27,14 +27,9 @@ var downCommand = &cli.Command{
 			Usage: "Timeout in seconds for stopping",
 			Value: 10,
 		},
-		&cli.BoolFlag{
-			Name:  "no-healthd",
-			Usage: "Don't stop/remove healthd sidecar",
-		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
 		deleteProject := cmd.Bool("project")
-		noHealthd := cmd.Bool("no-healthd")
 
 		globalClient, err := clientFromContext(ctx)
 		if err != nil {
@@ -88,9 +83,8 @@ var downCommand = &cli.Command{
 		}
 
 		return runDown(globalClient, c, p, downParams{
-			services:  cmd.Args().Slice(),
-			timeout:   int(cmd.Int("timeout")),
-			noHealthd: noHealthd,
+			services: cmd.Args().Slice(),
+			timeout:  int(cmd.Int("timeout")),
 		})
 	},
 }
@@ -122,6 +116,10 @@ func projectNetworks(c *client.Client, p *project.Project) ([]*client.Network, e
 func deleteProjectNetworks(c *client.Client, networks []*client.Network) error {
 	var errs error
 	for _, network := range networks {
+		if network.Config.External {
+			continue
+		}
+
 		if err := c.GlobalConnection().DeleteNetwork(network.IncusName()); err != nil {
 			errs = errors.Join(errs, fmt.Errorf("deleting network %q: %w", network.Name(), err))
 		}
@@ -132,9 +130,8 @@ func deleteProjectNetworks(c *client.Client, networks []*client.Network) error {
 // downParams holds the parsed arguments for a down run.
 // services is the raw service filter (empty means all services).
 type downParams struct {
-	services  []string
-	timeout   int
-	noHealthd bool
+	services []string
+	timeout  int
 }
 
 // runDown stops and removes the instances of a loaded project, along with their
@@ -172,7 +169,7 @@ func runDown(globalClient *client.GlobalClient, c *client.Client, p *project.Pro
 		stack.Add(image)
 	}
 
-	if !params.noHealthd && projectUsesHealthd(p, services) {
+	if projectUsesHealthd(p, services) {
 		if name, err := c.FindHealthdName(); err != nil {
 			c.LogError("Finding healthd", "error", err)
 			return errLogged.Wrap(err)
