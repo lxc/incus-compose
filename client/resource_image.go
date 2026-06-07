@@ -80,60 +80,23 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 	configCopy := *cConfig
 	config := &configCopy
 
-	var cache incusClient.InstanceServer
-
-	var remote, image string
-
-	// Resolve cache: CacheServer > CacheProject > default imageCache
-	if config.CacheServer != nil {
-		// c.LogDebug("Using the provided CacheServer")
-		cache = config.CacheServer
-	} else if config.CacheProject != "" {
-		// Ensure cache project exists
-		// c.LogDebug("Using a project to cache images")
-		cacheClient, err := c.globalClient.EnsureProject(config.CacheProject, EnsureProjectWithCreate())
-		if err != nil {
-			return nil, fmt.Errorf("ensuring cache project %s: %w", config.CacheProject, err)
-		}
-		cache = cacheClient.incus
-	} else {
-		// c.LogDebug("Using the clients default cache (default project)")
-		cache = c.imageCache
-	}
+	var remote, image, incusName string
 
 	// Try to parse as native Incus format first: "remote:image/path"
-	// This takes precedence if CliConfig is provided and remote exists
-	var source incusClient.ImageServer
-	var nativeIncus bool
-	var incusName string
-
+	// This takes precedence if CliConfig is provided and remote exists in the config.
 	if c.globalClient.cliConfig != nil && strings.Contains(name, ":") {
 		parts := strings.SplitN(name, ":", 2)
 		remoteName := parts[0]
 
-		// Check if this remote exists in CLI config
 		if _, ok := c.globalClient.cliConfig.Remotes[remoteName]; ok {
-			is, err := c.globalClient.cliConfig.GetImageServer(remoteName)
-			if err != nil {
-				return nil, ErrImageSource.WithText("getting image server for " + remoteName).Wrap(err)
-			}
-
-			source = is
 			remote = remoteName
 			image = parts[1]
-
-			// Detect protocol from connection info
-			connInfo, err := is.GetConnectionInfo()
-			if err == nil && connInfo.Protocol == "incus" {
-				nativeIncus = true
-			}
-
 			incusName = name
 		}
 	}
 
 	// If not resolved as native, try Docker/OCI reference
-	if source == nil {
+	if incusName == "" {
 		ref, err := reference.ParseDockerRef(name)
 		if err != nil {
 			return nil, ErrInvalidFormat.WithKindName(KindImage, name).Wrap(err)
@@ -147,37 +110,17 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 		}
 
 		image, _ = strings.CutPrefix(ref.String(), originalDomain+"/")
-
-		// Build incusName from parsed/converted values
 		incusName = remote + "/" + image
-
-		// Resolve source from CLI config if available
-		if c.globalClient.cliConfig != nil {
-			is, err := c.globalClient.cliConfig.GetImageServer(remote)
-			if err != nil {
-				return nil, ErrImageSource.WithText("getting image server for " + remote).Wrap(err)
-			}
-			source = is
-		}
 	}
 
-	if source == nil {
-		return nil, ErrImageSource.WithText("couldn't find an image server")
-	}
-
-	img := &Image{
+	return &Image{
 		BaseResource: NewBaseResource(KindImage, name, PriorityImage),
 		client:       c,
 		incusName:    incusName,
 		Config:       *config,
-		source:       source,
 		remote:       remote,
 		image:        image,
-		cache:        cache,
-		nativeIncus:  nativeIncus,
-	}
-
-	return img, nil
+	}, nil
 }
 
 // String is for debugging.
@@ -224,6 +167,39 @@ func (r *Image) Ensure(opts ...Option) error {
 	args := NewOptions(opts...)
 	if r.IsEnsured() {
 		return nil
+	}
+
+	// Resolve cache: CacheServer > CacheProject > default imageCache
+	if r.cache == nil {
+		if r.Config.CacheServer != nil {
+			r.cache = r.Config.CacheServer
+		} else if r.Config.CacheProject != "" {
+			cacheClient, err := r.client.globalClient.EnsureProject(r.Config.CacheProject, EnsureProjectWithCreate())
+			if err != nil {
+				return fmt.Errorf("ensuring cache project %s: %w", r.Config.CacheProject, err)
+			}
+			r.cache = cacheClient.incus
+		} else {
+			r.cache = r.client.imageCache
+		}
+	}
+
+	// Resolve source image server
+	if r.source == nil {
+		if r.client.globalClient.cliConfig != nil {
+			is, err := r.client.globalClient.cliConfig.GetImageServer(r.remote)
+			if err != nil {
+				return ErrImageSource.WithText("getting image server for " + r.remote).Wrap(err)
+			}
+			r.source = is
+			if connInfo, err := is.GetConnectionInfo(); err == nil && connInfo.Protocol == "incus" {
+				r.nativeIncus = true
+			}
+		}
+
+		if r.source == nil {
+			return ErrImageSource.WithText("couldn't find an image server")
+		}
 	}
 
 	if r.client.hookBefore != nil {
