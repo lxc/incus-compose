@@ -54,7 +54,7 @@ var upCommand = &cli.Command{
 		&cli.StringFlag{
 			Name:    "healthd-image",
 			Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
-			Value:   client.DefaultHealthdImage,
+			Value:   defaultHealthdImage,
 			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
 		},
 		&cli.StringFlag{
@@ -101,36 +101,43 @@ var upCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		// CLI/env takes priority; fall back to compose-file extension.
-		healthdNetwork := cmd.String("healthd-network")
-		if healthdNetwork == "" {
-			n, err := p.HealthdNetworkConfig()
+		if !cmd.Bool("no-healthd") && healthdInUseByProject(p) {
+			hparams := healthdParams{
+				projectName: p.Name,
+				binary:      cmd.String("healthd-binary"),
+				image:       resolveHealthdImage(cmd.String("healthd-image")),
+				pull:        cmd.String("pull"),
+				reCreate:    cmd.Bool("recreate"),
+				network:     cmd.String("healthd-network"),
+				timeout:     cmd.Int("timeout"),
+			}
+
+			inst, resources, err := healthdGetResources(c, hparams)
 			if err != nil {
-				globalClient.LogError("Reading healthd-network from compose file", "error", err)
+				globalClient.LogError("Creating healthd resources", "error", err)
 				return errLogged.Wrap(err)
 			}
-			healthdNetwork = n
+
+			if err := healthdUp(c, inst, resources, hparams); err != nil {
+				globalClient.LogError("Starting healthd", "error", err)
+				return errLogged.Wrap(err)
+			}
 		}
 
 		params := upParams{
-			services:       cmd.Args().Slice(),
-			reCreate:       cmd.Bool("recreate"),
-			start:          !cmd.Bool("no-start"),
-			noHealthd:      cmd.Bool("no-healthd"),
-			healthdBinary:  cmd.String("healthd-binary"),
-			healthdImage:   resolveHealthdImage(cmd.String("healthd-image")),
-			healthdNetwork: healthdNetwork,
-			pull:           cmd.String("pull"),
-			timeout:        int(cmd.Int("timeout")),
-			scale:          parseScale(cmd.StringSlice("scale")),
-			detach:         cmd.Bool("detach"),
+			reCreate: cmd.Bool("recreate"),
+			start:    !cmd.Bool("no-start"),
+			services: cmd.Args().Slice(),
+			pull:     cmd.String("pull"),
+			timeout:  int(cmd.Int("timeout")),
+			scale:    parseScale(cmd.StringSlice("scale")),
 		}
 		if err := runUp(globalClient, c, p, params); err != nil {
 			_ = c.Done()
 			return err
 		}
 		_ = c.Done()
-		if params.start && !params.detach {
+		if !cmd.Bool("detach") {
 			var out io.Writer
 			if f, ok := cmd.Root().Writer.(*os.File); ok {
 				out = colorable.NewColorable(f)
@@ -146,41 +153,20 @@ var upCommand = &cli.Command{
 // upParams holds the parsed arguments for an up run.
 // services is the raw service filter (empty means all services).
 type upParams struct {
-	services       []string
-	reCreate       bool
-	start          bool
-	noHealthd      bool
-	healthdBinary  string
-	healthdImage   string
-	healthdNetwork string
-	pull           string
-	timeout        int
-	scale          map[string]int
-	detach         bool
+	services  []string
+	start     bool
+	reCreate  bool
+	noVolumes bool
+	pull      string
+	timeout   int
+	scale     map[string]int
 }
 
-func mkUpStack(params upParams, p *project.Project, globalClient *client.GlobalClient, c *client.Client) (*client.Stack, error) {
+func upMakeStack(params upParams, p *project.Project, c *client.Client) (*client.Stack, error) {
 	stack := client.NewStack(c)
 
-	if !params.noHealthd && params.start && projectUsesHealthd(p) {
-		c.LogDebug("Found healthchecks")
-
-		hStack, err := mkHealthdStack(globalClient, c, healthdParams{
-			projectName: p.Name,
-			binary:      params.healthdBinary,
-			image:       params.healthdImage,
-			reCreate:    params.reCreate,
-			network:     params.healthdNetwork,
-		})
-		if err != nil {
-			c.LogError("Preparing healthd", "error", err)
-			return nil, errLogged.Wrap(err)
-		}
-		stack.Add(hStack.All()...)
-	}
-
 	toStackOpts := []project.ToStackOption{}
-	if !params.reCreate {
+	if !params.noVolumes {
 		toStackOpts = append(toStackOpts, project.ToStackStorageVolumes())
 	}
 	if len(params.services) > 0 {
@@ -214,9 +200,7 @@ func parseScale(values []string) map[string]int {
 
 // runUp creates (and optionally starts) the services of a loaded project.
 func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Project, params upParams) error {
-	reCreate := params.reCreate
 	timeout := params.timeout
-	start := params.start
 	pull := params.pull
 
 	// defer func() {
@@ -233,14 +217,14 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 	// 	}
 	// }()
 
-	if reCreate {
-		params.reCreate = false
-		stack, err := mkUpStack(params, p, globalClient, c)
+	if params.reCreate {
+		params.noVolumes = true
+		stack, err := upMakeStack(params, p, c)
 		if err != nil {
 			c.LogError("Creating the stack in reCreate", "error", err)
 			return errLogged.Wrap(err)
 		}
-		params.reCreate = true
+		params.noVolumes = false
 
 		c.LogDebug("Ensure", "resources", stack.All())
 
@@ -262,7 +246,7 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 		}
 	}
 
-	stack, err := mkUpStack(params, p, globalClient, c)
+	stack, err := upMakeStack(params, p, c)
 	if err != nil {
 		return err
 	}
@@ -280,8 +264,8 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 		return errLogged.Wrap(err)
 	}
 
-	if start {
-		// Start
+	// Start
+	if params.start {
 		if err := stack.ForAction(client.ActionStart).Run(client.ActionStart, client.OptionTimeout(timeout)); err != nil {
 			c.LogError("Starting resources", "error", err)
 			return errLogged.Wrap(err)

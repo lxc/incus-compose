@@ -6,6 +6,7 @@ import (
 
 	"github.com/lxc/incus/v6/shared/cliconfig"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -85,14 +86,14 @@ func TestImageParsing(t *testing.T) {
 			img, err := newImage(c, tt.imageName, config)
 
 			if tt.wantErr {
-				assert.Error(t, err)
+				require.Error(t, err)
 				return
 			}
 
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedRemote, img.Remote())
-			assert.Equal(t, tt.expectedImage, img.image)
-			assert.Equal(t, tt.expectedIncusName, img.IncusName())
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedRemote, img.Remote())
+			require.Equal(t, tt.expectedImage, img.image)
+			require.Equal(t, tt.expectedIncusName, img.IncusName())
 		})
 	}
 }

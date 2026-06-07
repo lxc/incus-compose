@@ -215,9 +215,6 @@ func (c *Client) Resource(kind Kind, name string, config Config) (Resource, erro
 		res, err = newImage(c, name, config)
 	case KindInstance:
 		res, err = newInstance(c, name, config)
-	case KindHealthd:
-		res, err = newHealthd(c, name, config)
-
 	default:
 		return nil, ErrUnknownResource.WithText(string(kind))
 	}

@@ -152,18 +152,31 @@ func runDown(globalClient *client.GlobalClient, c *client.Client, p *project.Pro
 		return errLogged
 	}
 
-	if projectUsesHealthd(p) {
+	if healthdInUseByProject(p) {
 		if name, err := c.FindHealthdName(); err != nil {
 			c.LogError("Finding healthd", "error", err)
 			return errLogged.Wrap(err)
 		} else if name != "" {
-			healthd, err := c.Resource(client.KindHealthd, name, &client.HealthdConfig{})
+			params := healthdParams{
+				projectName: p.Name,
+				binary:      "",
+				image:       resolveHealthdImage(defaultHealthdImage),
+				reCreate:    false,
+				network:     "auto",
+				timeout:     params.timeout,
+			}
+
+			inst, resources, err := healthdGetResources(c, params)
 			if err != nil {
-				c.LogError("Getting healthd resource", "error", err)
+				globalClient.LogError("Getting healthd resources", "error", err)
 				return errLogged.Wrap(err)
 			}
-			stack.Add(healthd)
-			c.LogDebug("Added healthd sidecar to stack")
+
+			if err := healthdDown(c, inst, resources, params.timeout); err != nil {
+				c.LogWarn("Healthd down", "error", err)
+			} else {
+				c.LogDebug("Stopped healthd sidecar")
+			}
 		}
 	}
 
