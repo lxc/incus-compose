@@ -78,6 +78,25 @@ func (s *HealthdConfigSuite) TestParseServiceConfigRestartPolicies() {
 	s.False(svc.Restart)
 }
 
+func (s *HealthdConfigSuite) TestParseServiceConfigUnlessStopped() {
+	svc, err := parseServiceConfig(map[string]string{
+		"user.healthcheck.test": `["NONE"]`,
+		"user.restart":          "unless-stopped",
+	})
+	s.Require().NoError(err)
+	s.True(svc.Restart)
+	s.True(svc.UnlessStopped)
+
+	for _, policy := range []string{"always", "on-failure", "no", ""} {
+		svc, err := parseServiceConfig(map[string]string{
+			"user.healthcheck.test": `["NONE"]`,
+			"user.restart":          policy,
+		})
+		s.Require().NoError(err)
+		s.False(svc.UnlessStopped, "expected UnlessStopped=false for policy %q", policy)
+	}
+}
+
 func (s *HealthdConfigSuite) TestParseServiceConfigErrors() {
 	tests := []struct {
 		name string

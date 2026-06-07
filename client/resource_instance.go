@@ -565,6 +565,8 @@ func (r *Instance) start() error {
 		r.IncusInstance = instance
 		r.ETag = eTag
 
+		_ = r.setStopped(false)
+
 		if r.created {
 			if err := r.PushFiles(); err != nil {
 				return err
@@ -752,7 +754,8 @@ func (r *Instance) Stop(opts ...Option) error {
 	}
 
 	if r.IncusInstance.Status == "Stopped" {
-		return nil // already stopped
+		_ = r.setStopped(true)
+		return nil
 	}
 
 	op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
@@ -763,11 +766,41 @@ func (r *Instance) Stop(opts ...Option) error {
 
 	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionStop, r, options, op, err)
 
+	if err == nil {
+		_ = r.setStopped(true)
+	}
+
 	if r.client.hookAfter != nil {
 		return r.client.hookAfter(ActionStop, r, options, err)
 	}
 
 	return err
+}
+
+// setStopped writes or clears the user.stopped config key on the instance.
+// It is a best-effort call; callers ignore the error with _.
+// Uses the cached instance and ETag — no extra GetInstance round-trip needed
+// because incus-compose is short-lived and the sole writer.
+func (r *Instance) setStopped(stopped bool) error {
+	current, exists := r.IncusInstance.Config["user.stopped"]
+	if stopped {
+		if exists && current == "true" {
+			return nil
+		}
+		r.IncusInstance.Config["user.stopped"] = "true"
+	} else {
+		if !exists {
+			return nil
+		}
+		delete(r.IncusInstance.Config, "user.stopped")
+	}
+
+	op, err := r.client.incus.UpdateInstance(r.incusName, r.IncusInstance.Writable(), r.ETag)
+	if err != nil {
+		return err
+	}
+
+	return op.Wait()
 }
 
 // Delete removes the instance from Incus.

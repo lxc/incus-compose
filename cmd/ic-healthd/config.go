@@ -25,11 +25,12 @@ type Config struct {
 // ServiceConfig holds healthcheck configuration for a single service.
 // The service is identified by the key used in Config.Services.
 type ServiceConfig struct {
-	Test     []string `json:"test"`
-	Interval Duration `json:"interval"`
-	Timeout  Duration `json:"timeout"`
-	Retries  int      `json:"retries"`
-	Restart  bool     `json:"restart"`
+	Test          []string `json:"test"`
+	Interval      Duration `json:"interval"`
+	Timeout       Duration `json:"timeout"`
+	Retries       int      `json:"retries"`
+	Restart       bool     `json:"restart"`
+	UnlessStopped bool     `json:"unless_stopped"`
 }
 
 // Duration wraps time.Duration for JSON unmarshaling.
@@ -155,6 +156,10 @@ func parseServiceConfig(cfg map[string]string) (ServiceConfig, error) {
 
 	if slices.Contains([]string{"always", "on-failure", "on-failure:3", "unless-stopped"}, cfg["user.restart"]) {
 		svc.Restart = true
+	}
+
+	if cfg["user.restart"] == "unless-stopped" {
+		svc.UnlessStopped = true
 	}
 
 	return svc, nil

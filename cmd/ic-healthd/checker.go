@@ -72,7 +72,11 @@ func (c *Checker) Run(ctx context.Context) {
 
 					c.failures = 0
 
-					if time.Now().Before(c.nextRestart) {
+					if c.config.UnlessStopped && c.isStopped() {
+						if c.debug {
+							log.Printf("%s: unless-stopped: intentionally stopped, skipping restart", c.name)
+						}
+					} else if time.Now().Before(c.nextRestart) {
 						if c.debug {
 							log.Printf("%s: backing off, next restart at %s", c.name, c.nextRestart.Format(time.TimeOnly))
 						}
@@ -214,6 +218,16 @@ func (c *Checker) writeStatus() error {
 	}
 
 	return op.Wait()
+}
+
+// isStopped reports whether the instance has user.stopped=true, meaning it was
+// intentionally stopped. Returns true on API error (instance gone counts as stopped).
+func (c *Checker) isStopped() bool {
+	inst, _, err := c.client.GetInstance(c.name)
+	if err != nil {
+		return true
+	}
+	return inst.Config["user.stopped"] == "true"
 }
 
 // restart brings the instance back to Running. If it's already stopped we
