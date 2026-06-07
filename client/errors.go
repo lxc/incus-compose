@@ -145,4 +145,7 @@ var (
 
 	// ErrCreate indicates a resource creation error.
 	ErrCreate = NewError("create failed")
+
+	// ErrTestLocal indicates that a test client with INCUS_COMPOSE_TEST_LOCAL has been created.
+	ErrTestLocal = NewError("env INCUS_COMPOSE_TEST_LOCAL is set")
 )

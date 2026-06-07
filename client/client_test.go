@@ -3,20 +3,11 @@ package client
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os"
-	"path/filepath"
-	"runtime"
 	"testing"
 
-	"github.com/lmittmann/tint"
-	"github.com/lxc/incus/v6/shared/cliconfig"
-	"github.com/mattn/go-colorable"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
-
-var errTestLocal = NewError("env INCUS_COMPOSE_TEST_LOCAL is set")
 
 // ----------------------------------------------------------------------------
 // Unit Tests
@@ -86,138 +77,6 @@ func TestSanitizeProjectName(t *testing.T) {
 // ----------------------------------------------------------------------------
 // Test Helpers
 // ----------------------------------------------------------------------------
-
-// projectRoot returns the absolute path to the project root directory.
-func projectRoot() string {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return "."
-	}
-	return filepath.Dir(filepath.Dir(file))
-}
-
-// resolvePath resolves a path relative to the project root.
-func resolvePath(path string) string {
-	if path == "" || filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(projectRoot(), path)
-}
-
-// NewTestClient creates a new GlobalClient for testing.
-// Returns error if INCUS_COMPOSE_URL is not set.
-func NewTestClient(ctx context.Context) (*GlobalClient, error) {
-	if _, ok := os.LookupEnv("INCUS_COMPOSE_TEST_LOCAL"); ok {
-		return nil, errTestLocal
-	}
-
-	var logger *slog.Logger
-
-	logFormat, ok := os.LookupEnv("LOG_FORMAT")
-	if !ok {
-		_, inCI := os.LookupEnv("CI")
-		if inCI {
-			logFormat = "text"
-		} else {
-			logFormat = "colortext"
-		}
-	}
-
-	switch logFormat {
-	case "json":
-		logger = slog.New(slog.NewJSONHandler(
-			os.Stderr,
-			&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
-		)
-	case "colortext":
-		logger = slog.New(tint.NewHandler(
-			colorable.NewColorable(os.Stderr),
-			&tint.Options{
-				Level:      slog.LevelDebug - 4,
-				TimeFormat: "15:04",
-			},
-		))
-	default:
-		logger = slog.New(slog.NewTextHandler(
-			os.Stderr,
-			&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
-		)
-	}
-
-	slog.SetDefault(logger)
-
-	// Priority: INCUS_REMOTE -> INCUS_COMPOSE_URL -> "local" remote
-	var opts []ClientOption
-
-	// 1. If INCUS_REMOTE is set, use Incus CLI config
-	if remote, ok := os.LookupEnv("INCUS_REMOTE"); ok {
-		slog.DebugContext(ctx, "Connecting", "remote", remote)
-
-		conf, err := cliconfig.LoadConfig("")
-		if err != nil {
-			return nil, ErrConnectionFailed.Wrap(err)
-		}
-
-		server, err := conf.GetInstanceServer(remote)
-		if err != nil {
-			return nil, ErrConnectionFailed.Wrap(err)
-		}
-
-		opts = []ClientOption{
-			ClientLogger(logger),
-			ClientProvideConnection(server),
-		}
-	} else if url, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok {
-		// 2. If INCUS_COMPOSE_URL is set, use direct URL connection
-		slog.DebugContext(ctx, "Connecting", "url", url)
-
-		cert := resolvePath(os.Getenv("INCUS_COMPOSE_CERT"))
-		key := resolvePath(os.Getenv("INCUS_COMPOSE_KEY"))
-
-		opts = []ClientOption{
-			ClientURL(url),
-			ClientLogger(logger),
-			ClientInsecureSkipVerify(),
-		}
-
-		if cert != "" {
-			opts = append(opts, ClientTLSClientCert(cert))
-		}
-		if key != "" {
-			opts = append(opts, ClientTLSClientKey(key))
-		}
-	} else {
-		// 3. Fall back to "local" remote
-		slog.DebugContext(ctx, "Connecting", "remote", "local")
-
-		conf, err := cliconfig.LoadConfig("")
-		if err != nil {
-			return nil, ErrConnectionFailed.Wrap(err)
-		}
-
-		server, err := conf.GetInstanceServer("local")
-		if err != nil {
-			return nil, ErrConnectionFailed.Wrap(err)
-		}
-
-		opts = []ClientOption{
-			ClientLogger(logger),
-			ClientProvideConnection(server),
-		}
-	}
-
-	// Use own cache project for tests.
-	opts = append(opts, ClientCacheProject("incus-compose-tests-cache"))
-
-	c := New(ctx, opts...)
-	if err := c.Connect(); err != nil {
-		return nil, err
-	}
-
-	AddDebuggerHook(c)
-
-	return c, nil
-}
 
 // createProjectClient creates a project-scoped client with logging hooks.
 func createProjectClient(gc *GlobalClient, name string) (*Client, error) {

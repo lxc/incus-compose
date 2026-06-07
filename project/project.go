@@ -395,12 +395,12 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 				resources = append(resources, v)
 			}
 
-			devName := fmt.Sprintf("vol-%s", cVol.Source)
+			devName := "vol-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-4)
 			devConfig := client.InstanceDeviceConfig{
 				DeviceType: client.InstanceDeviceTypeDisk,
 				Disk: client.InstanceDeviceDiskConfig{
 					StorageVolumeConfig: volConfig,
-					Source:              cVol.Source,
+					Source:              v.IncusName(),
 					Path:                cVol.Target,
 					Shift:               true,
 				},
@@ -422,13 +422,15 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 				return nil, client.ErrUnknown.WithKindName(client.KindInstance, serviceName).Wrap(err)
 			}
 
+			devName := "bind-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-5)
+
 			if !info.IsDir() {
 				files[cVol.Target] = client.InstanceFile{
 					File:    absSource,
 					UID:     -1,
 					GID:     -1,
-					Mode:    0o400,
-					DirMode: 0o700,
+					Mode:    0o644,
+					DirMode: 0o755,
 				}
 			} else {
 				volConfig := &client.StorageVolumeConfig{
@@ -437,7 +439,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 					HostPath:      absSource,
 				}
 
-				v, err := c.Resource(client.KindStorageVolume, cVol.Source, volConfig)
+				v, err := c.Resource(client.KindStorageVolume, "bind-"+cVol.Source, volConfig)
 				if err != nil {
 					errs = errors.Join(errs, err)
 					continue
@@ -447,12 +449,11 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 					resources = append(resources, v)
 				}
 
-				devName := fmt.Sprintf("bind-%s", strings.ReplaceAll(cVol.Source, "/", "-"))
 				devConfig := client.InstanceDeviceConfig{
 					DeviceType: client.InstanceDeviceTypeDisk,
 					Disk: client.InstanceDeviceDiskConfig{
 						StorageVolumeConfig: volConfig,
-						Source:              cVol.Source,
+						Source:              v.IncusName(),
 						Path:                cVol.Target,
 						Shift:               true,
 					},

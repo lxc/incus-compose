@@ -248,6 +248,11 @@ func (c *GlobalClient) Connect() error {
 	return errors.New("provide either URL with TLS certs or ProvidedInstanceServer")
 }
 
+// Connection returns the project-scoped Connection client.
+func (c *GlobalClient) Connection() *incusClient.ProtocolIncus {
+	return c.incus
+}
+
 func (c *GlobalClient) connectProvided() error {
 	info, err := c.Config.ProvidedInstanceServer.GetConnectionInfo()
 	if err != nil {

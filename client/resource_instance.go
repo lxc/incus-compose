@@ -2,8 +2,6 @@ package client
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"maps"
@@ -12,18 +10,12 @@ import (
 	"path"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/gosimple/slug"
 	incusClient "github.com/lxc/incus/v6/client"
 	incusApi "github.com/lxc/incus/v6/shared/api"
 )
-
-// maxInstanceNameLen is the maximum length for Incus instance names.
-// Incus allows up to 63 characters (DNS hostname limit).
-const maxInstanceNameLen = 63
 
 // InstanceSecret represents a secret to be pushed into the instance.
 type InstanceSecret struct {
@@ -134,7 +126,7 @@ func newInstance(c *Client, name string, configGetter Config) (*Instance, error)
 	inst := &Instance{
 		BaseResource: NewBaseResource(KindInstance, name, PriorityInstance),
 		client:       c,
-		incusName:    sanitizeInstanceName(name),
+		incusName:    SanitizeIncusName(name, -1),
 		Config:       *config,
 	}
 
@@ -278,12 +270,6 @@ func (r *Instance) create(opts ...Option) error {
 		}
 	}
 
-	// Build pre-devices map
-	devices, err := r.buildDevices()
-	if err != nil {
-		return err
-	}
-
 	imageResource, err := r.client.Resource(KindImage, r.Config.Image, &ImageConfig{})
 	if err != nil {
 		return err
@@ -310,9 +296,15 @@ func (r *Instance) create(opts ...Option) error {
 		r.GID = image.GID
 	}
 
-	// Create any storage volumes listed in Devices before the instance so they
-	// can be attached as regular devices in the CreateInstanceFromImage call.
+	// Resolve storage volumes before building the device map so that each
+	// disk device's Source is the volume name, not the raw host path.
 	if err := r.ensureVolumes(); err != nil {
+		return err
+	}
+
+	// Build pre-devices map after volumes are resolved.
+	devices, err := r.buildDevices()
+	if err != nil {
 		return err
 	}
 
@@ -654,7 +646,7 @@ func (r *Instance) PushFiles() error {
 			uid = int64(r.UID)
 		}
 		if gid == -1 {
-			uid = int64(r.GID)
+			gid = int64(r.GID)
 		}
 
 		if file.File != "" && file.Content != nil {
@@ -1007,22 +999,4 @@ func extractUIDGID(instance *incusApi.Instance) (uint64, uint64, error) {
 	}
 
 	return uid, gid, nil
-}
-
-// sanitizeInstanceName converts a string to a valid Incus instance name.
-// Converts to lowercase, replaces special chars and underscores with hyphens.
-// Names exceeding 63 chars are replaced with a 32-char hex hash for DNS compatibility.
-func sanitizeInstanceName(name string) string {
-	// slug.Make converts to lowercase, replaces special chars with hyphens
-	// but keeps underscores, so we replace them explicitly
-	safe := slug.Make(name)
-	safe = strings.ReplaceAll(safe, "_", "-")
-
-	if len(safe) > maxInstanceNameLen {
-		// Fall back to hash for very long names
-		sha256sum := sha256.Sum256([]byte(name))
-		safe = hex.EncodeToString(sha256sum[:16]) // 32 hex chars
-	}
-
-	return safe
 }

@@ -1,5 +1,9 @@
 package client
 
+// MaxIncusNameLen is the maximum length for Incus instance names.
+// Incus allows up to 63 characters (DNS hostname limit).
+const MaxIncusNameLen = 63
+
 // Kind identifies a resource type.
 type Kind string
 

@@ -21,4 +21,5 @@ services:
 networks:
   default:
     x-incus:
+      ipv4.nat: "true"
       ipv4.address: 10.131.32.1/24

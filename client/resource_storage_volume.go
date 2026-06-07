@@ -81,7 +81,7 @@ func newStorageVolume(c *Client, name string, configGetter Config) (*StorageVolu
 		Config:       *config,
 	}
 
-	vol.incusName = sanitizeInstanceName(name)
+	vol.incusName = SanitizeIncusName(name, -1)
 	return vol, nil
 }
 
@@ -267,9 +267,9 @@ func (r *StorageVolume) pushDirectoryContent() error {
 			return nil
 		}
 
-		perm := 0o600
+		perm := 0o644
 		if d.IsDir() {
-			perm = 0o700
+			perm = 0o755
 		}
 
 		args := incusClient.InstanceFileArgs{

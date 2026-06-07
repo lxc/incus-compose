@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
-	"github.com/lxc/incus/v6/shared/cliconfig"
 	"github.com/stretchr/testify/suite"
 
 	"gitlab.com/r3j0/incus-compose/client"
@@ -65,38 +64,6 @@ func (s *E2ESuite) plannedNetworkNames(compose string) []string {
 		}
 	}
 	return names
-}
-
-func (s *E2ESuite) defaultProjectClient() *client.Client {
-	opts := []client.ClientOption{}
-	if url, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok {
-		opts = append(opts, client.ClientURL(url), client.ClientInsecureSkipVerify())
-		if cert, ok := os.LookupEnv("INCUS_COMPOSE_CERT"); ok {
-			opts = append(opts, client.ClientTLSClientCert(cert))
-		}
-		if key, ok := os.LookupEnv("INCUS_COMPOSE_KEY"); ok {
-			opts = append(opts, client.ClientTLSClientKey(key))
-		}
-	} else {
-		conf, err := cliconfig.LoadConfig("")
-		s.Require().NoError(err)
-
-		remote := os.Getenv("INCUS_REMOTE")
-		if remote == "" {
-			remote = conf.DefaultRemote
-		}
-
-		server, err := conf.GetInstanceServer(remote)
-		s.Require().NoError(err)
-		opts = append(opts, client.ClientProvideInstanceServer(server))
-	}
-
-	globalClient := client.New(s.ctx, opts...)
-	s.Require().NoError(globalClient.Connect())
-
-	c, err := globalClient.EnsureProject("default")
-	s.Require().NoError(err)
-	return c
 }
 
 func (s *E2ESuite) TestConfigCommand() {
@@ -165,8 +132,10 @@ func (s *E2ESuite) TestConfigCommand() {
 }
 
 func (s *E2ESuite) TestDownProjectDeletesNetworks() {
-	s.skipIfLocal()
-
+	gc, err := client.NewTestClient(context.Background())
+	if err != nil {
+		s.T().Skip(err.Error())
+	}
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 	networks := s.plannedNetworkNames(compose)
 	s.Require().NotEmpty(networks)
@@ -178,9 +147,11 @@ func (s *E2ESuite) TestDownProjectDeletesNetworks() {
 		}
 	}()
 
+	c, err := gc.EnsureProject("default")
+	s.Require().NoError(err)
+
 	s.Require().NoError(s.run("-f", compose, "up", "--detach"))
 
-	c := s.defaultProjectClient()
 	for _, name := range networks {
 		_, _, err := c.Connection().GetNetwork(name)
 		s.Require().NoError(err)

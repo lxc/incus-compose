@@ -367,7 +367,7 @@ func (r *Image) create(args Options) error {
 // image properties, then deletes the container.
 // Non-fatal: callers should log and continue on error.
 func (r *Image) extractAndStoreOCIConfig() error {
-	tempName := sanitizeInstanceName("ic-uid-" + r.IncusAlias.Target)
+	tempName := SanitizeIncusName("ic-uid-"+r.IncusAlias.Target, MaxIncusNameLen-7)
 
 	req := incusApi.InstancesPost{
 		Name: tempName,

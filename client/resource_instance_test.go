@@ -101,7 +101,7 @@ func TestSanitizeInstanceName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := sanitizeInstanceName(tt.input)
+			result := SanitizeIncusName(tt.input, -1)
 
 			if tt.checkHashFallback {
 				// Verify it's a valid 32-char hex string
@@ -110,7 +110,7 @@ func TestSanitizeInstanceName(t *testing.T) {
 			} else {
 				assert.Equal(t, tt.expected, result)
 			}
-			assert.LessOrEqual(t, len(result), maxInstanceNameLen)
+			assert.LessOrEqual(t, len(result), MaxIncusNameLen)
 		})
 	}
 }

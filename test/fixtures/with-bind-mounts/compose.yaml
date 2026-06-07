@@ -1,0 +1,12 @@
+name: with-bind-mounts
+
+services:
+  file-web:
+    image: docker.io/nginxinc/nginx-unprivileged:alpine-slim
+    volumes:
+      - ./file.html:/usr/share/nginx/html/index.html
+
+  dir-web:
+    image: docker.io/nginxinc/nginx-unprivileged:alpine-slim
+    volumes:
+      - ./html:/usr/share/nginx/html
