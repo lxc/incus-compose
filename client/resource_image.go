@@ -2,8 +2,6 @@ package client
 
 import (
 	"fmt"
-	"maps"
-	"strconv"
 	"strings"
 
 	"github.com/distribution/reference"
@@ -12,11 +10,23 @@ import (
 	"github.com/lxc/incus/v6/shared/cliconfig"
 )
 
-// ImageConfig contains the source configuration for an image.
+// ImageConfig contains the source and cache configuration for an image.
 type ImageConfig struct {
 	// CliConfig is the Incus CLI config used to resolve image servers.
 	// If set, the source is resolved automatically from the remote name.
 	CliConfig *cliconfig.Config
+
+	// CacheServer is an image server to use as cache (for library users).
+	// Takes precedence over CacheProject.
+	CacheServer incusClient.InstanceServer
+
+	// CacheProject is the project name to use as cache (for CLI users).
+	// The project will be created if it doesn't exist.
+	// Ignored if CacheServer is set.
+	CacheProject string
+
+	// cache is the resolved instance server for caching (internal use).
+	cache incusClient.InstanceServer
 
 	// Remote is the domain part of the image reference (set automatically if not provided).
 	Remote string
@@ -51,12 +61,6 @@ type Image struct {
 	// State - nil means not ensured.
 	IncusAlias *incusApi.ImageAliasesEntry
 	ETag       string
-
-	// OCI metadata extracted from the image (empty/0 for native Incus images).
-	UID        uint32
-	GID        uint32
-	Entrypoint string
-	Cwd        string
 }
 
 // newImage returns an existing Image resource or creates a new one.
@@ -72,6 +76,20 @@ func newImage(c *Client, name string, configGetter Config) (*Image, error) {
 	}
 	configCopy := *cConfig
 	config := &configCopy
+
+	// Resolve cache: CacheServer > CacheProject > default imageCache
+	if config.CacheServer != nil {
+		config.cache = config.CacheServer
+	} else if config.CacheProject != "" {
+		// Ensure cache project exists
+		cacheClient, err := c.globalClient.EnsureProject(config.CacheProject, EnsureProjectWithCreate())
+		if err != nil {
+			return nil, fmt.Errorf("ensuring cache project %s: %w", config.CacheProject, err)
+		}
+		config.cache = cacheClient.incus
+	} else {
+		config.cache = c.imageCache
+	}
 
 	// Try to parse as native Incus format first: "remote:image/path"
 	// This takes precedence if CliConfig is provided and remote exists
@@ -158,7 +176,7 @@ func (r *Image) IncusName() string {
 	return r.incusName
 }
 
-// IsEnsured returns true if the image has been fetched/copied to the project.
+// IsEnsured returns true if the image has been fetched/copied to cache.
 func (r *Image) IsEnsured() bool {
 	return r.IncusAlias != nil
 }
@@ -168,10 +186,10 @@ func (r *Image) Created() bool {
 	return r.created
 }
 
-// Status returns the image status: "Unknown" or "Exists".
+// Status returns the image status: "Unknown" or "Cached".
 func (r *Image) Status() string {
 	if r.IsEnsured() {
-		return "Exists"
+		return "Cached"
 	}
 	return "Unknown"
 }
@@ -232,7 +250,8 @@ func (r *Image) Ensure(opts ...Option) error {
 }
 
 func (r *Image) get() error {
-	alias, eTag, err := r.client.incus.GetImageAlias(r.incusName)
+	// Check if image alias exists in cache
+	alias, eTag, err := r.Config.cache.GetImageAlias(r.incusName)
 	if err != nil {
 		return ErrNotFound.Wrap(err)
 	}
@@ -243,28 +262,24 @@ func (r *Image) get() error {
 
 	r.IncusAlias = alias
 	r.ETag = eTag
-
-	if img, _, err := r.client.incus.GetImage(alias.Target); err == nil {
-		r.readOCIConfigFromProperties(img.Properties)
-	}
-
 	return nil
 }
 
-// refresh updates the project image from its source registry if the remote
+// refresh updates the cached image from its source registry if the remote
 // fingerprint has changed.
 //
 // RefreshImage (incus image refresh) is unreliable for OCI floating tags:
 // Incus fingerprints are computed from layer digests, not manifest SHAs, so a
 // registry update that only changes manifest metadata is invisible to refresh.
-// The only reliable approach is to delete the stale entry and re-copy,
+// The only reliable approach is to delete the stale cache entry and re-copy,
 // which always runs skopeo copy against the current registry state.
 //
 // Before deleting, the remote fingerprint is queried (skopeo inspect for OCI,
-// no layer pull). If it matches the current fingerprint, the refresh is skipped.
+// no layer pull). If it matches the cached fingerprint, the refresh is skipped.
 // On query failure the refresh proceeds to be safe.
 func (r *Image) refresh(args Options) error {
-	if r.source == nil || r.IncusAlias == nil {
+	// No source || no cache || no alias, no download.
+	if r.source == nil || r.Config.cache == nil || r.IncusAlias == nil {
 		return nil
 	}
 
@@ -274,9 +289,9 @@ func (r *Image) refresh(args Options) error {
 		return nil
 	}
 
-	op, err := r.client.incus.DeleteImage(r.IncusAlias.Target)
+	op, err := r.Config.cache.DeleteImage(r.IncusAlias.Target)
 	if err = r.client.hookOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
-		r.client.LogDebug("deleting stale image for refresh", "error", err)
+		r.client.LogDebug("deleting stale cached image for refresh", "error", err)
 		return nil
 	}
 
@@ -304,7 +319,7 @@ func (r *Image) create(args Options) error {
 	}
 
 	// Start the copy operation
-	op, err := r.client.incus.CopyImage(r.source, *imgInfo, copyArgs)
+	op, err := r.Config.cache.CopyImage(r.source, *imgInfo, copyArgs)
 
 	// Wait for copy to complete
 	if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
@@ -312,7 +327,7 @@ func (r *Image) create(args Options) error {
 	}
 
 	// Fetch the created alias
-	alias, eTag, err := r.client.incus.GetImageAlias(r.incusName)
+	alias, eTag, err := r.Config.cache.GetImageAlias(r.incusName)
 	if err != nil {
 		return ErrCreate.WithText("fetching image alias after copy").Wrap(err)
 	}
@@ -320,120 +335,18 @@ func (r *Image) create(args Options) error {
 	r.IncusAlias = alias
 	r.ETag = eTag
 	r.created = true
-
-	if err := r.extractAndStoreOCIConfig(); err != nil {
-		r.client.LogDebug("extracting OCI config from image", "image", r.incusName, "error", err)
-	}
-
 	return nil
 }
 
-// extractAndStoreOCIConfig creates a temporary stopped container from this image,
-// reads oci.uid/oci.gid/oci.entrypoint/oci.cwd from its config, stores them as
-// image properties, then deletes the container.
-// Non-fatal: callers should log and continue on error.
-func (r *Image) extractAndStoreOCIConfig() error {
-	tempName := sanitizeInstanceName("ic-uid-" + r.IncusAlias.Target)
-
-	req := incusApi.InstancesPost{
-		Name: tempName,
-		Type: incusApi.InstanceTypeContainer,
-		Source: incusApi.InstanceSource{
-			Type:        "image",
-			Fingerprint: r.IncusAlias.Target,
-		},
-		InstancePut: incusApi.InstancePut{
-			Devices: map[string]map[string]string{
-				"root": {
-					"type": "disk",
-					"path": "/",
-					"pool": r.client.Config().DefaultStoragePool,
-				},
-			},
-		},
-	}
-
-	createOp, err := r.client.incus.CreateInstance(req)
-	if err != nil {
-		return fmt.Errorf("creating temp instance: %w", err)
-	}
-	if err = createOp.Wait(); err != nil {
-		return fmt.Errorf("waiting for temp instance: %w", err)
-	}
-
-	// Always delete the temp container, even on error below.
-	defer func() {
-		if deleteOp, err := r.client.incus.DeleteInstance(tempName); err == nil {
-			_ = deleteOp.Wait()
-		}
-	}()
-
-	instance, _, err := r.client.incus.GetInstance(tempName)
-	if err != nil {
-		return fmt.Errorf("getting temp instance: %w", err)
-	}
-
-	uid, gid, err := extractUIDGID(instance)
-	if err != nil {
-		return fmt.Errorf("extracting uid/gid: %w", err)
-	}
-
-	entrypoint := instance.Config["oci.entrypoint"]
-	cwd := instance.Config["oci.cwd"]
-
-	if uid == 0 && gid == 0 && entrypoint == "" && cwd == "" {
-		return nil
-	}
-
-	img, eTag, err := r.client.incus.GetImage(r.IncusAlias.Target)
-	if err != nil {
-		return fmt.Errorf("getting image for property update: %w", err)
-	}
-
-	props := maps.Clone(img.Properties)
-	if props == nil {
-		props = make(map[string]string)
-	}
-	props["oci.uid"] = strconv.FormatUint(uint64(uid), 10)
-	props["oci.gid"] = strconv.FormatUint(uint64(gid), 10)
-	props["oci.entrypoint"] = entrypoint
-	props["oci.cwd"] = cwd
-
-	if err := r.client.incus.UpdateImage(r.IncusAlias.Target, incusApi.ImagePut{
-		AutoUpdate: img.AutoUpdate,
-		Properties: props,
-		Public:     img.Public,
-		ExpiresAt:  img.ExpiresAt,
-		Profiles:   img.Profiles,
-	}, eTag); err != nil {
-		return fmt.Errorf("storing OCI config as image properties: %w", err)
-	}
-
-	r.UID = uid
-	r.GID = gid
-	r.Entrypoint = entrypoint
-	r.Cwd = cwd
-	return nil
-}
-
-// readOCIConfigFromProperties reads oci.* values from image properties.
-func (r *Image) readOCIConfigFromProperties(props map[string]string) {
-	if uidStr, ok := props["oci.uid"]; ok {
-		if uid64, err := strconv.ParseUint(uidStr, 10, 32); err == nil {
-			r.UID = uint32(uid64)
-		}
-	}
-	if gidStr, ok := props["oci.gid"]; ok {
-		if gid64, err := strconv.ParseUint(gidStr, 10, 32); err == nil {
-			r.GID = uint32(gid64)
-		}
-	}
-	r.Entrypoint = props["oci.entrypoint"]
-	r.Cwd = props["oci.cwd"]
-}
-
-// Delete removes the image from the active project.
-// It is idempotent: a missing image is not an error.
+// Delete removes the per-project copy of the image from the active project.
+//
+// Projects are created with features.images=true, so creating an instance
+// copies the image into the active project. Those copies are removed here on
+// down; without it they accumulate and go stale relative to the auto-updated
+// cache (see issue #29). The cache lives in a separate project and is left
+// untouched, so cached images persist across down/up cycles.
+//
+// Delete is idempotent: a missing per-project copy is not an error.
 func (r *Image) Delete(opts ...Option) error {
 	options := NewOptions(opts...)
 

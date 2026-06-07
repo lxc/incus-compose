@@ -60,6 +60,9 @@ type InstanceConfig struct {
 	// Devices are devices attached before instance creation (networks, proxies).
 	Devices []InstanceDevice
 
+	// PostDevices are devices attached after instance creation (volumes needing UID/GID).
+	PostDevices []InstanceDevice
+
 	// PostStartDevices are devices attached after the instance is started.
 	// Use for devices that require a running instance, e.g. NAT proxy (needs container IP).
 	PostStartDevices []InstanceDevice
@@ -91,9 +94,6 @@ type Instance struct {
 	incusName string
 	created   bool
 	Config    InstanceConfig
-
-	// image is for internal use in create operations.
-	image *Image
 
 	// State - nil means not ensured.
 	IncusInstance *incusApi.Instance
@@ -133,6 +133,27 @@ func newInstance(c *Client, name string, configGetter Config) (*Instance, error)
 		Config:       *config,
 	}
 
+	return inst, nil
+}
+
+// Instance returns an existing Instance resource or creates a new one.
+func (c *Client) Instance(name string, config InstanceConfig) (*Instance, error) {
+	// Check if already in store
+	if existing := c.resources.Get(KindInstance, name); existing != nil {
+		res, ok := existing.(*Instance)
+		if !ok {
+			return nil, ErrUnknownConfig.WithKindName(KindInstance, name)
+		}
+
+		return res, nil
+	}
+
+	inst, err := newInstance(c, name, &config)
+	if err != nil {
+		return nil, err
+	}
+
+	c.resources.Add(inst)
 	return inst, nil
 }
 
@@ -300,23 +321,8 @@ func (r *Instance) create(opts ...Option) error {
 		return ErrDependencyNotEnsured.WithResource(image)
 	}
 
-	r.image = image
-
-	// Use UID/GID from image properties when available so volumes are created
-	// with the correct shifted config before the instance is created.
-	if image.UID > 0 || image.GID > 0 {
-		r.UID = image.UID
-		r.GID = image.GID
-	}
-
-	// Create any storage volumes listed in Devices before the instance so they
-	// can be attached as regular devices in the CreateInstanceFromImage call.
-	if err := r.ensureVolumes(); err != nil {
-		return err
-	}
-
-	// Get image info from project
-	incusImage, _, err := r.client.incus.GetImage(image.IncusAlias.Target)
+	// Get image info from cache
+	incusImage, _, err := image.Config.cache.GetImage(image.IncusAlias.Target)
 	if err != nil {
 		return ErrNotFound.WithText("getting image").Wrap(err)
 	}
@@ -341,8 +347,8 @@ func (r *Instance) create(opts ...Option) error {
 
 	options := NewOptions(opts...)
 
-	// Create instance from project image
-	op, err := r.client.incus.CreateInstanceFromImage(r.client.incus, *incusImage, req)
+	// Create instance from cache image
+	op, err := r.client.incus.CreateInstanceFromImage(image.Config.cache, *incusImage, req)
 	if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, options, op, err); err != nil {
 		return err
 	}
@@ -357,6 +363,13 @@ func (r *Instance) create(opts ...Option) error {
 		return err
 	}
 
+	// Process post-devices (volumes needing UID/GID)
+	if len(r.Config.PostDevices) > 0 {
+		if err := r.attachPostDevices(); err != nil {
+			return err
+		}
+	}
+
 	// Push files before marking as created
 	if len(r.Config.Files) > 0 {
 		if err := r.PushFiles(); err != nil {
@@ -369,7 +382,7 @@ func (r *Instance) create(opts ...Option) error {
 }
 
 func (r *Instance) validateBindMounts() error {
-	for _, dev := range r.Config.Devices {
+	for _, dev := range r.Config.PostDevices {
 		if dev.Config.DeviceType == InstanceDeviceTypeDisk {
 			// Bind mount = no StorageVolumeConfig
 			if dev.Config.Disk.StorageVolumeConfig == nil && r.client.IsRemote() {
@@ -437,37 +450,68 @@ func (r *Instance) buildDevices() (map[string]map[string]string, error) {
 	return devices, nil
 }
 
-// ensureVolumes creates storage volumes referenced in Devices before the instance
-// is created, and updates each device's Source and Pool with the resolved values.
-func (r *Instance) ensureVolumes() error {
-	for i := range r.Config.Devices {
-		dev := &r.Config.Devices[i]
-		if dev.Config.DeviceType != InstanceDeviceTypeDisk {
-			continue
+func (r *Instance) attachPostDevices() error {
+	instance := r.IncusInstance
+
+	for _, dev := range r.Config.PostDevices {
+		// Ensure volume if needed
+		if dev.Config.DeviceType == InstanceDeviceTypeDisk && dev.Config.Disk.StorageVolumeConfig != nil {
+			volConfig := *dev.Config.Disk.StorageVolumeConfig
+			volConfig.Shifted = true
+			volConfig.UID = r.UID
+			volConfig.GID = r.GID
+
+			volI, err := r.client.Resource(KindStorageVolume, dev.Config.Disk.Source, &volConfig)
+			if err != nil {
+				return ErrCreate.WithText("creating volume resource").Wrap(err)
+			}
+
+			vol, ok := volI.(*StorageVolume)
+			if !ok {
+				return ErrUnsupportedAction.WithResource(volI)
+			}
+
+			// Override cached config — the resource may have been registered earlier with
+			// empty UID/GID before oci.uid/oci.gid were known.
+			vol.Config.Shifted = true
+			vol.Config.UID = r.UID
+			vol.Config.GID = r.GID
+
+			if err := RunAction(volI, ActionEnsure, OptionCreate()); err != nil {
+				return ErrCreate.WithText("ensuring volume").Wrap(err)
+			}
+
+			// Update disk config with volume details
+			dev.Config.Disk.Source = vol.IncusName()
+			dev.Config.Disk.StorageVolumeConfig.Pool = vol.Config.Pool
 		}
 
-		svc := dev.Config.Disk.StorageVolumeConfig
-		if svc == nil {
-			continue
-		}
-
-		volConfig := *svc
-		volConfig.Shifted = true
-		volConfig.ImageResource = r.image
-
-		volI, err := r.client.Resource(KindStorageVolume, dev.Config.Disk.Source, &volConfig)
+		devName, devConfig, err := dev.ToIncusDevice()
 		if err != nil {
-			return ErrBadDeviceConfig.WithText("getting storage-volume resource").Wrap(err)
+			return err
 		}
 
-		vol, ok := volI.(*StorageVolume)
-		if !ok {
-			return ErrUnsupportedAction.WithResource(volI)
-		}
-
-		dev.Config.Disk.Source = vol.IncusName()
-		dev.Config.Disk.StorageVolumeConfig.Pool = vol.Config.Pool
+		instance.Devices[devName] = devConfig
 	}
+
+	// Update instance with post-devices
+	op, err := r.client.incus.UpdateInstance(instance.Name, instance.Writable(), r.ETag)
+	if err != nil {
+		return ErrCreate.WithText("updating with devices").Wrap(err)
+	}
+
+	if err := op.Wait(); err != nil {
+		return ErrOperation.WithText("waiting for update").Wrap(err)
+	}
+
+	// Refresh instance state
+	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
+	if err != nil {
+		return ErrNotFound.WithText("refreshing instance").Wrap(err)
+	}
+
+	r.IncusInstance = instance
+	r.ETag = eTag
 
 	return nil
 }
