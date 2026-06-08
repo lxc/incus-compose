@@ -1,0 +1,7 @@
+services:
+  app:
+    build: .
+
+  app2:
+    image: localhost/app2:latest
+    build: .

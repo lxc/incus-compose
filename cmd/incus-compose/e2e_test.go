@@ -108,6 +108,11 @@ func (s *E2ESuite) TestConfigCommand() {
 			wantErr: false,
 		},
 		{
+			name:    "with-build",
+			args:    []string{"-f", "../../test/fixtures/with-build/compose.yaml", "config"},
+			wantErr: false,
+		},
+		{
 			name:    "nonexistent file",
 			args:    []string{"-f", "nonexistent.yaml", "config"},
 			wantErr: true,

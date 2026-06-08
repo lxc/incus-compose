@@ -43,6 +43,14 @@ var upCommand = &cli.Command{
 			Value: "policy",
 		},
 		&cli.BoolFlag{
+			Name:  "build",
+			Usage: "Build images before starting containers",
+		},
+		&cli.BoolFlag{
+			Name:  "no-build",
+			Usage: "Do not build images even if missing",
+		},
+		&cli.BoolFlag{
 			Name:    "detach",
 			Aliases: []string{"d"},
 			Usage:   "Detached mode: run containers in the background",
@@ -124,11 +132,18 @@ var upCommand = &cli.Command{
 			}
 		}
 
+		build := client.BuildAuto
+		if cmd.Bool("build") {
+			build = client.BuildForce
+		} else if cmd.Bool("no-build") {
+			build = client.BuildNever
+		}
 		params := upParams{
 			reCreate: cmd.Bool("recreate"),
 			start:    !cmd.Bool("no-start"),
 			services: cmd.Args().Slice(),
 			pull:     cmd.String("pull"),
+			build:    build,
 			timeout:  int(cmd.Int("timeout")),
 			scale:    parseScale(cmd.StringSlice("scale")),
 		}
@@ -158,6 +173,7 @@ type upParams struct {
 	reCreate  bool
 	noVolumes bool
 	pull      string
+	build     client.BuildMode
 	timeout   int
 	scale     map[string]int
 }
@@ -258,6 +274,9 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 	ensureOpts := []client.Option{client.OptionCreate()}
 	if pull == "always" {
 		ensureOpts = append(ensureOpts, client.OptionPull())
+	}
+	if params.build != client.BuildAuto {
+		ensureOpts = append(ensureOpts, client.OptionBuild(params.build))
 	}
 	if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure, ensureOpts...); err != nil {
 		c.LogError("Creating resources", "error", err)

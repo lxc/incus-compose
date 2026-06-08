@@ -15,6 +15,18 @@ const (
 	PriorityInstance = 1 << 13 // Instance depends on everything above
 )
 
+// BuildMode controls how build-configured images are treated during Ensure.
+type BuildMode int
+
+const (
+	// BuildAuto builds the image only when it is missing (default).
+	BuildAuto BuildMode = iota
+	// BuildForce rebuilds the image even if an existing one is present.
+	BuildForce
+	// BuildNever never builds; returns an error if the image is missing.
+	BuildNever
+)
+
 // Options holds arguments for resource actions.
 type Options struct {
 	// Create resources if they don't exist (for ActionEnsure).
@@ -31,6 +43,9 @@ type Options struct {
 
 	// Pull forces cached images to refresh from their source registry (for ActionEnsure).
 	Pull bool
+
+	// Build controls rebuild behaviour for build-configured images (for ActionEnsure).
+	Build BuildMode
 }
 
 // Option configures action arguments.
@@ -68,6 +83,13 @@ func OptionFollow() Option {
 func OptionPull() Option {
 	return func(o *Options) {
 		o.Pull = true
+	}
+}
+
+// OptionBuild sets the rebuild mode for build-configured images (for ActionEnsure).
+func OptionBuild(m BuildMode) Option {
+	return func(o *Options) {
+		o.Build = m
 	}
 }
 

@@ -3,6 +3,7 @@ package client
 import (
 	"fmt"
 	"maps"
+	"os"
 	"strconv"
 	"strings"
 
@@ -21,6 +22,11 @@ type ImageConfig struct {
 	// The project will be created if it doesn't exist.
 	// Ignored if CacheServer is set.
 	CacheProject string
+
+	// Build, when set, marks this image as locally built rather than pulled
+	// from a registry. Ensure will shell out to podman/docker instead of
+	// calling CopyImage.
+	Build *BuildConfig
 }
 
 // GetConfig returns the configuration.
@@ -163,10 +169,15 @@ func (r *Image) NativeIncus() bool {
 
 // Ensure retrieves an existing image from cache or copies it if Create option is set.
 // With the Pull option, a cached image is refreshed from its source registry.
+// When ImageConfig.Build is set the image is built locally via podman/docker.
 func (r *Image) Ensure(opts ...Option) error {
 	args := NewOptions(opts...)
 	if r.IsEnsured() {
 		return nil
+	}
+
+	if r.Config.Build != nil {
+		return r.ensureBuild(args)
 	}
 
 	// Resolve cache: CacheServer > CacheProject > default imageCache
@@ -463,6 +474,88 @@ func (r *Image) readOCIConfigFromProperties(props map[string]string) {
 	}
 	r.Entrypoint = props["oci.entrypoint"]
 	r.Cwd = props["oci.cwd"]
+}
+
+// ensureBuild handles the Ensure lifecycle for locally-built images. It does not
+// touch the remote-pull machinery (source image server, cache project).
+func (r *Image) ensureBuild(args Options) error {
+	if r.client.hookBefore != nil {
+		if err := r.client.hookBefore(ActionEnsure, r, args, nil); err != nil {
+			return err
+		}
+	}
+
+	err := r.get()
+	if err == nil {
+		// Image already present in the project.
+		if args.Build == BuildForce {
+			// Delete the existing image so we can replace it.
+			if r.IncusAlias != nil {
+				op, delErr := r.client.incus.DeleteImage(r.IncusAlias.Target)
+				if hookErr := r.client.hookOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, delErr); hookErr != nil {
+					r.client.LogDebug("deleting image for rebuild", "error", hookErr)
+				}
+			}
+			r.IncusAlias = nil
+			r.ETag = ""
+			err = r.buildImage(args)
+		}
+		// BuildAuto or BuildNever with an existing image: nothing to do.
+	} else {
+		if args.Build == BuildNever {
+			err = fmt.Errorf("image %q is missing and --no-build was set", r.incusName)
+		} else if args.Create {
+			err = r.buildImage(args)
+		}
+		// !args.Create and BuildAuto: leave err non-nil (not found, don't create).
+	}
+
+	if r.client.hookAfter != nil {
+		err = r.client.hookAfter(ActionEnsure, r, args, err)
+	}
+	return err
+}
+
+// buildImage shells out to the detected container builder, imports the rootfs
+// into Incus as a split (metadata + rootfs) image, and records the alias.
+func (r *Image) buildImage(args Options) error {
+	builder, err := detectBuilder()
+	if err != nil {
+		return ErrCreate.WithText("no container builder").Wrap(err)
+	}
+
+	rootfs, configJSON, err := buildRootfs(r.client.globalClient.Ctx, builder, r.Config.Build, os.Stderr)
+	if err != nil {
+		return ErrCreate.WithText("building container image").Wrap(err)
+	}
+	defer rootfs.Close()
+
+	meta, err := buildMetadataTar(r.incusName, configJSON)
+	if err != nil {
+		return ErrCreate.WithText("building image metadata").Wrap(err)
+	}
+
+	op, err := r.client.incus.CreateImage(incusApi.ImagesPost{
+		Aliases: []incusApi.ImageAlias{{Name: r.incusName}},
+	}, &incusClient.ImageCreateArgs{
+		MetaFile:   meta,
+		MetaName:   "metadata.tar",
+		RootfsFile: rootfs,
+		RootfsName: "rootfs.tar",
+	})
+	if err = r.client.hookOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
+		return ErrCreate.WithText("importing built image").Wrap(err)
+	}
+
+	alias, eTag, err := r.client.incus.GetImageAlias(r.incusName)
+	if err != nil {
+		return ErrCreate.WithText("fetching alias after build").Wrap(err)
+	}
+
+	r.IncusAlias = alias
+	r.ETag = eTag
+	r.created = true
+	return nil
 }
 
 // Delete removes the per-project copy of the image from the active project.

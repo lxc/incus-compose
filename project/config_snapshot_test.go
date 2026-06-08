@@ -199,6 +199,10 @@ func (s *ConfigSnapshotSuite) TestConfigSnapshots() {
 			Name:    "with-nat-proxy_yaml",
 			Fixture: "with-nat-proxy",
 		},
+		{
+			Name:    "with-build_yaml",
+			Fixture: "with-build",
+		},
 	}
 
 	for _, tc := range testCases {

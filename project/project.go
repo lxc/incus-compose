@@ -173,7 +173,29 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		err   error
 	)
 	if !options.NoImages {
-		image, err = c.Resource(client.KindImage, service.Image, &client.ImageConfig{})
+		if service.Build != nil {
+			imageName := service.Image
+			if imageName == "" {
+				imageName = "localhost/" + p.Name + "-" + serviceName
+			}
+			buildCfg := &client.BuildConfig{
+				Context:    service.Build.Context,
+				Dockerfile: service.Build.Dockerfile,
+				NoCache:    service.Build.NoCache,
+				Pull:       service.Build.Pull,
+			}
+			if len(service.Build.Args) > 0 {
+				buildCfg.Args = make(map[string]string, len(service.Build.Args))
+				for k, v := range service.Build.Args {
+					if v != nil {
+						buildCfg.Args[k] = *v
+					}
+				}
+			}
+			image, err = c.Resource(client.KindImage, imageName, &client.ImageConfig{Build: buildCfg})
+		} else {
+			image, err = c.Resource(client.KindImage, service.Image, &client.ImageConfig{})
+		}
 		if err != nil {
 			errs = errors.Join(errs, err)
 		}
