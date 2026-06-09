@@ -3,44 +3,69 @@ package main
 import (
 	"bytes"
 	"context"
-	"log"
+	"errors"
+	"log/slog"
 	"time"
 
 	incus "github.com/lxc/incus/v7/client"
 	"github.com/lxc/incus/v7/shared/api"
+
+	"gitlab.com/r3j0/incus-compose/client"
 )
 
-const (
-	defaultRestartDelay = 5 * time.Second
-	maxRestartDelay     = 60 * time.Second
-)
-
-// Checker monitors a single service and restarts it when unhealthy.
+// Checker monitors a single instance and restarts it when unhealthy.
 type Checker struct {
 	client       incus.InstanceServer
 	name         string
-	config       ServiceConfig
-	debug        bool
+	config       InstanceConfig
 	failures     int
 	status       string
 	restartDelay time.Duration
-	nextRestart  time.Time
 }
 
-// NewChecker creates a new checker for the named service.
-func NewChecker(client incus.InstanceServer, name string, cfg ServiceConfig, debug bool) *Checker {
+// NewChecker creates a new checker for the named instance.
+func NewChecker(myclient incus.InstanceServer, name string, cfg InstanceConfig) *Checker {
 	return &Checker{
-		client:       client,
+		client:       myclient,
 		name:         name,
 		config:       cfg,
-		debug:        debug,
-		restartDelay: defaultRestartDelay,
+		restartDelay: cfg.RestartDelay,
 	}
 }
 
 // Run starts the health check loop until context is cancelled.
-func (c *Checker) Run(ctx context.Context) {
-	ticker := time.NewTicker(c.config.Interval.Duration())
+func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
+	var ticker *time.Ticker
+
+	slog.Debug("Starting checker",
+		"instance", c.name,
+		"inStart", inStart,
+		"startInstance", startInstance,
+		"config", c.config,
+	)
+
+	if c.config.StartPeriod < 1 {
+		// Disable inStart if the period is smaller 1
+		inStart = false
+	}
+
+	if startInstance {
+		if err := c.restart(ctx); err != nil {
+			slog.Error("restart failed", "instance", c.name, "error", err)
+		}
+	}
+
+	origCtx := ctx
+	var cancel context.CancelFunc
+
+	if inStart {
+		ticker = time.NewTicker(c.config.StartInterval)
+		ctx, cancel = context.WithTimeout(ctx, c.config.StartPeriod)
+	} else {
+		ticker = time.NewTicker(c.config.Interval)
+		ctx, cancel = context.WithCancel(ctx)
+	}
+
 	defer ticker.Stop()
 
 	for {
@@ -48,89 +73,89 @@ func (c *Checker) Run(ctx context.Context) {
 		case <-ticker.C:
 			oldStatus := c.status
 
-			if c.check(ctx) {
+			if c.check(ctx) == nil {
 				c.failures = 0
-				c.restartDelay = defaultRestartDelay
-				if c.status != "healthy" {
-					c.status = "healthy"
+				c.restartDelay = c.config.RestartDelay
+				if c.status != client.HealthStatusHealthy {
+					c.status = client.HealthStatusHealthy
 				}
 			} else {
 				c.failures++
-				log.Printf("%s: check failed (%d/%d)", c.name, c.failures, c.config.Retries)
+				slog.Warn("check failed",
+					"instance", c.name,
+					"failures", c.failures,
+					"retries", c.config.Retries,
+					"inStart", inStart,
+					"startInstance", startInstance,
+				)
 
-				if c.status != "unhealthy" {
-					c.status = "unhealthy"
+				if c.status != client.HealthStatusUnhealthy {
+					c.status = client.HealthStatusUnhealthy
 				}
 
 				if c.failures >= c.config.Retries {
 					if !c.config.Restart {
-						if c.debug {
-							log.Printf("%s: stopping the check", c.name)
-						}
+						slog.Debug("stopping the check", "instance", c.name)
+						cancel()
 						return
 					}
 
 					c.failures = 0
 
 					if c.config.UnlessStopped && c.isStopped() {
-						if c.debug {
-							log.Printf("%s: unless-stopped: intentionally stopped, skipping restart", c.name)
-						}
-					} else if time.Now().Before(c.nextRestart) {
-						if c.debug {
-							log.Printf("%s: backing off, next restart at %s", c.name, c.nextRestart.Format(time.TimeOnly))
-						}
+						slog.Debug("unless-stopped: intentionally stopped, skipping restart", "instance", c.name)
 					} else {
-						log.Printf("%s: restarting instance (delay=%s)", c.name, c.restartDelay)
-						c.nextRestart = time.Now().Add(c.restartDelay)
+						slog.Info("restarting instance", "instance", c.name, "delay", c.restartDelay)
 						c.restartDelay = min(c.restartDelay*2, maxRestartDelay)
-						if err := c.restart(ctx); err != nil {
-							log.Printf("%s: restart failed: %v", c.name, err)
-						} else {
-							log.Printf("%s: restarted successfully", c.name)
-							if c.status != "healthy" {
-								c.status = "healthy"
-							}
-						}
+
+						slog.Debug("backoff restart, sleeping", "delay", c.restartDelay)
+						time.Sleep(c.restartDelay)
+
+						cancel()
+						c.Run(origCtx, true, true)
+
+						// Do not start the checker again.
+						inStart = false
 					}
 				}
 			}
 
 			if c.status != oldStatus {
-				if err := c.writeStatus(); err != nil && c.debug {
-					log.Printf("%s: updating healthcheck status: %v", c.name, err)
+				if err := c.writeStatus(); err != nil {
+					slog.Debug("updating healthcheck status", "instance", c.name, "error", err)
 				}
 			}
 		case <-ctx.Done():
-			if c.debug {
-				log.Printf("%s: checker stopped", c.name)
+			cancel()
+
+			if inStart {
+				slog.Debug("checker restart (start -> real)", "instance", c.name)
+
+				// Run real checker after the start checker.
+				c.Run(origCtx, false, false)
 			}
+
 			return
 		}
 	}
 }
 
 // check executes the healthcheck command and returns true if healthy.
-func (c *Checker) check(ctx context.Context) bool {
+func (c *Checker) check(ctx context.Context) error {
 	inst, _, err := c.client.GetInstanceState(c.name)
 	if err != nil {
-		if c.debug {
-			log.Printf("%s: fetching instance status error: %v", c.name, err)
-		}
-
-		return false
+		slog.Debug("fetching instance status error", "instance", c.name, "error", err)
+		return err
 	}
 
 	if inst.Status != "Running" {
-		if c.debug {
-			log.Printf("%s: Status is not 'Running' but '%v'", c.name, inst.Status)
-		}
-		return false
+		slog.Debug("status is not Running", "instance", c.name, "status", inst.Status)
+		return errors.New("Not running")
 	}
 
 	// Build command based on test format
 	if len(c.config.Test) == 0 {
-		return true
+		return nil
 	}
 
 	var cmd []string
@@ -140,25 +165,27 @@ func (c *Checker) check(ctx context.Context) bool {
 	case "CMD-SHELL":
 		cmd = []string{"/bin/sh", "-c", c.config.Test[1]}
 	case "NONE":
-		return true
+		return nil
 	default:
 		// Assume it's a direct command
 		cmd = c.config.Test
 	}
 
 	// Execute with timeout
-	execCtx, cancel := context.WithTimeout(ctx, c.config.Timeout.Duration())
+	execCtx, cancel := context.WithTimeout(ctx, c.config.Timeout)
 	defer cancel()
 
 	exitCode, err := c.exec(execCtx, cmd)
 	if err != nil {
-		if c.debug {
-			log.Printf("%s: exec error: %v", c.name, err)
-		}
-		return false
+		slog.Debug("exec error", "instance", c.name, "error", err)
+		return err
 	}
 
-	return exitCode == 0
+	if exitCode != 0 {
+		return errors.New("cmd failed")
+	}
+
+	return nil
 }
 
 // exec runs a command inside the instance and returns the exit code.
@@ -192,12 +219,16 @@ func (c *Checker) exec(ctx context.Context, cmd []string) (int, error) {
 	// Wait for operation to complete
 	err = op.Wait()
 	if err != nil {
+		slog.Debug("Output", "name", c.name, "stdout", stdout.String(), "stderr", stderr.String())
 		return -1, err
 	}
 
 	// Get exit code from operation metadata
 	opAPI := op.Get()
 	if exitCode, ok := opAPI.Metadata["return"].(float64); ok {
+		if exitCode != 0 {
+			slog.Debug("Output", "name", c.name, "stdout", stdout.String(), "stderr", stderr.String())
+		}
 		return int(exitCode), nil
 	}
 
@@ -211,7 +242,7 @@ func (c *Checker) writeStatus() error {
 		return err
 	}
 
-	inst.Config["user.healthcheck.status"] = c.status
+	inst.Config[client.HealthConfigKey] = c.status
 	op, err := c.client.UpdateInstance(c.name, inst.Writable(), etag)
 	if err != nil {
 		return err

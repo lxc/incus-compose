@@ -1,10 +1,12 @@
 // ic-healthd is a health check daemon for incus-compose.
-// It monitors services with healthcheck directives and restarts unhealthy instances.
+// It monitors instances with healthcheck directives and restarts unhealthy instances.
 package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -66,7 +68,16 @@ var runCommand = &cli.Command{
 			Sources: cli.EnvVars("IC_HEALTHD_DEBUG"),
 		},
 	},
-	Before: func(ctx context.Context, _ *cli.Command) (context.Context, error) {
+	Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+		lvl := slog.LevelInfo
+		if cmd.Bool("debug") {
+			lvl = slog.LevelDebug
+		}
+
+		// Setup slog
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl}))
+		slog.SetDefault(logger)
+
 		for range 10 {
 			if hasDefaultRoute() {
 				return ctx, nil
@@ -82,7 +93,7 @@ var versionCommand = &cli.Command{
 	Name:  "version",
 	Usage: "Print version information",
 	Action: func(ctx context.Context, cmd *cli.Command) error {
-		log.Printf("ic-healthd version %s", version.Current())
+		fmt.Printf("ic-healthd version %s\n", version.Current())
 		return nil
 	},
 }
@@ -106,19 +117,11 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 	cfg := &Config{}
 	cfg.DataDir = cmd.String("data-dir")
 	cfg.SecretsDir = cmd.String("secrets-dir")
-	cfg.Debug = cmd.Bool("debug")
 	cfg.IncusURL = cmd.String("incus")
 	cfg.Projects = cmd.StringSlice("project")
 
-	log.Printf("version: %s", version.Current())
-
-	if cfg.Debug {
-		log.Println("debug mode enabled")
-		log.Printf("data dir: %s", cfg.DataDir)
-		log.Printf("secrets dir: %s", cfg.SecretsDir)
-		log.Printf("incus: %s", cfg.IncusURL)
-		log.Printf("projects: %s", cfg.Projects)
-	}
+	slog.Info("version", "version", version.Current())
+	slog.Debug("My config", "config", cfg)
 
 	runner, err := NewRunner(cfg)
 	if err != nil {
@@ -140,14 +143,14 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 			case sig := <-sigChan:
 				switch sig {
 				case syscall.SIGHUP:
-					log.Printf("received signal %v, reloading", sig)
+					slog.Info("received signal, reloading", "signal", sig)
 					select {
 					case reload <- struct{}{}:
 					default:
-						log.Println("reload already pending")
+						slog.Debug("reload already pending")
 					}
 				default:
-					log.Printf("received signal %v, shutting down", sig)
+					slog.Info("received signal, shutting down", "signal", sig)
 					cancel()
 					return
 				}
