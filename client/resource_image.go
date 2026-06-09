@@ -183,9 +183,6 @@ func (r *Image) NativeIncus() bool {
 // When ImageConfig.Build is set the image is built locally via podman/docker.
 func (r *Image) Ensure(opts ...Option) error {
 	args := NewOptions(opts...)
-	if r.IsEnsured() {
-		return nil
-	}
 
 	if r.Config.Build != nil {
 		return r.ensureBuild(args)
@@ -302,9 +299,19 @@ func (r *Image) refresh(args Options) error {
 		return nil
 	}
 
+	if r.cache != nil {
+		op, err := r.cache.DeleteImage(r.IncusAlias.Target)
+
+		// On the cache the error is ignored.
+		if err = r.client.hookOperation(r.client.globalClient.Ctx, ActionDelete, r, args, op, err); err != nil {
+			r.client.LogDebug("deleting stale cache image for refresh", "error", err)
+			return nil
+		}
+	}
+
 	op, err := r.client.incus.DeleteImage(r.IncusAlias.Target)
 	if err = r.client.hookOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
-		r.client.LogDebug("deleting stale cached image for refresh", "error", err)
+		r.client.LogDebug("deleting stale project image for refresh", "error", err)
 		return nil
 	}
 
@@ -316,13 +323,6 @@ func (r *Image) refresh(args Options) error {
 func (r *Image) create(args Options) error {
 	if r.source == nil {
 		return ErrImageSource.WithText("not configured")
-	}
-
-	copyArgs := &incusClient.ImageCopyArgs{
-		Aliases:    []incusApi.ImageAlias{{Name: r.incusName}},
-		AutoUpdate: true,
-		Public:     false,
-		Mode:       "pull",
 	}
 
 	// Check if the cache has the alias
@@ -337,8 +337,15 @@ func (r *Image) create(args Options) error {
 			}
 		}
 
+		cacheCopyArgs := &incusClient.ImageCopyArgs{
+			Aliases:    []incusApi.ImageAlias{{Name: r.incusName}},
+			AutoUpdate: true,
+			Public:     false,
+			Mode:       "pull",
+		}
+
 		// Build image info for copy
-		sourceImgInfo := &incusApi.Image{
+		cacheImgInfo := incusApi.Image{
 			Fingerprint: r.image,
 			ImagePut: incusApi.ImagePut{
 				Public: true,
@@ -346,7 +353,7 @@ func (r *Image) create(args Options) error {
 		}
 
 		// Copy from source to cache
-		op, err := r.cache.CopyImage(r.source, *sourceImgInfo, copyArgs)
+		op, err := r.cache.CopyImage(r.source, cacheImgInfo, cacheCopyArgs)
 
 		// Wait for copy to complete
 		if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
@@ -361,13 +368,20 @@ func (r *Image) create(args Options) error {
 			return ErrCreate.WithText("cache alias after copy").Wrap(err)
 		}
 
+		projectCopyArgs := &incusClient.ImageCopyArgs{
+			Aliases:    []incusApi.ImageAlias{{Name: r.incusName}},
+			AutoUpdate: true,
+			Public:     false,
+			Mode:       "pull",
+		}
+
 		// Build image info for copy
-		cacheImgInfo := &incusApi.Image{
+		projectImageInfo := incusApi.Image{
 			Fingerprint: cacheAlias.Target,
 		}
 
 		// Copy from cache to project
-		op, err := r.client.incus.CopyImage(r.cache, *cacheImgInfo, copyArgs)
+		op, err := r.client.incus.CopyImage(r.cache, projectImageInfo, projectCopyArgs)
 
 		// Wait for copy to complete
 		if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
@@ -382,6 +396,7 @@ func (r *Image) create(args Options) error {
 	}
 
 	// r.client.LogDebug("create setting the alias")
+
 	r.IncusAlias = alias
 	r.ETag = eTag
 	r.created = true
@@ -612,6 +627,10 @@ func (r *Image) buildImage(args Options) error {
 //
 // Delete is idempotent: a missing per-project copy is not an error.
 func (r *Image) Delete(opts ...Option) error {
+	if !r.IsEnsured() {
+		return nil
+	}
+
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
@@ -624,20 +643,15 @@ func (r *Image) Delete(opts ...Option) error {
 	// missing alias means nothing was copied here, so there is nothing to do.
 	alias, _, err := r.client.incus.GetImageAlias(r.incusName)
 	if err != nil || alias == nil {
-		r.client.resources.Remove(r)
 		if r.client.hookAfter != nil {
-			return r.client.hookAfter(ActionDelete, r, options, nil)
+			return r.client.hookAfter(ActionDelete, r, options, err)
 		}
-		return nil
+		return err
 	}
 
 	op, err := r.client.incus.DeleteImage(alias.Target)
+
 	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionDelete, r, options, op, err)
-
-	if err == nil {
-		r.client.resources.Remove(r)
-	}
-
 	if r.client.hookAfter != nil {
 		return r.client.hookAfter(ActionDelete, r, options, err)
 	}

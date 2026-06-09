@@ -189,7 +189,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		if service.Build != nil {
 			imageName := service.Image
 			if imageName == "" {
-				imageName = "localhost/" + p.Name + "-" + serviceName
+				imageName = "localhost/" + p.Name + "-" + service.Name
 			}
 			platform, platformErr := buildPlatform(service)
 			if platformErr != nil {
@@ -456,12 +456,12 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		case "bind":
 			info, err := os.Stat(cVol.Source)
 			if err != nil {
-				return nil, client.ErrUnknown.WithKindName(client.KindInstance, serviceName).Wrap(err)
+				return nil, client.ErrUnknown.WithKindName(client.KindInstance, service.Name).Wrap(err)
 			}
 
 			absSource, err := filepath.Abs(cVol.Source)
 			if err != nil {
-				return nil, client.ErrUnknown.WithKindName(client.KindInstance, serviceName).Wrap(err)
+				return nil, client.ErrUnknown.WithKindName(client.KindInstance, service.Name).Wrap(err)
 			}
 
 			devName := "bind-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-5)
@@ -665,31 +665,19 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		}
 	}
 
-	var instanceConfig *client.InstanceConfig
+	instanceConfig := &client.InstanceConfig{
+		ServiceName:      service.Name,
+		Full:             options.Full,
+		Resources:        slices.Clone(resources),
+		Config:           config,
+		Devices:          devices,
+		PostStartDevices: postStartDevices,
+		Secrets:          instanceSecrets,
+		Files:            files,
+		Dependencies:     deps,
+	}
 	if image != nil {
-		instanceConfig = &client.InstanceConfig{
-			ServiceName:      serviceName,
-			Image:            image.IncusName(),
-			Full:             options.Full,
-			Resources:        slices.Clone(resources),
-			Config:           config,
-			Devices:          devices,
-			PostStartDevices: postStartDevices,
-			Secrets:          instanceSecrets,
-			Files:            files,
-			Dependencies:     deps,
-		}
-	} else {
-		instanceConfig = &client.InstanceConfig{
-			Full:             options.Full,
-			Resources:        slices.Clone(resources),
-			Config:           config,
-			Devices:          devices,
-			PostStartDevices: postStartDevices,
-			Secrets:          instanceSecrets,
-			Files:            files,
-			Dependencies:     deps,
-		}
+		instanceConfig.Image = image.IncusName()
 	}
 	instance, err := c.Resource(client.KindInstance, instanceName, instanceConfig)
 	if err != nil {

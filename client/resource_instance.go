@@ -198,12 +198,29 @@ func (r *Instance) HasFull() bool {
 	return r.IncusInstanceFull != nil
 }
 
-// Ensure retrieves an existing instance or creates a new one if args.Create is true.
-func (r *Instance) Ensure(opts ...Option) error {
-	if r.IsEnsured() {
-		return nil
+func (r *Instance) fetch() error {
+	// Fresh instance.
+	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
+	if err != nil {
+		return err
+	}
+	r.IncusInstance = instance
+	r.ETag = eTag
+
+	if r.Config.Full {
+		full, _, err := r.client.incus.GetInstanceFull(r.IncusInstance.Name)
+		if err != nil {
+			return err
+		}
+
+		r.IncusInstanceFull = full
 	}
 
+	return nil
+}
+
+// Ensure retrieves an existing instance or creates a new one if args.Create is true.
+func (r *Instance) Ensure(opts ...Option) error {
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
@@ -214,9 +231,9 @@ func (r *Instance) Ensure(opts ...Option) error {
 
 	// Try to get existing
 	// Check if exists
-	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
+	err := r.fetch()
 	if err == nil {
-		err = r.ensured(instance, eTag)
+		err = r.ensured()
 
 		if r.client.hookAfter != nil {
 			err = r.client.hookAfter(ActionEnsure, r, options, err)
@@ -244,11 +261,9 @@ func (r *Instance) Ensure(opts ...Option) error {
 	return err
 }
 
-func (r *Instance) ensured(instance *incusApi.Instance, eTag string) error {
+func (r *Instance) ensured() error {
 	var err error
-	r.IncusInstance = instance
-	r.ETag = eTag
-	r.UID, r.GID, err = extractUIDGID(instance)
+	r.UID, r.GID, err = extractUIDGID(r.IncusInstance)
 	if err != nil {
 		return ErrInvalidFormat.WithText("extracting uid/gid").Wrap(err)
 	}
@@ -259,15 +274,6 @@ func (r *Instance) ensured(instance *incusApi.Instance, eTag string) error {
 		} else {
 			r.Config.Image = r.client.ResolveImageFingerprint(r.IncusInstance.Config["volatile.base_image"])
 		}
-	}
-
-	if r.Config.Full {
-		full, _, err := r.client.incus.GetInstanceFull(r.IncusInstance.Name)
-		if err != nil {
-			return err
-		}
-
-		r.IncusInstanceFull = full
 	}
 
 	return nil
@@ -331,8 +337,14 @@ func (r *Instance) create(opts ...Option) error {
 		return ErrNotFound.WithText("getting image").Wrap(err)
 	}
 
+	postConfig := make(map[string]string, len(r.Config.Config))
+	maps.Copy(postConfig, r.Config.Config)
+
 	// Store the image name
-	r.Config.Config["user.image_alias"] = image.IncusName()
+	postConfig["user.image_alias"] = image.IncusName()
+
+	// Healthd should wait until we allow it to work with it.
+	postConfig["user.stopped"] = "true"
 
 	// Create instance request
 	req := incusApi.InstancesPost{
@@ -344,7 +356,7 @@ func (r *Instance) create(opts ...Option) error {
 		},
 		InstancePut: incusApi.InstancePut{
 			Description: fmt.Sprintf(r.client.Config().DescriptionFormat, r.Name()),
-			Config:      r.Config.Config,
+			Config:      postConfig,
 			Devices:     devices,
 		},
 	}
@@ -358,12 +370,11 @@ func (r *Instance) create(opts ...Option) error {
 	}
 
 	// Get instance to extract UID/GID
-	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
-	if err != nil {
+	if err := r.fetch(); err != nil {
 		return ErrCreate.WithText("fetching created instance").Wrap(err)
 	}
 
-	if err = r.ensured(instance, eTag); err != nil {
+	if err = r.ensured(); err != nil {
 		return err
 	}
 
@@ -464,6 +475,12 @@ func (r *Instance) ensureVolumes() error {
 }
 
 func (r *Instance) attachPostStartDevices() error {
+	// Fetch fresh state and ETag before modifying devices — start may have
+	// invalidated the cached ETag via UpdateInstanceState.
+	if err := r.fetch(); err != nil {
+		return ErrNotFound.WithText("refreshing instance before post-start devices").Wrap(err)
+	}
+
 	instance := r.IncusInstance
 
 	// Resolve container IPs once — instance is running so this should be fast.
@@ -521,14 +538,6 @@ func (r *Instance) attachPostStartDevices() error {
 	if err := op.Wait(); err != nil {
 		return ErrOperation.WithText("waiting for post-start device update").Wrap(err)
 	}
-
-	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
-	if err != nil {
-		return ErrNotFound.WithText("refreshing instance after post-start devices").Wrap(err)
-	}
-
-	r.IncusInstance = instance
-	r.ETag = eTag
 
 	return nil
 }
@@ -623,15 +632,6 @@ func (r *Instance) start() error {
 	if err := op.Wait(); err != nil {
 		return err
 	}
-
-	// Refresh instance state
-	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
-	if err != nil {
-		return ErrNotFound.WithText("refreshing instance after start").Wrap(err)
-	}
-
-	r.IncusInstance = instance
-	r.ETag = eTag
 
 	_ = r.setStopped(false)
 
@@ -822,6 +822,11 @@ func (r *Instance) Stop(opts ...Option) error {
 
 	if r.IncusInstance.Status == "Stopped" {
 		_ = r.setStopped(true)
+
+		if r.client.hookAfter != nil {
+			return r.client.hookAfter(ActionStop, r, options, nil)
+		}
+
 		return nil
 	}
 
@@ -832,10 +837,15 @@ func (r *Instance) Stop(opts ...Option) error {
 	}, r.ETag)
 
 	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionStop, r, options, op, err)
+	if err != nil {
+		if r.client.hookAfter != nil {
+			return r.client.hookAfter(ActionStop, r, options, err)
+		}
 
-	if err == nil {
-		_ = r.setStopped(true)
+		return err
 	}
+
+	err = r.setStopped(true)
 
 	if r.client.hookAfter != nil {
 		return r.client.hookAfter(ActionStop, r, options, err)
@@ -846,9 +856,13 @@ func (r *Instance) Stop(opts ...Option) error {
 
 // setStopped writes or clears the user.stopped config key on the instance.
 // It is a best-effort call; callers ignore the error with _.
-// Uses the cached instance and ETag — no extra GetInstance round-trip needed
-// because incus-compose is short-lived and the sole writer.
 func (r *Instance) setStopped(stopped bool) error {
+	// Always fetch before writing to get a fresh ETag — the caller may have
+	// just run UpdateInstanceState which invalidates the cached ETag.
+	if err := r.fetch(); err != nil {
+		return err
+	}
+
 	current, exists := r.IncusInstance.Config["user.stopped"]
 	if stopped {
 		if exists && current == "true" {
@@ -902,7 +916,6 @@ func (r *Instance) Delete(opts ...Option) error {
 	r.ETag = ""
 	r.UID = 0
 	r.GID = 0
-	r.client.resources.Remove(r)
 
 	return nil
 }

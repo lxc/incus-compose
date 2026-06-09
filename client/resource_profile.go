@@ -91,10 +91,6 @@ func (r *Profile) Created() bool {
 
 // Ensure retrieves an existing resource or creates a new one if args.Create is true.
 func (r *Profile) Ensure(opts ...Option) error {
-	if r.IsEnsured() {
-		return nil
-	}
-
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
@@ -293,7 +289,6 @@ func (r *Profile) Delete(opts ...Option) error {
 	// Clear state
 	r.IncusProfile = nil
 	r.ETag = ""
-	r.client.resources.Remove(r)
 	return nil
 }
 

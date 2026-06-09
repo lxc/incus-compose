@@ -24,7 +24,7 @@ func (c *Client) RegisterDNSWatcher() error {
 	mu := &sync.Mutex{}
 
 	c.AddHookAfter(func(action Action, r Resource, _ Options, err error) error {
-		if err != nil {
+		if err != nil || r == nil {
 			return err
 		}
 
@@ -73,7 +73,9 @@ func (c *Client) RegisterDNSWatcher() error {
 
 				changed = true
 			case ActionStop, ActionDelete:
-				delete(instances, inst.Name())
+				delete(instances, inst.IncusName())
+				delete(instanceIPs, inst.IncusName())
+
 				changed = true
 			}
 

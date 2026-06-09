@@ -213,25 +213,3 @@ func (s *ClientSuite) TestProject_DeleteNonExistent_NoError() {
 func TestClientSuite(t *testing.T) {
 	suite.Run(t, new(ClientSuite))
 }
-
-func TestServiceName(t *testing.T) {
-	tests := []struct {
-		name     string
-		instance string
-		expected string
-	}{
-		{name: "simple", instance: "database-1", expected: "database"},
-		{name: "higher index", instance: "web-12", expected: "web"},
-		{name: "hyphenated service", instance: "my-app-2", expected: "my-app"},
-		{name: "no index", instance: "database", expected: "database"},
-		{name: "hyphenated no index unchanged", instance: "my-service", expected: "my-service"},
-		{name: "leading hyphen kept", instance: "-1", expected: "-1"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			inst := &Instance{BaseResource: NewBaseResource(KindInstance, tt.instance, PriorityInstance)}
-			assert.Equal(t, tt.expected, inst.ServiceName())
-		})
-	}
-}

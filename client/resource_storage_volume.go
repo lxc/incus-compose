@@ -108,10 +108,6 @@ func (r *StorageVolume) Created() bool {
 
 // Ensure retrieves an existing storage volume or creates a new one if Create option is set.
 func (r *StorageVolume) Ensure(opts ...Option) error {
-	if r.IncusVolume != nil {
-		return nil
-	}
-
 	args := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
@@ -158,11 +154,6 @@ func (r *StorageVolume) Start(_ ...Option) error {
 		return ErrVolumeMismatch.WithText("no image resource given")
 	}
 
-	img, ok := r.Config.ImageResource.(*Image)
-	if !ok {
-		return ErrUnknownResource.WithResource(r.Config.ImageResource)
-	}
-
 	var errs error
 
 	// Check shifted is enabled
@@ -170,9 +161,21 @@ func (r *StorageVolume) Start(_ ...Option) error {
 		errs = errors.Join(errors.New("expected security.shifted=true"))
 	}
 
+	// That part is very flaky.
+	img, ok := r.Config.ImageResource.(*Image)
+	if !ok {
+		errs = errors.Join(errs, ErrUnknownResource.WithResource(r.Config.ImageResource))
+		return errs
+	}
+
+	if !img.IsEnsured() {
+		errs = errors.Join(errs, ErrNotEnsured.WithResource(img))
+		return errs
+	}
+
 	// Check UID/GID match
-	expectedUID := strconv.FormatUint(uint64(img.UID), 10)
-	expectedGID := strconv.FormatUint(uint64(img.GID), 10)
+	expectedUID := strconv.FormatUint(img.UID, 10)
+	expectedGID := strconv.FormatUint(img.GID, 10)
 
 	if r.IncusVolume.Config["initial.uid"] != expectedUID {
 		errs = errors.Join(errs, fmt.Errorf("UID mismatch, expected %s got %s", expectedUID, r.IncusVolume.Config["initial.uid"]))
@@ -323,7 +326,6 @@ func (r *StorageVolume) Delete(opts ...Option) error {
 	// Clear state
 	r.IncusVolume = nil
 	r.ETag = ""
-	r.client.resources.Remove(r)
 	return nil
 }
 

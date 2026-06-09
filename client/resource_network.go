@@ -152,10 +152,6 @@ func (r *Network) Created() bool {
 
 // Ensure retrieves an existing network or creates a new one if args.Create is true.
 func (r *Network) Ensure(opts ...Option) error {
-	if r.IsEnsured() {
-		return nil
-	}
-
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
@@ -334,7 +330,6 @@ func (r *Network) Delete(opts ...Option) error {
 
 	r.IncusNetwork = nil
 	r.ETag = ""
-	r.client.resources.Remove(r)
 	return nil
 }
 
