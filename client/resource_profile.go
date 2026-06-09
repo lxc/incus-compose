@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 
@@ -115,7 +116,7 @@ func (r *Profile) Ensure(opts ...Option) error {
 		return err
 	}
 
-	if !options.Create {
+	if !options.Create || !errors.Is(err, ErrNotFound) {
 		if r.client.hookAfter != nil {
 			err = r.client.hookAfter(ActionEnsure, r, options, err)
 		}

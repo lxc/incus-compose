@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base32"
+	"errors"
 	"fmt"
 	"maps"
 	"net/netip"
@@ -194,7 +195,7 @@ func (r *Network) Ensure(opts ...Option) error {
 		return err
 	}
 
-	if !options.Create {
+	if !options.Create || !errors.Is(err, ErrNotFound) {
 		if r.client.hookAfter != nil {
 			err = r.client.hookAfter(ActionEnsure, r, options, err)
 		}

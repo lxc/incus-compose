@@ -215,7 +215,13 @@ func (r *Instance) Ensure(opts ...Option) error {
 	}
 
 	if !options.Create {
-		return ErrNotFound.WithResource(r).Wrap(err)
+		err = ErrNotFound.WithResource(r).Wrap(err)
+
+		if r.client.hookAfter != nil {
+			err = r.client.hookAfter(ActionEnsure, r, options, err)
+		}
+
+		return err
 	}
 
 	err = r.create(opts...)

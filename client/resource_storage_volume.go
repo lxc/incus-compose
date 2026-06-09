@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -121,7 +122,7 @@ func (r *StorageVolume) Ensure(opts ...Option) error {
 
 	err := r.get()
 	if err != nil {
-		if args.Create {
+		if args.Create && errors.Is(err, ErrNotFound) {
 			err = r.create()
 		}
 	}
@@ -220,6 +221,8 @@ func (r *StorageVolume) create() error {
 			Config:      config,
 		},
 	}
+
+	// r.client.LogDebug("creating volume", "pool", r.Config.Pool, "volume", r.incusName)
 
 	if err := r.client.incus.CreateStoragePoolVolume(r.Config.Pool, volReq); err != nil {
 		return ErrCreate.Wrap(err)

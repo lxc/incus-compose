@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -243,7 +244,7 @@ func (r *Image) Ensure(opts ...Option) error {
 		return err
 	}
 
-	if !args.Create {
+	if !args.Create || !errors.Is(err, ErrNotFound) {
 		if r.client.hookAfter != nil {
 			err = r.client.hookAfter(ActionEnsure, r, args, err)
 		}
