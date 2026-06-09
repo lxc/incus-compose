@@ -146,7 +146,7 @@ func buildPlatform(service types.ServiceConfig) (string, error) {
 // serviceToInstance translates a compose service to an Incus instance.
 // Environment vars become instance config, labels become user metadata.
 // Volumes default to bind mounts for paths starting with / or ., otherwise named volumes.
-func serviceToInstance(c *client.Client, p *types.Project, serviceName string, options *ToStackOptions, index int) ([]client.Resource, error) {
+func serviceToInstance(c *client.Client, p *types.Project, serviceName string, options *ToStackOptions, index, scale int) ([]client.Resource, error) {
 	service, ok := p.Services[serviceName]
 	if !ok {
 		return nil, fmt.Errorf("service %q not found", serviceName)
@@ -625,7 +625,11 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	// Instance name: container_name takes precedence, otherwise {service}-{index}.
 	instanceName := fmt.Sprintf("%s-%d", service.Name, index)
 	if service.ContainerName != "" {
-		instanceName = service.ContainerName
+		if scale > 1 {
+			instanceName = fmt.Sprintf("%s-%d", service.ContainerName, index)
+		} else {
+			instanceName = service.ContainerName
+		}
 	}
 
 	var instanceConfig *client.InstanceConfig
@@ -1075,7 +1079,7 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 		}
 
 		for i := 1; i <= scale; i++ {
-			instanceResources, err := serviceToInstance(c, p.Project, serviceName, options, i)
+			instanceResources, err := serviceToInstance(c, p.Project, serviceName, options, i, scale)
 			if err != nil {
 				errs = errors.Join(errs, err)
 				continue
