@@ -269,7 +269,7 @@ func healthdUp(c *client.Client, inst *client.Instance, resources []client.Resou
 			DirMode: 0o700,
 		}
 	} else {
-		c.LogDebug("Setting entrypoint")
+		// c.LogDebug("Setting entrypoint")
 		inst.Config.Config["oci.entrypoint"] = "/usr/local/bin/ic-healthd run" + strings.Join(flags, " ")
 	}
 
@@ -325,27 +325,15 @@ func healthdDown(c *client.Client, inst *client.Instance, resources []client.Res
 	c.LogDebug("Ensure", "resources", stack.All())
 
 	if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {
-		return fmt.Errorf("ensuring healthd: %w", err)
+		c.LogWarn("Ensuring healthd", "error", err)
 	}
 
 	if err := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-		return fmt.Errorf("stopping healthd resources: %w", err)
+		c.LogWarn("Stopping healthd resources", "error", err)
 	}
 
 	if err := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-		return fmt.Errorf("deleting healthd resources: %w", err)
-	}
-
-	if err := inst.Ensure(); err != nil {
-		return healthdRevokeCert(c)
-	}
-
-	if err := inst.Stop(client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-		c.LogWarn("Stopping healthd", "error", err)
-	}
-
-	if err := inst.Delete(client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
-		return err
+		c.LogWarn("Deleting healthd resources", "error", err)
 	}
 
 	return healthdRevokeCert(c)
