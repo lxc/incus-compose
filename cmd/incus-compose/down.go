@@ -86,7 +86,7 @@ var downCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+		finish := startProgress(globalClient, c, cmd.Root().Writer)
 
 		err = runDown(globalClient, c, p, downParams{
 			services:  cmd.Args().Slice(),

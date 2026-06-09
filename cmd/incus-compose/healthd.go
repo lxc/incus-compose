@@ -130,8 +130,6 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 		imageName = "images:alpine/edge"
 	}
 
-	// c.LogDebug("Using healthd", "params", params)
-
 	imgRes, err := c.Resource(client.KindImage, imageName, &client.ImageConfig{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting the healthd image '%v': %w", imageName, err)
@@ -328,7 +326,12 @@ func healthdUp(c *client.Client, inst *client.Instance, resources []client.Resou
 // healthdDown stops the instance, deletes it, and revokes its Incus trust certificate.
 func healthdDown(c *client.Client, inst *client.Instance, resources []client.Resource, timeout time.Duration) error {
 	stack := client.NewStack(c)
-	stack.Add(resources...)
+
+	for _, r := range resources {
+		if r.Kind() != client.KindImage {
+			stack.Add(r)
+		}
+	}
 	stack.Add(inst)
 
 	c.LogDebug("Ensure", "resources", stack.All())
@@ -557,7 +560,7 @@ var healthdReloadCommand = &cli.Command{
 		defer func() { _ = c.Done() }()
 
 		// Render live progress for the ensure phase, where image downloads happen.
-		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+		finish := startProgress(globalClient, c, cmd.Root().Writer)
 
 		h, err := healthdResolve(c)
 		if err != nil {
@@ -617,7 +620,7 @@ var healthdRestartCommand = &cli.Command{
 		defer func() { _ = c.Done() }()
 
 		// Render live progress for the ensure phase, where image downloads happen.
-		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+		finish := startProgress(globalClient, c, cmd.Root().Writer)
 
 		h, err := healthdResolve(c)
 		if err != nil {
@@ -730,7 +733,7 @@ var healthdUpCommand = &cli.Command{
 		defer func() { _ = c.Done() }()
 
 		// Render live progress for the ensure phase, where image downloads happen.
-		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+		finish := startProgress(globalClient, c, cmd.Root().Writer)
 
 		if params.reCreate {
 			if existing, resources, err := healthdGetResources(c, params); err == nil {
@@ -807,7 +810,7 @@ var healthdDownCommand = &cli.Command{
 		defer func() { _ = c.Done() }()
 
 		// Render live progress for the ensure phase, where image downloads happen.
-		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+		finish := startProgress(globalClient, c, cmd.Root().Writer)
 
 		inst, resources, err := healthdGetResources(c, params)
 		if err != nil {

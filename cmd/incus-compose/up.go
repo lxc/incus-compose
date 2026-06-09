@@ -194,6 +194,7 @@ type upParams struct {
 	start             bool
 	reCreate          bool
 	noVolumes         bool
+	noImages          bool
 	pull              string
 	build             client.BuildMode
 	timeout           time.Duration
@@ -207,6 +208,9 @@ func upMakeStack(params upParams, p *project.Project, c *client.Client) (*client
 	toStackOpts := []project.ToStackOption{}
 	if !params.noVolumes {
 		toStackOpts = append(toStackOpts, project.ToStackStorageVolumes())
+	}
+	if params.noImages {
+		toStackOpts = append(toStackOpts, project.ToStackNoImages())
 	}
 	if len(params.services) > 0 {
 		toStackOpts = append(toStackOpts, project.ToStackOnlyServices(params.services))
@@ -258,12 +262,14 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 
 	if params.reCreate {
 		params.noVolumes = true
+		params.noImages = true
 		stack, err := upMakeStack(params, p, c)
 		if err != nil {
 			c.LogError("Creating the stack in reCreate", "error", err)
 			return errLogged.Wrap(err)
 		}
 		params.noVolumes = false
+		params.noImages = false
 
 		c.LogDebug("Ensure", "resources", stack.All())
 
