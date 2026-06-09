@@ -198,6 +198,10 @@ func (s *ConfigSnapshotSuite) TestConfigSnapshots() {
 			Name:    "with-container-name_yaml",
 			Fixture: "with-container-name",
 		},
+		{
+			Name:    "with-shm-size_yaml",
+			Fixture: "with-shm-size",
+		},
 	}
 
 	for _, tc := range testCases {

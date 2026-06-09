@@ -1,0 +1,4 @@
+services:
+  app:
+    image: docker.io/nginx:alpine
+    shm_size: 134217728

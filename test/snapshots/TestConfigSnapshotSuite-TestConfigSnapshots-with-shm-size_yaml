@@ -1,0 +1,10 @@
+name: with-shm-size
+services:
+  app:
+    image: docker.io/nginx:alpine
+    networks:
+      default: null
+    shm_size: "134217728"
+networks:
+  default:
+    name: with-shm-size_default

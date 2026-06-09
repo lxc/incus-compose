@@ -572,6 +572,39 @@ func (s *LoadProjectTestSuite) TestExternalNetworkOverrideNameParsed() {
 	s.Equal("incusbr0", namedOverride.IncusName(), "initial incusName uses raw override")
 }
 
+// TestShmSizeAddsDeviceAtDevShm verifies that shm_size produces a tmpfs device at /dev/shm.
+func (s *LoadProjectTestSuite) TestShmSizeAddsDeviceAtDevShm() {
+	proj, err := project.New().Load(
+		s.ctx, project.LoadWorkingDir(s.fixturePath("with-shm-size")),
+	)
+	s.Require().NoError(err)
+
+	c := client.NewOfflineClient(s.ctx, proj.Name)
+	stack := client.NewStack(c)
+	s.Require().NoError(proj.ToStack(c, stack))
+
+	var instance *client.Instance
+	for _, r := range stack.All() {
+		if inst, ok := r.(*client.Instance); ok {
+			instance = inst
+			break
+		}
+	}
+	s.Require().NotNil(instance)
+
+	var shmDev *client.InstanceDevice
+	for i := range instance.Config.Devices {
+		if instance.Config.Devices[i].Name == "shm" {
+			shmDev = &instance.Config.Devices[i]
+			break
+		}
+	}
+	s.Require().NotNil(shmDev, "shm device should be present")
+	s.Equal(client.InstanceDeviceTypeTmpfs, shmDev.Config.DeviceType)
+	s.Equal("/dev/shm", shmDev.Config.Tmpfs.Path)
+	s.Equal("134217728", shmDev.Config.Tmpfs.Size)
+}
+
 // TestContainerNameUsedAsInstanceName verifies that container_name overrides the default {service}-{index} naming.
 func (s *LoadProjectTestSuite) TestContainerNameUsedAsInstanceName() {
 	proj, err := project.New().Load(

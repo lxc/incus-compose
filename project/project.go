@@ -524,6 +524,20 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		}
 	}
 
+	// shm_size mounts a tmpfs at /dev/shm with the specified size.
+	if service.ShmSize > 0 {
+		devices = append(devices, client.InstanceDevice{
+			Name: "shm",
+			Config: client.InstanceDeviceConfig{
+				DeviceType: client.InstanceDeviceTypeTmpfs,
+				Tmpfs: client.InstanceDeviceTmpfsConfig{
+					Path: "/dev/shm",
+					Size: strconv.FormatInt(int64(service.ShmSize), 10),
+				},
+			},
+		})
+	}
+
 	// Copy "restart"
 	if service.Restart != "" {
 		config["user.restart"] = service.Restart
