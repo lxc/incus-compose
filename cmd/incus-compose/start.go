@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/urfave/cli/v3"
 
@@ -16,14 +17,14 @@ var startCommand = &cli.Command{
 	Category:  "compose",
 	ArgsUsage: "[SERVICE...]",
 	Flags: []cli.Flag{
-		&cli.IntFlag{
+		&cli.DurationFlag{
 			Name:  "timeout",
-			Usage: "Timeout in seconds for starting",
-			Value: 10,
+			Usage: "Timeout for starting",
+			Value: 10 * time.Second,
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
-		timeout := cmd.Int("timeout")
+		timeout := cmd.Duration("timeout")
 
 		globalClient, err := clientFromContext(ctx)
 		if err != nil {
@@ -67,7 +68,7 @@ var startCommand = &cli.Command{
 			errs = errors.Join(errs, err)
 		}
 
-		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+		finish := startProgress(globalClient, c, cmd.Root().Writer)
 		errStart := stack.ForAction(client.ActionStart).Run(client.ActionStart, client.OptionTimeout(timeout))
 		finish(errStart == nil)
 		if errStart != nil {

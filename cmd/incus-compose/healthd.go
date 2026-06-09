@@ -10,7 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/compose-spec/compose-go/v2/types"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/mattn/go-colorable"
 	"github.com/urfave/cli/v3"
@@ -33,7 +36,7 @@ type healthdParams struct {
 	pull        string
 	reCreate    bool
 	network     string // Incus bridge name; empty = auto-detect
-	timeout     int
+	timeout     time.Duration
 }
 
 // closingBufferReader wraps bytes.Reader to add a no-op Close.
@@ -96,8 +99,8 @@ func healthdRevokeCert(c *client.Client) error {
 	return nil
 }
 
-// healthdInUseByProject reports whether any of the named services declares a healthcheck.
-// If services is empty, all project services are checked.
+// healthdInUseByProject reports whether any service in the project requires ic-healthd:
+// a declared healthcheck, a non-default restart policy, or a service_healthy depends_on.
 func healthdInUseByProject(p *project.Project) bool {
 	for _, svc := range p.Services {
 		// https://github.com/compose-spec/compose-spec/blob/main/05-services.md#restart
@@ -107,6 +110,12 @@ func healthdInUseByProject(p *project.Project) bool {
 
 		if svc.HealthCheck != nil {
 			return true
+		}
+
+		for _, dep := range svc.DependsOn {
+			if dep.Condition == types.ServiceConditionHealthy {
+				return true
+			}
 		}
 	}
 	return false
@@ -121,7 +130,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 		imageName = "images:alpine/edge"
 	}
 
-	c.LogDebug("Using healthd", "params", params)
+	// c.LogDebug("Using healthd", "params", params)
 
 	imgRes, err := c.Resource(client.KindImage, imageName, &client.ImageConfig{})
 	if err != nil {
@@ -317,7 +326,7 @@ func healthdUp(c *client.Client, inst *client.Instance, resources []client.Resou
 }
 
 // healthdDown stops the instance, deletes it, and revokes its Incus trust certificate.
-func healthdDown(c *client.Client, inst *client.Instance, resources []client.Resource, timeout int) error {
+func healthdDown(c *client.Client, inst *client.Instance, resources []client.Resource, timeout time.Duration) error {
 	stack := client.NewStack(c)
 	stack.Add(resources...)
 	stack.Add(inst)
@@ -361,77 +370,64 @@ func healthdResolve(c *client.Client) (*client.Instance, error) {
 	return inst, nil
 }
 
-type healthdReloaderState struct {
-	existed bool
-	changed bool
-}
-
-func healthdSnapshotReloader(c *client.Client, h *client.Instance, st *healthdReloaderState) {
-	_, _, err := c.Connection().GetInstance(h.IncusName())
-	st.existed = err == nil
-	c.LogDebug("HealthdReloader snapshot", "healthd", h.IncusName(), "existed", st.existed)
-}
-
-func healthdInstanceChanged(h *client.Instance, action client.Action, r client.Resource, err error) bool {
-	if err != nil || r.Kind() != client.KindInstance {
-		return false
-	}
-
-	inst, ok := r.(*client.Instance)
-	if !ok || inst.IncusName() == h.IncusName() {
-		return false
-	}
-
-	switch action {
-	case client.ActionEnsure:
-		return inst.Created()
-	case client.ActionStart, client.ActionStop, client.ActionDelete:
-		return true
-	default:
-		return false
-	}
-}
-
 func healthdRegisterReloader(c *client.Client, h *client.Instance) error {
-	st := &healthdReloaderState{}
-	healthdSnapshotReloader(c, h, st)
-
-	c.AddHookConnected(func(err error) error {
-		healthdSnapshotReloader(c, h, st)
-		return err
-	})
+	mu := &sync.Mutex{}
+	reloading := false
 
 	c.AddHookAfter(func(action client.Action, r client.Resource, _ client.Options, err error) error {
-		if healthdInstanceChanged(h, action, r, err) {
-			st.changed = true
-			c.LogDebug("HealthdReloader instance changed", "action", action, "instance", r.IncusName())
-		}
-		return err
-	})
-
-	c.AddHookDone(func(err error) error {
-		c.LogDebug("HealthdReloader disconnecting", "healthd", h.IncusName(), "existed", st.existed, "changed", st.changed)
-		if !st.existed || !st.changed {
+		if err != nil || r.Kind() != client.KindInstance {
 			return err
 		}
+
+		inst, ok := r.(*client.Instance)
+		if !ok || inst.IncusName() == h.IncusName() {
+			return err
+		}
+
+		changed := false
+		switch action {
+		case client.ActionEnsure:
+			changed = inst.Created()
+		case client.ActionStart, client.ActionStop, client.ActionDelete:
+			changed = true
+		default:
+			changed = false
+		}
+
+		if !changed || reloading {
+			return err
+		}
+
+		mu.Lock()
+
+		reloading = true
 
 		state, _, e := c.Connection().GetInstanceState(h.IncusName())
 		if e != nil {
 			c.LogDebug("HealthdReloader healthd missing, skipping reload", "healthd", h.IncusName(), "error", e)
+			reloading = false
+			mu.Unlock()
 			return err
 		}
 		if state.StatusCode != incusApi.Running {
 			c.LogDebug("HealthdReloader healthd not running, skipping reload", "healthd", h.IncusName(), "status", state.Status)
+			reloading = false
+			mu.Unlock()
 			return err
 		}
 
 		if e := healthdReload(c, h); e == nil {
 			c.LogDebug("HealthdReloader reloaded healthd", "healthd", h.IncusName())
+			reloading = false
+			mu.Unlock()
 			return err
 		}
 
 		c.LogWarn("Reloading healthd failed, restarting", "healthd", h.IncusName(), "error", e)
-		return errors.Join(err, e, h.Stop(client.OptionForce()), h.Start())
+		err = errors.Join(err, e, h.Stop(client.OptionForce()), h.Start())
+		reloading = false
+		mu.Unlock()
+		return err
 	})
 
 	return nil
@@ -440,7 +436,7 @@ func healthdRegisterReloader(c *client.Client, h *client.Instance) error {
 func healthdReload(c *client.Client, h *client.Instance) error {
 	req := incusApi.InstanceExecPost{
 		Command:     []string{"sh", "-c", "pids=\"$(pidof ic-healthd)\" && for pid in $pids; do kill -HUP \"$pid\"; done"},
-		WaitForWS:   false,
+		WaitForWS:   true,
 		Interactive: false,
 	}
 
@@ -591,10 +587,10 @@ var healthdRestartCommand = &cli.Command{
 	Name:  "restart",
 	Usage: "Restart the ic-healthd sidecar",
 	Flags: []cli.Flag{
-		&cli.IntFlag{
+		&cli.DurationFlag{
 			Name:  "timeout",
-			Usage: "Timeout in seconds for stopping",
-			Value: 10,
+			Usage: "Timeout for stopping",
+			Value: 10 * time.Second,
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -636,7 +632,7 @@ var healthdRestartCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		timeout := int(cmd.Int("timeout"))
+		timeout := cmd.Duration("timeout")
 		if err := h.Stop(client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
 			c.LogWarn("Stopping healthd", "error", err)
 		}
@@ -687,10 +683,10 @@ var healthdUpCommand = &cli.Command{
 			Usage: `Pull image before running ("always"|"missing"|"never"|"policy")`,
 			Value: "policy",
 		},
-		&cli.IntFlag{
+		&cli.DurationFlag{
 			Name:  "timeout",
-			Usage: "Timeout in seconds for stopping",
-			Value: 10,
+			Usage: "Timeout for stopping",
+			Value: 10 * time.Second,
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -716,7 +712,7 @@ var healthdUpCommand = &cli.Command{
 			pull:        cmd.String("pull"),
 			reCreate:    cmd.Bool("recreate"),
 			network:     cmd.String("network"),
-			timeout:     cmd.Int("timeout"),
+			timeout:     cmd.Duration("timeout"),
 		}
 
 		c, err := globalClient.EnsureProject(
@@ -772,10 +768,10 @@ var healthdDownCommand = &cli.Command{
 			Value:   defaultHealthdImage,
 			Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
 		},
-		&cli.IntFlag{
+		&cli.DurationFlag{
 			Name:  "timeout",
-			Usage: "Timeout in seconds for stopping",
-			Value: 10,
+			Usage: "Timeout for stopping",
+			Value: 10 * time.Second,
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -796,7 +792,7 @@ var healthdDownCommand = &cli.Command{
 			image:       resolveHealthdImage(cmd.String("image")),
 			reCreate:    false,
 			network:     "auto",
-			timeout:     cmd.Int("timeout"),
+			timeout:     cmd.Duration("timeout"),
 		}
 
 		c, err := globalClient.EnsureProject(p.Name)

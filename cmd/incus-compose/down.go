@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/urfave/cli/v3"
 
@@ -23,10 +24,10 @@ var downCommand = &cli.Command{
 			Aliases: []string{"volumes"},
 			Usage:   "Remove the project",
 		},
-		&cli.IntFlag{
+		&cli.DurationFlag{
 			Name:  "timeout",
-			Usage: "Timeout in seconds for stopping",
-			Value: 10,
+			Usage: "Timeout for stopping",
+			Value: 10 * time.Second,
 		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -89,7 +90,7 @@ var downCommand = &cli.Command{
 
 		err = runDown(globalClient, c, p, downParams{
 			services:  cmd.Args().Slice(),
-			timeout:   int(cmd.Int("timeout")),
+			timeout:   cmd.Duration("timeout"),
 			errWriter: cmd.Root().ErrWriter,
 		})
 
@@ -141,7 +142,7 @@ func deleteProjectNetworks(c *client.Client, networks []*client.Network) error {
 type downParams struct {
 	services  []string
 	images    bool
-	timeout   int
+	timeout   time.Duration
 	errWriter io.Writer
 }
 

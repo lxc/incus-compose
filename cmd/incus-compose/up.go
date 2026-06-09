@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mattn/go-colorable"
 	"github.com/urfave/cli/v3"
@@ -28,10 +29,15 @@ var upCommand = &cli.Command{
 			Name:  "no-start",
 			Usage: "Don't start containers after creating",
 		},
-		&cli.IntFlag{
+		&cli.DurationFlag{
 			Name:  "timeout",
-			Usage: "Timeout in seconds for stopping/starting",
-			Value: 10,
+			Usage: "Timeout for stopping/starting",
+			Value: 10 * time.Second,
+		},
+		&cli.DurationFlag{
+			Name:  "dependency-timeout",
+			Usage: "Max time to wait for service_healthy depends_on (0 = no limit)",
+			Value: 5 * time.Minute,
 		},
 		&cli.StringSliceFlag{
 			Name:  "scale",
@@ -110,7 +116,7 @@ var upCommand = &cli.Command{
 		}
 
 		// Render live progress for the ensure phase, where image downloads happen.
-		finish := startProgress(globalClient, c, cmd.Root().ErrWriter)
+		finish := startProgress(globalClient, c, cmd.Root().Writer)
 
 		if !cmd.Bool("no-healthd") && healthdInUseByProject(p) {
 			hparams := healthdParams{
@@ -120,7 +126,7 @@ var upCommand = &cli.Command{
 				pull:        cmd.String("pull"),
 				reCreate:    cmd.Bool("recreate"),
 				network:     cmd.String("healthd-network"),
-				timeout:     cmd.Int("timeout"),
+				timeout:     cmd.Duration("timeout"),
 			}
 
 			inst, resources, err := healthdGetResources(c, hparams)
@@ -146,13 +152,14 @@ var upCommand = &cli.Command{
 			build = client.BuildNever
 		}
 		params := upParams{
-			reCreate: cmd.Bool("recreate"),
-			start:    !cmd.Bool("no-start"),
-			services: cmd.Args().Slice(),
-			pull:     cmd.String("pull"),
-			build:    build,
-			timeout:  int(cmd.Int("timeout")),
-			scale:    parseScale(cmd.StringSlice("scale")),
+			reCreate:          cmd.Bool("recreate"),
+			start:             !cmd.Bool("no-start"),
+			services:          cmd.Args().Slice(),
+			pull:              cmd.String("pull"),
+			build:             build,
+			timeout:           cmd.Duration("timeout"),
+			dependencyTimeout: cmd.Duration("dependency-timeout"),
+			scale:             parseScale(cmd.StringSlice("scale")),
 		}
 		if err := runUp(globalClient, c, p, params); err != nil {
 			_ = c.Done()
@@ -183,14 +190,15 @@ var upCommand = &cli.Command{
 // upParams holds the parsed arguments for an up run.
 // services is the raw service filter (empty means all services).
 type upParams struct {
-	services  []string
-	start     bool
-	reCreate  bool
-	noVolumes bool
-	pull      string
-	build     client.BuildMode
-	timeout   int
-	scale     map[string]int
+	services          []string
+	start             bool
+	reCreate          bool
+	noVolumes         bool
+	pull              string
+	build             client.BuildMode
+	timeout           time.Duration
+	dependencyTimeout time.Duration
+	scale             map[string]int
 }
 
 func upMakeStack(params upParams, p *project.Project, c *client.Client) (*client.Stack, error) {
@@ -304,7 +312,11 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 
 	// Start
 	if params.start {
-		if err := stack.ForAction(client.ActionStart).Run(client.ActionStart, client.OptionTimeout(timeout)); err != nil {
+		startOpts := []client.Option{client.OptionTimeout(timeout)}
+		if params.dependencyTimeout > 0 {
+			startOpts = append(startOpts, client.OptionDependencyTimeout(params.dependencyTimeout))
+		}
+		if err := stack.ForAction(client.ActionStart).Run(client.ActionStart, startOpts...); err != nil {
 			c.LogError("Starting resources", "error", err)
 			return errLogged.Wrap(err)
 		}
