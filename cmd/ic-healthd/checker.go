@@ -33,60 +33,82 @@ func NewChecker(myclient incus.InstanceServer, name string, cfg InstanceConfig) 
 	}
 }
 
-// Run starts the health check loop until context is cancelled.
+// phaseResult tells Run what to do after a checking phase ends.
+type phaseResult int
+
+const (
+	phaseStop    phaseResult = iota // stop checking entirely
+	phaseNormal                     // continue with the normal-interval checker
+	phaseRestart                    // restart the instance and re-enter the start period
+)
+
+// Run drives the health check loop until ctx is cancelled. It alternates
+// between the start-period checker (start interval, bounded by the start
+// period) and the normal checker, restarting the instance with exponential
+// backoff when it stays unhealthy. inStart selects the start-period checker;
+// startInstance restarts the instance before checking.
 func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
-	var ticker *time.Ticker
+	for {
+		slog.Debug("Starting checker",
+			"instance", c.name,
+			"inStart", inStart,
+			"startInstance", startInstance,
+			"config", c.config,
+		)
 
-	slog.Debug("Starting checker",
-		"instance", c.name,
-		"inStart", inStart,
-		"startInstance", startInstance,
-		"config", c.config,
-	)
+		if c.config.StartPeriod < 1 {
+			// Disable inStart if the period is smaller 1
+			inStart = false
+		}
 
-	if c.config.StartPeriod < 1 {
-		// Disable inStart if the period is smaller 1
-		inStart = false
-	}
+		if startInstance {
+			if err := c.restart(ctx); err != nil {
+				slog.Error("restart failed", "instance", c.name, "error", err)
+			}
+		}
 
-	if startInstance {
-		if err := c.restart(ctx); err != nil {
-			slog.Error("restart failed", "instance", c.name, "error", err)
+		switch c.runPhase(ctx, inStart) {
+		case phaseStop:
+			return
+		case phaseNormal:
+			inStart, startInstance = false, false
+		case phaseRestart:
+			inStart, startInstance = true, true
 		}
 	}
+}
 
-	origCtx := ctx
-	var cancel context.CancelFunc
-
+// runPhase runs a single checking phase until a transition is required. When
+// inStart is true it uses the start interval and is bounded by the start
+// period; otherwise it uses the normal interval and runs until ctx is
+// cancelled. The returned phaseResult tells Run how to proceed.
+func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
+	interval := c.config.Interval
+	phaseCtx, cancel := context.WithCancel(ctx)
 	if inStart {
-		ticker = time.NewTicker(c.config.StartInterval)
-		ctx, cancel = context.WithTimeout(ctx, c.config.StartPeriod)
-	} else {
-		ticker = time.NewTicker(c.config.Interval)
-		ctx, cancel = context.WithCancel(ctx)
+		interval = c.config.StartInterval
+		phaseCtx, cancel = context.WithTimeout(ctx, c.config.StartPeriod)
 	}
+	defer cancel()
 
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
 			oldStatus := c.status
+			var result phaseResult
+			done := false
 
-			if c.check(ctx) == nil {
+			if c.check(phaseCtx) == nil {
 				c.failures = 0
 				c.restartDelay = c.config.RestartDelay
-				if c.status != client.HealthStatusHealthy {
-					c.status = client.HealthStatusHealthy
-				}
+				c.status = client.HealthStatusHealthy
 
 				if inStart {
-					// Start the normal checker after the first instart checker succeeded.
-					cancel()
-					c.Run(origCtx, true, true)
-
-					// Do not start the checker again.
-					inStart = false
+					// First success during the start period: switch to the normal checker.
+					result, done = phaseNormal, true
 				}
 			} else {
 				c.failures++
@@ -95,36 +117,26 @@ func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
 					"failures", c.failures,
 					"retries", c.config.Retries,
 					"inStart", inStart,
-					"startInstance", startInstance,
 				)
-
-				if c.status != client.HealthStatusUnhealthy {
-					c.status = client.HealthStatusUnhealthy
-				}
+				c.status = client.HealthStatusUnhealthy
 
 				if c.failures >= c.config.Retries {
-					if !c.config.Restart {
+					switch {
+					case !c.config.Restart:
 						slog.Debug("stopping the check", "instance", c.name)
-						cancel()
-						return
-					}
-
-					c.failures = 0
-
-					if c.config.UnlessStopped && c.isStopped() {
+						result, done = phaseStop, true
+					case c.config.UnlessStopped && c.isStopped():
+						c.failures = 0
 						slog.Debug("unless-stopped: intentionally stopped, skipping restart", "instance", c.name)
-					} else {
+					default:
+						c.failures = 0
 						slog.Info("restarting instance", "instance", c.name, "delay", c.restartDelay)
 						c.restartDelay = min(c.restartDelay*2, maxRestartDelay)
 
 						slog.Debug("backoff restart, sleeping", "delay", c.restartDelay)
 						time.Sleep(c.restartDelay)
 
-						cancel()
-						c.Run(origCtx, true, true)
-
-						// Do not start the checker again.
-						inStart = false
+						result, done = phaseRestart, true
 					}
 				}
 			}
@@ -134,17 +146,18 @@ func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
 					slog.Debug("updating healthcheck status", "instance", c.name, "error", err)
 				}
 			}
-		case <-ctx.Done():
-			cancel()
 
+			if done {
+				return result
+			}
+		case <-phaseCtx.Done():
 			if inStart {
 				slog.Debug("checker restart (start -> real)", "instance", c.name)
-
-				// Run real checker after the start checker.
-				c.Run(origCtx, false, false)
+				// Start period elapsed: switch to the normal checker.
+				return phaseNormal
 			}
 
-			return
+			return phaseStop
 		}
 	}
 }
