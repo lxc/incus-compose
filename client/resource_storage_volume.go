@@ -143,18 +143,14 @@ func (r *StorageVolume) get() error {
 		return ErrNotFound.Wrap(err)
 	}
 
-	// Validate configuration matches
-	if err := r.validate(volume); err != nil {
-		return err
-	}
-
 	r.IncusVolume = volume
 	r.ETag = eTag
 	return nil
 }
 
-func (r *StorageVolume) validate(volume *incusApi.StorageVolume) error {
-	if !r.Config.Shifted {
+// Start validates the storage volume.
+func (r *StorageVolume) Start(_ ...Option) error {
+	if !r.IsEnsured() || !r.Config.Shifted {
 		return nil
 	}
 
@@ -167,24 +163,26 @@ func (r *StorageVolume) validate(volume *incusApi.StorageVolume) error {
 		return ErrUnknownResource.WithResource(r.Config.ImageResource)
 	}
 
+	var errs error
+
 	// Check shifted is enabled
-	if volume.Config["security.shifted"] != "true" {
-		return ErrVolumeMismatch.WithText("expected security.shifted=true")
+	if r.IncusVolume.Config["security.shifted"] != "true" {
+		errs = errors.Join(errors.New("expected security.shifted=true"))
 	}
 
 	// Check UID/GID match
 	expectedUID := strconv.FormatUint(uint64(img.UID), 10)
 	expectedGID := strconv.FormatUint(uint64(img.GID), 10)
 
-	if volume.Config["initial.uid"] != expectedUID {
-		return ErrVolumeMismatch.WithText("UID mismatch, expected " + expectedUID + " got " + volume.Config["initial.uid"])
+	if r.IncusVolume.Config["initial.uid"] != expectedUID {
+		errs = errors.Join(errs, fmt.Errorf("UID mismatch, expected %s got %s", expectedUID, r.IncusVolume.Config["initial.uid"]))
 	}
 
-	if volume.Config["initial.gid"] != expectedGID {
-		return ErrVolumeMismatch.WithText("GID mismatch, expected " + expectedGID + " got " + volume.Config["initial.gid"])
+	if r.IncusVolume.Config["initial.gid"] != expectedGID {
+		errs = errors.Join(errs, fmt.Errorf("GID mismatch, expected %s got %s", expectedGID, r.IncusVolume.Config["initial.gid"]))
 	}
 
-	return nil
+	return errs
 }
 
 func (r *StorageVolume) create() error {
@@ -332,5 +330,6 @@ func (r *StorageVolume) Delete(opts ...Option) error {
 var (
 	_ Resource   = (*StorageVolume)(nil)
 	_ EnsureAble = (*StorageVolume)(nil)
+	_ StartAble  = (*StorageVolume)(nil)
 	_ DeleteAble = (*StorageVolume)(nil)
 )
