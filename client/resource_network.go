@@ -338,24 +338,37 @@ func (r *Network) Delete(opts ...Option) error {
 	return nil
 }
 
-// UpdateDNSAliases rewrites the network's raw.dnsmasq with an "address" record
-// per service IP, so each service name resolves to its instance addresses
-// (round-robin when scaled). External and unensured networks are skipped.
+// UpdateDNSAliases reads raw.dnsmasq from Incus, replaces records for
+// ownedServices with newIPs (preserving all other records), and writes back.
 // Setting raw.dnsmasq disables AppArmor for the dnsmasq process (not containers).
-// The update is idempotent: if the resulting config is unchanged, dnsmasq is not
-// restarted.
-func (r *Network) UpdateDNSAliases(serviceIPs map[string][]string) error {
+// The update is idempotent: if the resulting config is unchanged, dnsmasq is not restarted.
+func (r *Network) UpdateDNSAliases(ownedServices []string, newIPs map[string][]string) error {
 	if r.Config.External || !r.IsEnsured() {
 		return nil
 	}
 
-	raw := dnsmasqRecords(serviceIPs)
-
-	if r.IncusNetwork.Config["raw.dnsmasq"] == raw {
-		return nil // No change - avoid restarting dnsmasq.
+	net, etag, err := r.client.incus.GetNetwork(r.incusName)
+	if err != nil {
+		return fmt.Errorf("reading network %q: %w", r.Name(), err)
 	}
 
-	put := r.IncusNetwork.Writable()
+	current := dnsmasqParse(net.Config["raw.dnsmasq"])
+
+	// Delete owned.
+	maps.DeleteFunc(current, func(k string, _ []string) bool {
+		return slices.Contains(ownedServices, k)
+	})
+
+	// Copy new.
+	maps.Copy(current, newIPs)
+
+	raw := dnsmasqRecords(current)
+	if net.Config["raw.dnsmasq"] == raw {
+		// Same config.
+		return nil
+	}
+
+	put := net.Writable()
 	if put.Config == nil {
 		put.Config = map[string]string{}
 	}
@@ -365,11 +378,34 @@ func (r *Network) UpdateDNSAliases(serviceIPs map[string][]string) error {
 		put.Config["raw.dnsmasq"] = raw
 	}
 
-	if err := r.client.incus.UpdateNetwork(r.incusName, put, r.ETag); err != nil {
+	r.client.LogDebug("Updating the network", "config", put)
+
+	if err := r.client.incus.UpdateNetwork(r.incusName, put, etag); err != nil {
 		return fmt.Errorf("updating dnsmasq records for network %q: %w", r.Name(), err)
 	}
 
 	return nil
+}
+
+// dnsmasqParse parses raw.dnsmasq address lines into a service→[]IP map.
+func dnsmasqParse(raw string) map[string][]string {
+	result := map[string][]string{}
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "address=/") {
+			continue
+		}
+		rest := line[len("address=/"):]
+		slash := strings.Index(rest, "/")
+		if slash < 1 {
+			continue
+		}
+		svc, ip := rest[:slash], rest[slash+1:]
+		if ip != "" {
+			result[svc] = append(result[svc], ip)
+		}
+	}
+	return result
 }
 
 // dnsmasqRecords builds the raw.dnsmasq content: one "address" record per

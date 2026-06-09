@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"maps"
@@ -42,6 +43,9 @@ type InstanceFile struct {
 
 // InstanceConfig configures instance creation.
 type InstanceConfig struct {
+	// ServiceName represents the compose service name.
+	ServiceName string
+
 	// Type is the instance type (container or VM).
 	Type incusApi.InstanceType
 
@@ -73,6 +77,11 @@ type InstanceConfig struct {
 
 	// ExtraDevices contains additional raw device configurations.
 	ExtraDevices map[string]map[string]string
+
+	// Dependencies maps dependency Incus instance names to the required health
+	// status (HealthStatusHealthy, HealthStatusStarting, HealthStatusUnhealthy).
+	// Instance.Start() blocks until all dependencies reach the required status.
+	Dependencies map[string]string
 }
 
 // GetConfig returns the configuration.
@@ -156,27 +165,29 @@ func (r *Instance) Created() bool {
 // ServiceName returns the compose service name by stripping the trailing
 // "-{index}" from the instance name ("database-1" -> "database").
 func (r *Instance) ServiceName() string {
-	return serviceName(r.name)
+	return r.Config.ServiceName
 }
 
 // WaitIPs polls the instance state until it reports at least one global address
 // or the timeout elapses. A freshly started container may not have its DHCP
 // lease yet, so this gives it time. On timeout it returns whatever was found
 // (possibly empty).
-func (r *Instance) WaitIPs(timeout time.Duration) (network string, ipv4 []string, ipv6 []string, err error) {
-	deadline := time.Now().Add(timeout)
+func (r *Instance) WaitIPs(timeout time.Duration) (ips []InterfaceIPs, err error) {
+	deadline, cancel := context.WithTimeout(r.client.globalClient.Ctx, timeout)
+
 	for {
-		network, ipv4, ipv6, err = r.client.InstanceIPs(r.IncusName())
-		if err != nil {
-			return "", nil, nil, err
-		}
-		if len(ipv4) > 0 || len(ipv6) > 0 || time.Now().After(deadline) {
-			return network, ipv4, ipv6, nil
+		ips, err = r.client.InstanceIPs(r.IncusName())
+		if err == nil {
+			cancel()
+			return ips, nil
 		}
 
+		r.client.LogDebug("Waiting for IPs", "instance", r, "error", err)
+
 		select {
-		case <-r.client.globalClient.Ctx.Done():
-			return network, ipv4, ipv6, r.client.globalClient.Ctx.Err()
+		case <-deadline.Done():
+			cancel()
+			return nil, deadline.Err()
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
@@ -456,10 +467,14 @@ func (r *Instance) attachPostStartDevices() error {
 	instance := r.IncusInstance
 
 	// Resolve container IPs once — instance is running so this should be fast.
-	network, ipv4s, ipv6s, err := r.WaitIPs(30 * time.Second)
+	ips, err := r.WaitIPs(30 * time.Second)
 	if err != nil {
 		r.client.LogWarn("could not resolve IPs for post-start devices", "instance", r.incusName, "err", err)
 	}
+
+	network := ips[0].Network
+	iPv4s := ips[0].IPv4s
+	iPv6s := ips[0].IPv6s
 
 	var bridgeV4Addrs, bridgeV6Addrs []string
 	bridgeV4Addrs, bridgeV6Addrs, err = r.client.NetworkBridgeIPs(network)
@@ -478,15 +493,15 @@ func (r *Instance) attachPostStartDevices() error {
 			}
 
 			if ip := net.ParseIP(dev.Config.Proxy.ListenAddr).To4(); ip == nil {
-				if len(ipv6s) == 0 {
+				if len(iPv6s) < 1 {
 					return fmt.Errorf("no IPv6 address for NAT proxy, instance %s", r.Name())
 				}
-				dev.Config.Proxy.ConnectAddr = ipv6s[0]
+				dev.Config.Proxy.ConnectAddr = iPv6s[0]
 			} else {
-				if len(ipv4s) == 0 {
+				if len(iPv4s) < 1 {
 					return fmt.Errorf("no IPv4 address for NAT proxy, instance %s", r.Name())
 				}
-				dev.Config.Proxy.ConnectAddr = ipv4s[0]
+				dev.Config.Proxy.ConnectAddr = iPv4s[0]
 			}
 		}
 
@@ -532,6 +547,13 @@ func (r *Instance) Start(opts ...Option) error {
 		}
 	}
 
+	if err := r.waitForDependencies(options); err != nil {
+		if r.client.hookAfter != nil {
+			return r.client.hookAfter(ActionStart, r, options, err)
+		}
+		return err
+	}
+
 	err := r.start()
 
 	if r.client.hookAfter != nil {
@@ -541,40 +563,87 @@ func (r *Instance) Start(opts ...Option) error {
 	return err
 }
 
-func (r *Instance) start() error {
-	if r.IncusInstance.Status != "Running" {
-		op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
-			Action: "start",
-		}, r.ETag)
-		if err != nil {
-			return ErrOperation.WithText("starting instance").Wrap(err)
-		}
+// Running returns true if the instance is running.
+func (r *Instance) Running() bool {
+	if !r.IsEnsured() {
+		return false
+	}
 
-		if err := op.Wait(); err != nil {
+	return r.IncusInstance.Status == "Running"
+}
+
+// waitForDependencies blocks until all Config.Dependencies reach their required
+// health status, or until the dependency timeout elapses.
+func (r *Instance) waitForDependencies(options Options) error {
+	if len(r.Config.Dependencies) == 0 {
+		return nil
+	}
+
+	timeout := options.DependencyTimeout
+	if timeout == 0 {
+		timeout = options.Timeout
+	}
+
+	var deadline time.Time
+	if timeout > 0 {
+		deadline = time.Now().Add(timeout)
+	}
+
+	for depName, requiredStatus := range r.Config.Dependencies {
+		r.client.LogDebug("Waiting for dependency", "instance", r.incusName, "dep", depName, "status", requiredStatus)
+		for {
+			inst, _, err := r.client.incus.GetInstance(depName)
+			if err == nil && inst.Config[HealthConfigKey] == requiredStatus {
+				r.client.LogDebug("Dependency ready", "dep", depName)
+				break
+			}
+
+			if !deadline.IsZero() && time.Now().After(deadline) {
+				return fmt.Errorf("dependency %q did not reach status %q within %s", depName, requiredStatus, timeout)
+			}
+
+			time.Sleep(2 * time.Second)
+		}
+	}
+	return nil
+}
+
+func (r *Instance) start() error {
+	if r.Running() {
+		return nil
+	}
+
+	op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
+		Action: "start",
+	}, r.ETag)
+	if err != nil {
+		return ErrOperation.WithText("starting instance").Wrap(err)
+	}
+
+	if err := op.Wait(); err != nil {
+		return err
+	}
+
+	// Refresh instance state
+	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
+	if err != nil {
+		return ErrNotFound.WithText("refreshing instance after start").Wrap(err)
+	}
+
+	r.IncusInstance = instance
+	r.ETag = eTag
+
+	_ = r.setStopped(false)
+
+	if r.created {
+		if err := r.PushFiles(); err != nil {
 			return err
 		}
 
-		// Refresh instance state
-		instance, eTag, err := r.client.incus.GetInstance(r.incusName)
-		if err != nil {
-			return ErrNotFound.WithText("refreshing instance after start").Wrap(err)
-		}
-
-		r.IncusInstance = instance
-		r.ETag = eTag
-
-		_ = r.setStopped(false)
-
-		if r.created {
-			if err := r.PushFiles(); err != nil {
+		// Push secrets after instance is running
+		if len(r.Config.Secrets) > 0 {
+			if err := r.PushSecrets(); err != nil {
 				return err
-			}
-
-			// Push secrets after instance is running
-			if len(r.Config.Secrets) > 0 {
-				if err := r.PushSecrets(); err != nil {
-					return err
-				}
 			}
 		}
 	}
@@ -759,7 +828,7 @@ func (r *Instance) Stop(opts ...Option) error {
 	op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
 		Action:  "stop",
 		Force:   options.Force,
-		Timeout: options.Timeout,
+		Timeout: int(options.Timeout.Seconds()),
 	}, r.ETag)
 
 	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionStop, r, options, op, err)

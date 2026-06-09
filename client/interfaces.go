@@ -4,6 +4,16 @@ package client
 // Incus allows up to 63 characters (DNS hostname limit).
 const MaxIncusNameLen = 63
 
+// Health check status constants written to HealthConfigKey by ic-healthd.
+const (
+	HealthStatusStarting  = "starting"
+	HealthStatusHealthy   = "healthy"
+	HealthStatusUnhealthy = "unhealthy"
+
+	// HealthConfigKey is the instance config key used to store health status.
+	HealthConfigKey = "user.healthcheck.status"
+)
+
 // Kind identifies a resource type.
 type Kind string
 

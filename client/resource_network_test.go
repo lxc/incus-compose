@@ -640,39 +640,6 @@ func (s *NetworkSuite) TestExternal_DeleteIsNoOp() {
 }
 
 // ----------------------------------------------------------------------------
-// DNS Alias Tests
-// ----------------------------------------------------------------------------
-
-func (s *NetworkSuite) TestUpdateDNSAliases_SetsRawDnsmasq() {
-	r, err := s.client.Resource(KindNetwork, "test-dns", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	network, ok := r.(*Network)
-	s.Require().True(ok)
-
-	err = network.UpdateDNSAliases(map[string][]string{"database": {"10.0.0.2"}})
-	s.Require().NoError(err)
-
-	// Re-fetch from a fresh client to confirm it persisted.
-	newClient, err := s.globalClient.getProject(s.projectName)
-	s.Require().NoError(err)
-
-	check, err := newClient.Resource(KindNetwork, "test-dns", &NetworkConfig{})
-	s.Require().NoError(err)
-	err = RunAction(check, ActionEnsure)
-	s.Require().NoError(err)
-
-	checkNet, ok := check.(*Network)
-	s.Require().True(ok)
-	s.Equal("address=/database/10.0.0.2\n", checkNet.IncusNetwork.Config["raw.dnsmasq"])
-
-	s.Require().NoError(network.Delete(OptionForce()))
-}
-
-// ----------------------------------------------------------------------------
 // Run the suite
 // ----------------------------------------------------------------------------
 

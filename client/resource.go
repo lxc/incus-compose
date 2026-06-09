@@ -2,6 +2,7 @@ package client
 
 import (
 	"slices"
+	"time"
 )
 
 // Resource creation priorities using powers of 2 for clear separation.
@@ -27,6 +28,13 @@ const (
 	BuildNever
 )
 
+// InterfaceIPs represents interface ips.
+type InterfaceIPs struct {
+	Network string
+	IPv4s   []string
+	IPv6s   []string
+}
+
 // Options holds arguments for resource actions.
 type Options struct {
 	// Create resources if they don't exist (for ActionEnsure).
@@ -35,8 +43,12 @@ type Options struct {
 	// Force deletion/stop even if resource is in use.
 	Force bool
 
-	// Timeout in seconds for actions (0 = default).
-	Timeout int
+	// Timeout for actions (0 = default).
+	Timeout time.Duration
+
+	// DependencyTimeout is the max time to wait for dependency health checks.
+	// Falls back to Timeout when zero.
+	DependencyTimeout time.Duration
 
 	// Follow enables continuous streaming (for ActionLog).
 	Follow bool
@@ -65,10 +77,18 @@ func OptionForce() Option {
 	}
 }
 
-// OptionTimeout in seconds for actions (0 = default).
-func OptionTimeout(t int) Option {
+// OptionTimeout sets the timeout for actions.
+func OptionTimeout(t time.Duration) Option {
 	return func(o *Options) {
 		o.Timeout = t
+	}
+}
+
+// OptionDependencyTimeout sets the max time to wait for dependency health checks.
+// Falls back to OptionTimeout when zero.
+func OptionDependencyTimeout(t time.Duration) Option {
+	return func(o *Options) {
+		o.DependencyTimeout = t
 	}
 }
 

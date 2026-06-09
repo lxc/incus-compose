@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 
 	"github.com/gosimple/slug"
@@ -477,15 +476,17 @@ func (c *Client) InstanceExists(name string) (bool, error) {
 
 // InstanceIPs fetches the global IPv4 and IPv6 addresses of a named
 // instance directly from Incus, without going through an Instance resource.
-func (c *Client) InstanceIPs(incusName string) (network string, ipv4 []string, ipv6 []string, err error) {
+func (c *Client) InstanceIPs(incusName string) (ips []InterfaceIPs, err error) {
 	state, _, err := c.incus.GetInstanceState(incusName)
 	if err != nil {
-		return "", nil, nil, err
+		return nil, err
 	}
 
 	if state.Status != "Running" {
-		return "", nil, nil, errors.New("instance not running")
+		return nil, errors.New("instance not running")
 	}
+
+	result := []InterfaceIPs{}
 
 	for sDevice, sNetwork := range state.Network {
 		if sNetwork.Type == "loopback" || sNetwork.Addresses == nil {
@@ -494,7 +495,7 @@ func (c *Client) InstanceIPs(incusName string) (network string, ipv4 []string, i
 
 		res, err := c.Resource(KindInstance, incusName, &InstanceConfig{})
 		if err != nil {
-			return "", nil, nil, err
+			return nil, err
 		}
 
 		inst, ok := res.(*Instance)
@@ -504,22 +505,35 @@ func (c *Client) InstanceIPs(incusName string) (network string, ipv4 []string, i
 
 		devices, ok := inst.IncusInstance.Devices[sDevice]
 		if !ok {
-			return "", []string{}, []string{}, nil
+			return result, nil
 		}
 
-		network = devices["network"]
+		network := devices["network"]
 
+		iPv4s := []string{}
+		iPv6s := []string{}
 		for _, addr := range sNetwork.Addresses {
-			if addr.Scope == "global" && addr.Family == "inet" {
-				ipv4 = append(ipv4, addr.Address)
+			if addr.Scope == "global" && addr.Family == "inet" && addr.Address != "" {
+				iPv4s = append(iPv4s, addr.Address)
 			}
-			if addr.Scope == "global" && addr.Family == "inet6" {
-				ipv6 = append(ipv6, addr.Address)
+			if addr.Scope == "global" && addr.Family == "inet6" && addr.Address != "" {
+				iPv6s = append(iPv6s, addr.Address)
 			}
 		}
+
+		if len(iPv4s) < 1 && len(iPv6s) < 1 {
+			// No ip found
+			continue
+		}
+
+		result = append(result, InterfaceIPs{Network: network, IPv4s: iPv4s, IPv6s: iPv6s})
 	}
 
-	return network, ipv4, ipv6, nil
+	if len(result) < 1 {
+		return nil, ErrNotFound.WithText("no Networks/IPs found")
+	}
+
+	return result, nil
 }
 
 // ResolveImageFingerprint returns the first alias name for the given fingerprint,
@@ -608,19 +622,6 @@ func sanitizeProjectName(name string) string {
 	safe := slug.Make(name)
 	safe = strings.ReplaceAll(safe, "_", "-")
 	return safe
-}
-
-// serviceName strips the trailing "-{index}" from a scaled instance name.
-func serviceName(name string) string {
-	i := strings.LastIndex(name, "-")
-	if i <= 0 {
-		return name
-	}
-	suffix := name[i+1:]
-	if _, err := strconv.Atoi(suffix); err != nil {
-		return name
-	}
-	return name[:i]
 }
 
 // SanitizeIncusName converts a string to a valid Incus instance name.
