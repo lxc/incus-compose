@@ -550,7 +550,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 
 	// Healtcheck
 	if service.HealthCheck != nil {
-		config["user.healthcheck.status"] = "starting"
+		config[client.HealthConfigKey] = client.HealthStatusStarting
 
 		testB, err := json.Marshal(service.HealthCheck.Test)
 		if err != nil {
@@ -558,6 +558,14 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 			return nil, errs
 		}
 		config["user.healthcheck.test"] = string(testB)
+
+		if service.HealthCheck.StartPeriod != nil {
+			config["user.healthcheck.start_period"] = service.HealthCheck.StartPeriod.String()
+		}
+
+		if service.HealthCheck.StartInterval != nil {
+			config["user.healthcheck.start_interval"] = service.HealthCheck.StartInterval.String()
+		}
 
 		if service.HealthCheck.Interval != nil {
 			config["user.healthcheck.interval"] = service.HealthCheck.Interval.String()
@@ -622,6 +630,31 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	// They will be used for compose-specific transformations in future updates.
 	_ = serviceXIncusComposeExtensions(service)
 
+	// Build dependency health-wait map for depends_on with condition: service_healthy.
+	var deps map[string]string
+	for depName, dep := range service.DependsOn {
+		if dep.Condition != types.ServiceConditionHealthy {
+			continue
+		}
+		depSvc := p.Services[depName]
+		depScale := 1
+		if s, ok := options.Scale[depName]; ok {
+			depScale = s
+		} else if depSvc.Deploy != nil && depSvc.Deploy.Replicas != nil {
+			depScale = int(*depSvc.Deploy.Replicas)
+		}
+		if deps == nil {
+			deps = make(map[string]string)
+		}
+		if depSvc.ContainerName != "" {
+			deps[client.SanitizeIncusName(depSvc.ContainerName, client.MaxIncusNameLen)] = client.HealthStatusHealthy
+		} else {
+			for i := 1; i <= depScale; i++ {
+				deps[client.SanitizeIncusName(fmt.Sprintf("%s-%d", depName, i), client.MaxIncusNameLen)] = client.HealthStatusHealthy
+			}
+		}
+	}
+
 	// Instance name: container_name takes precedence, otherwise {service}-{index}.
 	instanceName := fmt.Sprintf("%s-%d", service.Name, index)
 	if service.ContainerName != "" {
@@ -635,6 +668,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	var instanceConfig *client.InstanceConfig
 	if image != nil {
 		instanceConfig = &client.InstanceConfig{
+			ServiceName:      serviceName,
 			Image:            image.IncusName(),
 			Full:             options.Full,
 			Resources:        slices.Clone(resources),
@@ -643,6 +677,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 			PostStartDevices: postStartDevices,
 			Secrets:          instanceSecrets,
 			Files:            files,
+			Dependencies:     deps,
 		}
 	} else {
 		instanceConfig = &client.InstanceConfig{
@@ -653,6 +688,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 			PostStartDevices: postStartDevices,
 			Secrets:          instanceSecrets,
 			Files:            files,
+			Dependencies:     deps,
 		}
 	}
 	instance, err := c.Resource(client.KindInstance, instanceName, instanceConfig)
