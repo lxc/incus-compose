@@ -17,18 +17,6 @@ const (
 	PriorityInstance = 1 << 13 // Instance depends on everything above
 )
 
-// BuildMode controls how build-configured images are treated during Ensure.
-type BuildMode int
-
-const (
-	// BuildAuto builds the image only when it is missing (default).
-	BuildAuto BuildMode = iota
-	// BuildForce rebuilds the image even if an existing one is present.
-	BuildForce
-	// BuildNever never builds; returns an error if the image is missing.
-	BuildNever
-)
-
 // InterfaceIPs represents interface ips.
 type InterfaceIPs struct {
 	Network string

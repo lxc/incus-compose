@@ -400,44 +400,38 @@ func (r *Network) UpdateDNSAliases(ownedServices []string, newIPs map[string][]s
 	return nil
 }
 
-// dnsmasqParse parses raw.dnsmasq address lines into a service→[]IP map.
-func dnsmasqParse(raw string) map[string][]string {
-	result := map[string][]string{}
-	for _, line := range strings.Split(raw, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "address=/") {
-			continue
-		}
-		rest := line[len("address=/"):]
-		slash := strings.Index(rest, "/")
-		if slash < 1 {
-			continue
-		}
-		svc, ip := rest[:slash], rest[slash+1:]
-		if ip != "" {
-			result[svc] = append(result[svc], ip)
-		}
-	}
-	return result
-}
-
-// dnsmasqRecords builds the raw.dnsmasq content: one "address" record per
-// service IP, sorted by service name for deterministic output.
-func dnsmasqRecords(serviceIPs map[string][]string) string {
-	var b strings.Builder
-	for _, service := range slices.Sorted(maps.Keys(serviceIPs)) {
-		for _, ip := range serviceIPs[service] {
-			fmt.Fprintf(&b, "address=/%s/%s\n", service, ip)
-		}
-	}
-	return b.String()
-}
-
 var (
 	_ Resource   = (*Network)(nil)
 	_ EnsureAble = (*Network)(nil)
 	_ DeleteAble = (*Network)(nil)
 )
+
+// sanitizeNetworkName generates a network interface name from project and network name.
+// Returns a deterministic, unique name that fits within Linux interface name limits.
+func sanitizeNetworkName(projectName, prefix, networkName string) string {
+	full := networkName
+	if projectName != "" {
+		full = fmt.Sprintf("%s-%s", projectName, networkName)
+	}
+
+	full = strings.ReplaceAll(full, "_", "-")
+
+	if len(full) <= maxInterfaceNameLen {
+		return full
+	}
+
+	return shortNetworkName(prefix, full)
+}
+
+// shortNetworkName generates a short, deterministic name from a longer input.
+func shortNetworkName(prefix, full string) string {
+	hash := sha256.Sum256([]byte(full))
+
+	encoded := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(hash[:])
+	encoded = strings.ToLower(encoded)
+
+	return prefix + encoded[:networkNameHashLen]
+}
 
 // calcIPv4DHCPRange calculates an Incus-format DHCP range for an IPv4 bridge network.
 // The first quarter of the address block (1 << (hostBits-2)) is reserved for static
@@ -457,10 +451,7 @@ func calcIPv4DHCPRange(cidr string) (string, error) {
 	}
 
 	hostBits := uint(32 - bits)
-	// staticEnd: first address of the DHCP zone = 1/4 of the block, derived by shifting.
-	// Example: /24 → hostBits=8 → staticEnd = 1<<6 = 64 → DHCP starts at .64
 	staticEnd := uint64(1) << (hostBits - 2)
-	// Last usable address = total - 2 (total - 1 is broadcast).
 	lastUsable := (uint64(1) << hostBits) - 2
 
 	networkAddr := prefix.Addr()
@@ -471,7 +462,7 @@ func calcIPv4DHCPRange(cidr string) (string, error) {
 }
 
 // calcIPv6DHCPRange calculates an Incus-format DHCP range for an IPv6 bridge network.
-// The first 256 addresses (::0–::ff) are reserved for static assignment.
+// The first 256 addresses (::0-::ff) are reserved for static assignment.
 // Returns a range string in "FIRST-LAST" format.
 func calcIPv6DHCPRange(cidr string) (string, error) {
 	prefix, err := netip.ParsePrefix(cidr)
@@ -489,11 +480,9 @@ func calcIPv6DHCPRange(cidr string) (string, error) {
 }
 
 // addOffset adds an integer offset to a netip.Addr (IPv4 or IPv6).
-// For IPv4 the offset must fit in 32 bits; for IPv6, in 64 bits.
 func addOffset(addr netip.Addr, offset uint64) netip.Addr {
 	b := addr.As16()
 
-	// Treat the last 8 bytes as a big-endian uint64 and add the offset.
 	v := uint64(b[8])<<56 | uint64(b[9])<<48 | uint64(b[10])<<40 | uint64(b[11])<<32 |
 		uint64(b[12])<<24 | uint64(b[13])<<16 | uint64(b[14])<<8 | uint64(b[15])
 	v += offset
@@ -513,34 +502,4 @@ func addOffset(addr netip.Addr, offset uint64) netip.Addr {
 	}
 
 	return result
-}
-
-// sanitizeNetworkName generates a network interface name from project and network name.
-// Returns a deterministic, unique name that fits within Linux interface name limits.
-func sanitizeNetworkName(projectName, prefix, networkName string) string {
-	full := networkName
-	if projectName != "" {
-		full = fmt.Sprintf("%s-%s", projectName, networkName)
-	}
-
-	// Sanitize: replace underscores with hyphens
-	full = strings.ReplaceAll(full, "_", "-")
-
-	if len(full) <= maxInterfaceNameLen {
-		return full
-	}
-
-	return shortNetworkName(prefix, full)
-}
-
-// shortNetworkName generates a short, deterministic name from a longer input.
-func shortNetworkName(prefix, full string) string {
-	hash := sha256.Sum256([]byte(full))
-
-	encoded := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(hash[:])
-	encoded = strings.ToLower(encoded)
-
-	hashPart := encoded[:networkNameHashLen]
-
-	return prefix + hashPart
 }

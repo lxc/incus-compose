@@ -566,7 +566,7 @@ func (r *Image) buildImage(ctx context.Context, args Options) error {
 		buildCfg.Platform = platform
 	}
 
-	builder, err := detectBuilder()
+	builder, err := buildDetectBuilder()
 	if err != nil {
 		return ErrCreate.WithText("no container builder").Wrap(err)
 	}

@@ -3,6 +3,10 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -10,6 +14,39 @@ import (
 // dnsIPWaitTimeout bounds how long to wait for a freshly started instance to
 // acquire its DHCP lease before recording its DNS address.
 const dnsIPWaitTimeout = 15 * time.Second
+
+// dnsmasqParse parses raw.dnsmasq address lines into a service→[]IP map.
+func dnsmasqParse(raw string) map[string][]string {
+	result := map[string][]string{}
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "address=/") {
+			continue
+		}
+		rest := line[len("address=/"):]
+		slash := strings.Index(rest, "/")
+		if slash < 1 {
+			continue
+		}
+		svc, ip := rest[:slash], rest[slash+1:]
+		if ip != "" {
+			result[svc] = append(result[svc], ip)
+		}
+	}
+	return result
+}
+
+// dnsmasqRecords builds the raw.dnsmasq content: one "address" record per
+// service IP, sorted by service name for deterministic output.
+func dnsmasqRecords(serviceIPs map[string][]string) string {
+	var b strings.Builder
+	for _, service := range slices.Sorted(maps.Keys(serviceIPs)) {
+		for _, ip := range serviceIPs[service] {
+			fmt.Fprintf(&b, "address=/%s/%s\n", service, ip)
+		}
+	}
+	return b.String()
+}
 
 // RegisterDNSWatcher wires service-name DNS records into the project's managed
 // networks via the client lifecycle hooks. On each instance create/start/stop/

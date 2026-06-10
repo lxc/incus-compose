@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"slices"
-	"strconv"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -608,11 +607,12 @@ func (r *Instance) waitForDependencies(ctx context.Context, options Options) err
 		ctx, cancel = context.WithCancel(ctx)
 	}
 
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
 	for depName, requiredStatus := range r.Config.Dependencies {
 		r.client.LogDebug("Waiting for dependency", "instance", r.incusName, "dep", depName, "status", requiredStatus)
 		for {
-			ticker := time.NewTicker(2 * time.Second)
-
 			inst, _, err := r.client.incus.GetInstance(depName)
 			if err == nil && inst.Config[HealthConfigKey] == requiredStatus {
 				r.client.LogDebug("Dependency ready", "dep", depName)
@@ -622,7 +622,6 @@ func (r *Instance) waitForDependencies(ctx context.Context, options Options) err
 			select {
 			case <-ticker.C:
 				r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthConfigKey])
-				time.Sleep(2 * time.Second)
 			case <-ctx.Done():
 				cancel()
 				return fmt.Errorf("dependency %q did not reach status %q within %s", depName, requiredStatus, timeout)
@@ -1100,29 +1099,3 @@ var (
 	_ DeleteAble = (*Instance)(nil)
 	_ LogAble    = (*Instance)(nil)
 )
-
-// extractUIDGID extracts UID and GID from a container instance.
-func extractUIDGID(instance *incusApi.Instance) (uint64, uint64, error) {
-	if incusApi.InstanceType(instance.Type) != incusApi.InstanceTypeContainer {
-		return 0, 0, nil
-	}
-
-	// oci.uid/gid only exist for OCI images, not native Incus images
-	uidStr, hasUID := instance.Config["oci.uid"]
-	gidStr, hasGID := instance.Config["oci.gid"]
-	if !hasUID || !hasGID {
-		return 0, 0, nil
-	}
-
-	uid, err := strconv.ParseUint(uidStr, 10, 32)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	gid, err := strconv.ParseUint(gidStr, 10, 32)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	return uid, gid, nil
-}

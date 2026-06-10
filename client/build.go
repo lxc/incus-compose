@@ -26,6 +26,18 @@ import (
 	"github.com/opencontainers/umoci/oci/layer"
 )
 
+// BuildMode controls how build-configured images are treated during Ensure.
+type BuildMode int
+
+const (
+	// BuildAuto builds the image only when it is missing (default).
+	BuildAuto BuildMode = iota
+	// BuildForce rebuilds the image even if an existing one is present.
+	BuildForce
+	// BuildNever never builds; returns an error if the image is missing.
+	BuildNever
+)
+
 // BuildConfig holds the parameters read from a compose service's build: block.
 type BuildConfig struct {
 	// Context is the build context directory (absolute path).
@@ -54,9 +66,9 @@ type BuildConfig struct {
 	Pull bool
 }
 
-// detectBuilder returns the path to the first available container builder.
+// buildDetectBuilder returns the path to the first available container builder.
 // The INCUS_COMPOSE_BUILDER env var overrides auto-detection.
-func detectBuilder() (string, error) {
+func buildDetectBuilder() (string, error) {
 	if override := os.Getenv("INCUS_COMPOSE_BUILDER"); override != "" {
 		p, err := exec.LookPath(override)
 		if err != nil {

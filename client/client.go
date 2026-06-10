@@ -2,23 +2,13 @@ package client
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/url"
-	"os"
-	"path/filepath"
-	"runtime"
-	"strings"
 
-	"github.com/gosimple/slug"
-	"github.com/lmittmann/tint"
 	incusClient "github.com/lxc/incus/v7/client"
-	"github.com/lxc/incus/v7/shared/cliconfig"
-	"github.com/mattn/go-colorable"
 )
 
 // Client wraps a project-scoped Incus client with resource management.
@@ -57,8 +47,9 @@ type Client struct {
 	hookDone func(err error) error
 }
 
-func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*Client, error) {
-	config := c.projectConfig(name)
+func (c *GlobalClient) newProjectClient(name, incusName string, created bool) (*Client, error) {
+	config := c.Config
+	config.DescriptionFormat = fmt.Sprintf(config.DescriptionFormat, name) + ":%s"
 
 	incus := c.incus.UseProject(incusName)
 	pIncus, ok := incus.(*incusClient.ProtocolIncus)
@@ -92,6 +83,19 @@ func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*
 	}
 
 	c.projects = append(c.projects, cp)
+
+	if c.IsDebugging() {
+		// Debug logging hook
+		c.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
+			if err != nil {
+				c.LogDebug("Result with error", "name", r.Name(), "kind", r.Kind(), "action", action, "created", r.Created(), "error", err)
+				return err
+			}
+
+			c.LogDebug("Done", "name", r.Name(), "kind", r.Kind(), "action", action, "created", r.Created())
+			return nil
+		})
+	}
 
 	return cp, nil
 }
@@ -179,162 +183,9 @@ func (c *Client) Config() ClientConfig {
 	return c.config
 }
 
-func (c *GlobalClient) projectConfig(name string) ClientConfig {
-	config := c.Config
-	config.DescriptionFormat = fmt.Sprintf(config.DescriptionFormat, name) + ":%s"
-	return config
-}
-
 // IsConnected reports whether the project client can run Incus operations.
 func (c *Client) IsConnected() bool {
 	return c != nil && c.incus != nil
-}
-
-// projectRoot returns the absolute path to the project root directory.
-func projectRoot() string {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return "."
-	}
-	return filepath.Dir(filepath.Dir(file))
-}
-
-// resolvePath resolves a path relative to the project root.
-func resolvePath(path string) string {
-	if path == "" || filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(projectRoot(), path)
-}
-
-// NewTestClient creates a new GlobalClient for testing.
-// Returns error if INCUS_COMPOSE_URL is not set.
-func NewTestClient(ctx context.Context) (*GlobalClient, error) {
-	if _, ok := os.LookupEnv("INCUS_COMPOSE_TEST_LOCAL"); ok {
-		return nil, ErrTestLocal
-	}
-
-	var logger *slog.Logger
-
-	logFormat, ok := os.LookupEnv("LOG_FORMAT")
-	if !ok {
-		_, inCI := os.LookupEnv("CI")
-		if inCI {
-			logFormat = "text"
-		} else {
-			logFormat = "colortext"
-		}
-	}
-
-	switch logFormat {
-	case "json":
-		logger = slog.New(slog.NewJSONHandler(
-			os.Stderr,
-			&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
-		)
-	case "colortext":
-		logger = slog.New(tint.NewHandler(
-			colorable.NewColorable(os.Stderr),
-			&tint.Options{
-				Level:      slog.LevelDebug - 4,
-				TimeFormat: "15:04",
-			},
-		))
-	default:
-		logger = slog.New(slog.NewTextHandler(
-			os.Stderr,
-			&slog.HandlerOptions{Level: slog.LevelDebug - 4}),
-		)
-	}
-
-	slog.SetDefault(logger)
-
-	// Priority: INCUS_REMOTE -> INCUS_COMPOSE_URL -> "local" remote
-	var opts []ClientOption
-
-	// 1. If INCUS_REMOTE is set, use Incus CLI config
-	if remote, ok := os.LookupEnv("INCUS_REMOTE"); ok {
-		slog.DebugContext(ctx, "Connecting", "remote", remote)
-
-		conf, err := cliconfig.LoadConfig("")
-		if err != nil {
-			return nil, ErrConnectionFailed.Wrap(err)
-		}
-
-		server, err := conf.GetInstanceServer(remote)
-		if err != nil {
-			return nil, ErrConnectionFailed.Wrap(err)
-		}
-
-		opts = []ClientOption{
-			ClientLogger(logger),
-			ClientProvideConnection(server),
-		}
-	} else if u, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok {
-		// 2. If INCUS_COMPOSE_URL is set, use direct URL connection
-		slog.DebugContext(ctx, "Connecting", "url", u)
-
-		cert := resolvePath(os.Getenv("INCUS_COMPOSE_CERT"))
-		key := resolvePath(os.Getenv("INCUS_COMPOSE_KEY"))
-
-		opts = []ClientOption{
-			ClientURL(u),
-			ClientLogger(logger),
-			ClientInsecureSkipVerify(),
-		}
-
-		if cert != "" {
-			opts = append(opts, ClientTLSClientCert(cert))
-		}
-		if key != "" {
-			opts = append(opts, ClientTLSClientKey(key))
-		}
-	} else {
-		// 3. Fall back to "local" remote
-		slog.DebugContext(ctx, "Connecting", "remote", "local")
-
-		conf, err := cliconfig.LoadConfig("")
-		if err != nil {
-			return nil, ErrConnectionFailed.Wrap(err)
-		}
-
-		server, err := conf.GetInstanceServer("local")
-		if err != nil {
-			return nil, ErrConnectionFailed.Wrap(err)
-		}
-
-		opts = []ClientOption{
-			ClientLogger(logger),
-			ClientProvideConnection(server),
-		}
-	}
-
-	// Use own cache project for tests.
-	opts = append(opts, ClientCacheProject("incus-compose-tests-cache"))
-
-	c := New(ctx, opts...)
-	if err := c.Connect(); err != nil {
-		return nil, err
-	}
-
-	AddDebuggerHook(c)
-
-	return c, nil
-}
-
-// NewOfflineClient creates a disconnected project client for resource planning.
-// It can create in-memory resources, but cannot run Incus operations.
-func NewOfflineClient(ctx context.Context, name string) *Client {
-	gc := New(ctx)
-	config := gc.projectConfig(name)
-
-	return &Client{
-		globalClient: gc,
-		config:       config,
-		project:      name,
-		incusProject: sanitizeProjectName(name),
-		logger:       gc.logger.With("project", name),
-	}
 }
 
 // Resource returns an existing resource or creates a new one.
@@ -608,47 +459,4 @@ func (c *Client) NetworkForIP(ip string) (string, error) {
 	}
 
 	return "", fmt.Errorf("network with ip %q not found", ip)
-}
-
-// AddDebuggerHook adds a debugging hook for client resources.
-func AddDebuggerHook(c *GlobalClient) {
-	c.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if err != nil {
-			c.LogDebug("Result with error", "name", r.Name(), "kind", r.Kind(), "action", action, "created", r.Created(), "error", err)
-			return err
-		}
-
-		c.LogDebug("Done", "name", r.Name(), "kind", r.Kind(), "action", action, "created", r.Created())
-		return nil
-	})
-}
-
-// sanitizeProjectName converts a string to a valid Incus project name.
-// Replaces underscores with hyphens and removes special characters via slug.
-func sanitizeProjectName(name string) string {
-	safe := slug.Make(name)
-	safe = strings.ReplaceAll(safe, "_", "-")
-	return safe
-}
-
-// SanitizeIncusName converts a string to a valid Incus instance name.
-// Converts to lowercase, replaces special chars and underscores with hyphens.
-// Names exceeding 63 chars are replaced with a 32-char hex hash for DNS compatibility.
-func SanitizeIncusName(name string, maxLength int) string {
-	if maxLength == -1 {
-		maxLength = MaxIncusNameLen
-	}
-
-	// slug.Make converts to lowercase, replaces special chars with hyphens
-	// but keeps underscores, so we replace them explicitly
-	safe := slug.Make(name)
-	safe = strings.ReplaceAll(safe, "_", "-")
-
-	if len(safe) > maxLength {
-		// Fall back to hash for very long names
-		sha256sum := sha256.Sum256([]byte(name))
-		safe = hex.EncodeToString(sha256sum[:16]) // 32 hex chars
-	}
-
-	return safe
 }

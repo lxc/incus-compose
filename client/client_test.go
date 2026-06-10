@@ -23,7 +23,9 @@ func TestClientDescriptionFormat(t *testing.T) {
 
 func TestClientCustomDescriptionFormat(t *testing.T) {
 	gc := New(context.Background(), ClientDescriptionFormat("managed-by-test: %s"))
-	config := gc.projectConfig("demo")
+
+	config := gc.Config
+	config.DescriptionFormat = fmt.Sprintf(config.DescriptionFormat, "demo") + ":%s"
 
 	assert.Equal(t, "managed-by-test: demo:web", fmt.Sprintf(config.DescriptionFormat, "web"))
 }

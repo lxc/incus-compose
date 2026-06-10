@@ -264,10 +264,6 @@ func newRootCommand() *cli.Command {
 				return ctx, err
 			}
 
-			if cmd.Bool("debug") {
-				client.AddDebuggerHook(c)
-			}
-
 			return context.WithValue(ctx, clientKey{}, c), nil
 		},
 		After: func(ctx context.Context, cmd *cli.Command) error {

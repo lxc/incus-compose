@@ -85,7 +85,7 @@ func (s *BuildSuite) TestBuildMetadataTarWithConfigJSON() {
 func (s *BuildSuite) TestDetectBuilderEnvOverride() {
 	s.T().Setenv("INCUS_COMPOSE_BUILDER", "echo")
 
-	p, err := detectBuilder()
+	p, err := buildDetectBuilder()
 	s.Require().NoError(err)
 	s.Contains(p, "echo")
 }
@@ -93,7 +93,7 @@ func (s *BuildSuite) TestDetectBuilderEnvOverride() {
 func (s *BuildSuite) TestDetectBuilderEnvOverrideMissing() {
 	s.T().Setenv("INCUS_COMPOSE_BUILDER", "this-binary-does-not-exist-incus-compose-test")
 
-	_, err := detectBuilder()
+	_, err := buildDetectBuilder()
 	s.Error(err)
 }
 
@@ -104,7 +104,7 @@ func (s *BuildSuite) TestDetectBuilderNoBuilderFound() {
 	_ = os.Setenv("PATH", "")
 	_ = os.Unsetenv("INCUS_COMPOSE_BUILDER")
 
-	_, err := detectBuilder()
+	_, err := buildDetectBuilder()
 	s.Error(err)
 }
 

@@ -349,3 +349,29 @@ var (
 	_ StartAble  = (*StorageVolume)(nil)
 	_ DeleteAble = (*StorageVolume)(nil)
 )
+
+// extractUIDGID extracts UID and GID from a container instance.
+func extractUIDGID(instance *incusApi.Instance) (uint64, uint64, error) {
+	if incusApi.InstanceType(instance.Type) != incusApi.InstanceTypeContainer {
+		return 0, 0, nil
+	}
+
+	// oci.uid/gid only exist for OCI images, not native Incus images
+	uidStr, hasUID := instance.Config["oci.uid"]
+	gidStr, hasGID := instance.Config["oci.gid"]
+	if !hasUID || !hasGID {
+		return 0, 0, nil
+	}
+
+	uid, err := strconv.ParseUint(uidStr, 10, 32)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	gid, err := strconv.ParseUint(gidStr, 10, 32)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return uid, gid, nil
+}
