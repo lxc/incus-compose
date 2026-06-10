@@ -3,5 +3,3 @@ services:
     image: docker.io/nginx:alpine
     environment:
       NGINX_WORKER_PROCESSES: 1
-    ports:
-      - "8080:80"

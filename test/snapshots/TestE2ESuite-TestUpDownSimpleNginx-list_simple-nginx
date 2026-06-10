@@ -1,0 +1,4 @@
+KIND      NAME     INCUSNAME      IMAGE                           STATUS   ADDRESSES
+network   default  ic-ynmt73wxwq                                  Exists   
+instance  web      web-1          docker.io/library/nginx:alpine  Running  
+

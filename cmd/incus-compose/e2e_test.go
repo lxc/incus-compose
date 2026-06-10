@@ -18,8 +18,6 @@ import (
 type E2ESuite struct {
 	suite.Suite
 	ctx         context.Context
-	stdout      *bytes.Buffer
-	stderr      *bytes.Buffer
 	snapshotter *cupaloy.Config
 }
 
@@ -33,18 +31,17 @@ func TestE2ESuite(t *testing.T) {
 
 func (s *E2ESuite) SetupSuite() {
 	s.ctx = context.Background()
-	s.stdout = &bytes.Buffer{}
-	s.stderr = &bytes.Buffer{}
 	s.snapshotter = cupaloy.New(cupaloy.SnapshotSubdirectory(filepath.Join("..", "..", "test", "snapshots")))
 }
 
-func (s *E2ESuite) run(args ...string) error {
-	s.stdout.Reset()
-	s.stderr.Reset()
+func (s *E2ESuite) run(args ...string) (string, string, error) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
 	cmd := newRootCommand()
-	cmd.Writer = s.stdout
-	cmd.ErrWriter = s.stderr
-	return cmd.Run(s.ctx, append([]string{"incus-compose", "--debug"}, args...))
+	cmd.Writer = stdout
+	cmd.ErrWriter = stderr
+	err := cmd.Run(s.ctx, append([]string{"incus-compose", "--debug"}, args...))
+	return stdout.String(), stderr.String(), err
 }
 
 func (s *E2ESuite) plannedNetworkNames(compose string) []string {
@@ -76,21 +73,23 @@ func (s *E2ESuite) TestDownProjectDeletesNetworks() {
 	cleaned := false
 	defer func() {
 		if !cleaned {
-			_ = s.run("-f", compose, "down", "--project")
+			_, _, _ = s.run("-f", compose, "down", "--project")
 		}
 	}()
 
 	c, err := gc.EnsureProject("default")
 	s.Require().NoError(err)
 
-	s.Require().NoError(s.run("-f", compose, "up", "--detach"))
+	_, _, err = s.run("-f", compose, "up", "--detach")
+	s.Require().NoError(err)
 
 	for _, name := range networks {
 		_, _, err := c.Connection().GetNetwork(name)
 		s.Require().NoError(err)
 	}
 
-	s.Require().NoError(s.run("-f", compose, "down", "--project"))
+	_, _, err = s.run("-f", compose, "down", "--project")
+	s.Require().NoError(err)
 	cleaned = true
 
 	for _, name := range networks {
@@ -99,11 +98,12 @@ func (s *E2ESuite) TestDownProjectDeletesNetworks() {
 	}
 }
 
-func (s *E2ESuite) TestUpDown() {
+func (s *E2ESuite) TestUpDownSimpleNginx() {
 	tests := []struct {
-		name    string
-		args    []string
-		wantErr bool
+		name     string
+		args     []string
+		wantErr  bool
+		snapshot bool
 	}{
 		{
 			name:    "up simple-nginx",
@@ -111,23 +111,28 @@ func (s *E2ESuite) TestUpDown() {
 			wantErr: false,
 		},
 		{
-			name:    "list simple-nginx",
-			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
-			wantErr: false,
+			name:     "list simple-nginx",
+			args:     []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
+			wantErr:  false,
+			snapshot: true,
 		},
 	}
 
 	defer func() {
-		_ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
+		_, _, _ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
 	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
+			stdout, _, err := s.run(tt.args...)
 			if tt.wantErr {
 				s.Error(err)
 			} else {
 				s.NoError(err)
+			}
+
+			if tt.snapshot {
+				s.snapshotter.SnapshotT(s.T(), normalizeListOutput(stdout))
 			}
 		})
 	}
@@ -152,12 +157,12 @@ func (s *E2ESuite) TestUpRecreate() {
 	}
 
 	defer func() {
-		_ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
+		_, _, _ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
 	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
+			_, _, err := s.run(tt.args...)
 			if tt.wantErr {
 				s.Error(err)
 			} else {
@@ -196,12 +201,12 @@ func (s *E2ESuite) TestUpUpRecreate() {
 	}
 
 	defer func() {
-		_ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
+		_, _, _ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
 	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
+			_, _, err := s.run(tt.args...)
 			if tt.wantErr {
 				s.Error(err)
 			} else {
@@ -240,12 +245,12 @@ func (s *E2ESuite) TestUpRecreateDown() {
 	}
 
 	defer func() {
-		_ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
+		_, _, _ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
 	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
+			_, _, err := s.run(tt.args...)
 			if tt.wantErr {
 				s.Error(err)
 			} else {
@@ -259,7 +264,7 @@ func (s *E2ESuite) TestLifecycleSimpleNginx() {
 	compose := "../../test/fixtures/simple-nginx/compose.yaml"
 
 	defer func() {
-		_ = s.run("-f", compose, "down", "--project")
+		_, _, _ = s.run("-f", compose, "down", "--project")
 	}()
 
 	tests := []struct {
@@ -318,7 +323,8 @@ func (s *E2ESuite) TestLifecycleSimpleNginx() {
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			s.Require().NoError(s.run(tt.args...))
+			_, _, err := s.run(tt.args...)
+			s.Require().NoError(err)
 		})
 	}
 }
@@ -342,12 +348,12 @@ func (s *E2ESuite) TestUpDownScale() {
 	}
 
 	defer func() {
-		_ = s.run("-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project")
+		_, _, _ = s.run("-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project")
 	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
+			_, _, err := s.run(tt.args...)
 			if tt.wantErr {
 				s.Error(err)
 			} else {
@@ -376,12 +382,12 @@ func (s *E2ESuite) TestUpDownDownscale() {
 	}
 
 	defer func() {
-		_ = s.run("-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project")
+		_, _, _ = s.run("-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project")
 	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
+			_, _, err := s.run(tt.args...)
 			if tt.wantErr {
 				s.Error(err)
 			} else {
@@ -410,12 +416,12 @@ func (s *E2ESuite) TestUpDownWithScale() {
 	}
 
 	defer func() {
-		_ = s.run("-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project")
+		_, _, _ = s.run("-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project")
 	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
+			_, _, err := s.run(tt.args...)
 			if tt.wantErr {
 				s.Error(err)
 			} else {
@@ -436,11 +442,11 @@ func normalizeListOutput(output string) string {
 
 func (s *E2ESuite) TestListSnapshots() {
 	// Setup: create resources
-	err := s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach")
+	_, _, err := s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach")
 	s.Require().NoError(err)
 
 	defer func() {
-		_ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
+		_, _, _ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
 	}()
 
 	tests := []struct {
@@ -463,11 +469,10 @@ func (s *E2ESuite) TestListSnapshots() {
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
+			stdout, _, err := s.run(tt.args...)
 			s.Require().NoError(err)
 
-			normalized := normalizeListOutput(s.stdout.String())
-			s.snapshotter.SnapshotT(s.T(), normalized)
+			s.snapshotter.SnapshotT(s.T(), normalizeListOutput(stdout))
 		})
 	}
 }
@@ -491,12 +496,12 @@ func (s *E2ESuite) TestExternalNetwork() {
 	}
 
 	defer func() {
-		_ = s.run("-f", "../../test/fixtures/test-external-network/compose.yaml", "down", "--project")
+		_, _, _ = s.run("-f", "../../test/fixtures/test-external-network/compose.yaml", "down", "--project")
 	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
+			_, _, err := s.run(tt.args...)
 			if tt.wantErr {
 				s.Error(err)
 			} else {
@@ -525,12 +530,12 @@ func (s *E2ESuite) TestUpDownWithIncusOptions() {
 	}
 
 	defer func() {
-		_ = s.run("-f", "../../test/fixtures/with-incus-options/compose.yaml", "down", "--project")
+		_, _, _ = s.run("-f", "../../test/fixtures/with-incus-options/compose.yaml", "down", "--project")
 	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
+			_, _, err := s.run(tt.args...)
 			if tt.wantErr {
 				s.Error(err)
 			} else {
@@ -559,12 +564,12 @@ func (s *E2ESuite) TestUpDownWithProjectOptions() {
 	}
 
 	defer func() {
-		_ = s.run("-f", "../../test/fixtures/with-project-options/compose.yaml", "down", "--project")
+		_, _, _ = s.run("-f", "../../test/fixtures/with-project-options/compose.yaml", "down", "--project")
 	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
+			_, _, err := s.run(tt.args...)
 			if tt.wantErr {
 				s.Error(err)
 			} else {
@@ -593,7 +598,7 @@ func (s *E2ESuite) TestUpDownWithProjectOptions() {
 // 	}
 
 // 	defer func() {
-// 		_ = s.run("-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "down", "--project")
+// 		_, _, _ = s.run("-f", "../../test/fixtures/with-nat-proxy/compose.yaml", "down", "--project")
 // 	}()
 
 // 	for _, tt := range tests {
@@ -627,12 +632,12 @@ func (s *E2ESuite) TestUpDownWithSecrets() {
 	}
 
 	defer func() {
-		_ = s.run("-f", "../../test/fixtures/with-secrets/compose.yaml", "down", "--project")
+		_, _, _ = s.run("-f", "../../test/fixtures/with-secrets/compose.yaml", "down", "--project")
 	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
+			_, _, err := s.run(tt.args...)
 			if tt.wantErr {
 				s.Error(err)
 			} else {
@@ -696,12 +701,12 @@ func (s *E2ESuite) TestUpDownWithVolume() {
 	}
 
 	defer func() {
-		_ = s.run("-f", "../../test/fixtures/with-volume/compose.yaml", "down", "--project")
+		_, _, _ = s.run("-f", "../../test/fixtures/with-volume/compose.yaml", "down", "--project")
 	}()
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
+			_, _, err := s.run(tt.args...)
 			if tt.wantErr {
 				s.Error(err)
 			} else {

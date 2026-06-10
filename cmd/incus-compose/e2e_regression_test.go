@@ -12,10 +12,11 @@ func (s *E2ESuite) TestExecSelectsCorrectInstance() {
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
 	defer func() {
-		_ = s.run("-f", compose, "down", "--project")
+		_, _, _ = s.run("-f", compose, "down", "--project")
 	}()
 
-	s.Require().NoError(s.run("-f", compose, "up", "--detach"))
+	_, _, err := s.run("-f", compose, "up", "--detach")
+	s.Require().NoError(err)
 
 	tests := []struct {
 		service  string
@@ -28,8 +29,9 @@ func (s *E2ESuite) TestExecSelectsCorrectInstance() {
 
 	for _, tt := range tests {
 		s.Run(tt.service, func() {
-			s.Require().NoError(s.run("-f", compose, "exec", "--no-tty", tt.service, "hostname"))
-			s.Equal(tt.wantHost, strings.TrimSpace(s.stdout.String()))
+			stdout, _, err := s.run("-f", compose, "exec", "--no-tty", tt.service, "hostname")
+			s.Require().NoError(err)
+			s.Equal(tt.wantHost, strings.TrimSpace(stdout))
 		})
 	}
 }
