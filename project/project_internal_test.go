@@ -212,7 +212,7 @@ func (s *ProjectInternalSuite) TestServiceXIncusExtensionsExtractsXIncus() {
 	s.Require().NoError(err)
 
 	s.Equal(map[string]string{
-		"limits.memory":    "512MB",
+		"limits.memory":    "1024MB",
 		"limits.cpu":       "2",
 		"security.nesting": "false",
 	}, serviceXIncusExtensions(proj.Services["web"]))

@@ -5,15 +5,6 @@ services:
     networks:
       frontend:
         ipv4_address: 10.139.38.17
-    ports:
-      - mode: ingress
-        target: 80
-        published: "2856"
-        protocol: tcp
-      - mode: ingress
-        target: 443
-        published: "2456"
-        protocol: tcp
     x-incus-compose:
       nat-proxy:
         - connect: 80

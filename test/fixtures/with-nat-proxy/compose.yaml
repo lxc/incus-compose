@@ -1,9 +1,6 @@
 services:
   web:
     image: docker.io/nginx:alpine
-    ports:
-      - "2856:80"
-      - "2456:443"
     networks:
       frontend:
         ipv4_address: 10.139.38.17
