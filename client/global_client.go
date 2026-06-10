@@ -128,10 +128,10 @@ type GlobalClient struct {
 	connected  bool
 
 	// hookBefore is called hookBefore any action.
-	hookBefore func(action Action, r Resource, args Options, err error) error
+	hookBefore func(ctx context.Context, action Action, r Resource, args Options, err error) error
 
 	// hookAfter is called hookAfter any action.
-	hookAfter func(action Action, r Resource, args Options, err error) error
+	hookAfter func(ctx context.Context, action Action, r Resource, args Options, err error) error
 
 	progressHandler func(action Action, r Resource, args Options, p Progress)
 
@@ -165,11 +165,11 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 		cliConfig: cliConf,
 	}
 
-	c.hookBefore = func(action Action, r Resource, args Options, err error) error {
+	c.hookBefore = func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		return err
 	}
 
-	c.hookAfter = func(action Action, r Resource, args Options, err error) error {
+	c.hookAfter = func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if err == nil {
 			return nil
 		}
@@ -513,7 +513,7 @@ func (c *GlobalClient) DeleteProject(name string, force bool) error {
 			}
 
 			for _, n := range networks {
-				_ = RunAction(n, ActionDelete, OptionForce())
+				_ = RunAction(c.Ctx, n, ActionDelete, OptionForce())
 			}
 			break
 		}
@@ -606,27 +606,27 @@ func parsePercent(s string) int {
 
 // AddHookBefore adds a hook that will be executed before any action (FIFO order).
 // You may use it for abort control.
-func (c *GlobalClient) AddHookBefore(hook func(action Action, r Resource, args Options, err error) error) {
+func (c *GlobalClient) AddHookBefore(hook func(ctx context.Context, action Action, r Resource, args Options, err error) error) {
 	prevHook := c.hookBefore
-	newHook := func(action Action, r Resource, args Options, err error) error {
+	newHook := func(ctx context.Context, action Action, r Resource, args Options, err error) error {
 		// Run previous hooks FIRST (FIFO)
-		if err := prevHook(action, r, args, err); err != nil {
+		if err := prevHook(ctx, action, r, args, err); err != nil {
 			return err
 		}
 		// Then run the new hook
-		return hook(action, r, args, nil)
+		return hook(ctx, action, r, args, nil)
 	}
 
 	c.hookBefore = newHook
 }
 
 // AddHookAfter adds a hook that will be executed after any action (LIFO order).
-func (c *GlobalClient) AddHookAfter(hook func(action Action, r Resource, args Options, err error) error) {
+func (c *GlobalClient) AddHookAfter(hook func(ctx context.Context, action Action, r Resource, args Options, err error) error) {
 	prevHook := c.hookAfter
-	newHook := func(action Action, r Resource, args Options, err error) error {
+	newHook := func(ctx context.Context, action Action, r Resource, args Options, err error) error {
 		// Run new hook FIRST, then pass result to previous hooks (LIFO)
-		err = hook(action, r, args, err)
-		return prevHook(action, r, args, err)
+		err = hook(ctx, action, r, args, err)
+		return prevHook(ctx, action, r, args, err)
 	}
 
 	c.hookAfter = newHook

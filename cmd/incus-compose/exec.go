@@ -113,7 +113,7 @@ var execCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		err = stack.Run(client.ActionEnsure)
+		err = stack.Run(ctx, client.ActionEnsure)
 		if err != nil {
 			c.LogError(err.Error())
 			return errLogged.Wrap(err)
@@ -133,7 +133,7 @@ var execCommand = &cli.Command{
 		}
 
 		if !r.IsEnsured() {
-			if err = client.RunAction(r, client.ActionEnsure); err != nil {
+			if err = client.RunAction(ctx, r, client.ActionEnsure); err != nil {
 				c.LogError("Ensuring service", "service", service, "error", err)
 				return errLogged.Wrap(err)
 			}

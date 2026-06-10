@@ -151,11 +151,11 @@ func (r *Network) Created() bool {
 }
 
 // Ensure retrieves an existing network or creates a new one if args.Create is true.
-func (r *Network) Ensure(opts ...Option) error {
+func (r *Network) Ensure(ctx context.Context, opts ...Option) error {
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionEnsure, r, options, nil); err != nil {
+		if err := r.client.hookBefore(ctx, ActionEnsure, r, options, nil); err != nil {
 			return err
 		}
 	}
@@ -176,7 +176,7 @@ func (r *Network) Ensure(opts ...Option) error {
 
 	if err == nil {
 		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ActionEnsure, r, options, err)
+			err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 		}
 
 		return err
@@ -185,7 +185,7 @@ func (r *Network) Ensure(opts ...Option) error {
 	// External networks must exist - don't create them.
 	if r.Config.External {
 		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ActionEnsure, r, options, err)
+			err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 		}
 
 		return err
@@ -193,7 +193,7 @@ func (r *Network) Ensure(opts ...Option) error {
 
 	if !options.Create || !errors.Is(err, ErrNotFound) {
 		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ActionEnsure, r, options, err)
+			err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 		}
 
 		return err
@@ -202,7 +202,7 @@ func (r *Network) Ensure(opts ...Option) error {
 	err = r.create()
 
 	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ActionEnsure, r, options, err)
+		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 	}
 
 	return err
@@ -300,7 +300,7 @@ func networkCreateConfig(extensions map[string]string) (map[string]string, error
 
 // Delete removes the network from Incus.
 // External networks are never deleted.
-func (r *Network) Delete(opts ...Option) error {
+func (r *Network) Delete(ctx context.Context, opts ...Option) error {
 	if !r.IsEnsured() {
 		r.IncusNetwork = nil
 		r.ETag = ""
@@ -321,7 +321,7 @@ func (r *Network) Delete(opts ...Option) error {
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionDelete, r, options, nil); err != nil {
+		if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
 			r.IncusNetwork = nil
 			r.ETag = ""
 
@@ -333,7 +333,7 @@ func (r *Network) Delete(opts ...Option) error {
 	err := r.client.globalClient.incus.DeleteNetwork(r.incusName)
 
 	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ActionDelete, r, options, err)
+		err = r.client.hookAfter(ctx, ActionDelete, r, options, err)
 	}
 
 	if err != nil {

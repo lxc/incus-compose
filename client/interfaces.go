@@ -1,5 +1,7 @@
 package client
 
+import "context"
+
 // MaxIncusNameLen is the maximum length for Incus instance names.
 // Incus allows up to 63 characters (DNS hostname limit).
 const MaxIncusNameLen = 63
@@ -75,25 +77,25 @@ type Config interface {
 type EnsureAble interface {
 	// Ensure fetches an existing Resource or creates a new one.
 	// If a Resource with the same name exists, it is returned.
-	Ensure(opts ...Option) error
+	Ensure(ctx context.Context, opts ...Option) error
 }
 
 // StartAble is implemented by resources that can be started.
 type StartAble interface {
-	Start(opts ...Option) error
+	Start(ctx context.Context, opts ...Option) error
 }
 
 // StopAble is implemented by resources that can be stopped.
 type StopAble interface {
-	Stop(opts ...Option) error
+	Stop(ctx context.Context, opts ...Option) error
 }
 
 // DeleteAble is implemented by resources that can be deleted.
 type DeleteAble interface {
-	Delete(opts ...Option) error
+	Delete(ctx context.Context, opts ...Option) error
 }
 
 // LogAble is implemented by resources that can stream logs.
 type LogAble interface {
-	Log(opts ...Option) error
+	Log(ctx context.Context, opts ...Option) error
 }

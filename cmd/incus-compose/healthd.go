@@ -194,7 +194,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 
 // healthdUp generates a restricted Incus token, writes it (and optionally a local binary)
 // into the instance via InstanceConfig.Files, ensures (creates) the instance, and starts it.
-func healthdUp(c *client.Client, inst *client.Instance, resources []client.Resource, params healthdParams) error {
+func healthdUp(ctx context.Context, c *client.Client, inst *client.Instance, resources []client.Resource, params healthdParams) error {
 	if params.network == "" {
 		if _, _, err := c.Connection().GetNetwork("incusbr0"); err == nil {
 			params.network = "incusbr0"
@@ -291,12 +291,12 @@ func healthdUp(c *client.Client, inst *client.Instance, resources []client.Resou
 		ensureOpts = append(ensureOpts, client.OptionPull())
 	}
 
-	if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure, ensureOpts...); err != nil {
+	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...); err != nil {
 		c.LogError("Creating healthd resources", "error", err)
 		return errLogged.Wrap(err)
 	}
 
-	if err := stack.ForAction(client.ActionStart).Run(client.ActionStart); err != nil {
+	if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart); err != nil {
 		c.LogError("Starting healthd resources", "error", err)
 		return errLogged.Wrap(err)
 	}
@@ -324,7 +324,7 @@ func healthdUp(c *client.Client, inst *client.Instance, resources []client.Resou
 }
 
 // healthdDown stops the instance, deletes it, and revokes its Incus trust certificate.
-func healthdDown(c *client.Client, inst *client.Instance, resources []client.Resource, timeout time.Duration) error {
+func healthdDown(ctx context.Context, c *client.Client, inst *client.Instance, resources []client.Resource, timeout time.Duration) error {
 	stack := client.NewStack(c)
 
 	for _, r := range resources {
@@ -336,15 +336,15 @@ func healthdDown(c *client.Client, inst *client.Instance, resources []client.Res
 
 	c.LogDebug("Ensure", "resources", stack.All())
 
-	if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {
+	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
 		c.LogWarn("Ensuring healthd", "error", err)
 	}
 
-	if err := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
+	if err := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
 		c.LogWarn("Stopping healthd resources", "error", err)
 	}
 
-	if err := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
+	if err := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
 		c.LogWarn("Deleting healthd resources", "error", err)
 	}
 
@@ -377,7 +377,7 @@ func healthdRegisterReloader(c *client.Client, h *client.Instance) error {
 	mu := &sync.Mutex{}
 	reloading := false
 
-	c.AddHookAfter(func(action client.Action, r client.Resource, _ client.Options, err error) error {
+	c.AddHookAfter(func(ctx context.Context, action client.Action, r client.Resource, _ client.Options, err error) error {
 		if err != nil || r.Kind() != client.KindInstance {
 			return err
 		}
@@ -427,7 +427,7 @@ func healthdRegisterReloader(c *client.Client, h *client.Instance) error {
 		}
 
 		c.LogWarn("Reloading healthd failed, restarting", "healthd", h.IncusName(), "error", e)
-		err = errors.Join(err, e, h.Stop(client.OptionForce()), h.Start())
+		err = errors.Join(err, e, h.Stop(ctx, client.OptionForce()), h.Start(ctx))
 		reloading = false
 		mu.Unlock()
 		return err
@@ -518,12 +518,12 @@ var healthdLogsCommand = &cli.Command{
 			opts = append(opts, client.OptionFollow())
 		}
 
-		if err := h.Ensure(); err != nil {
+		if err := h.Ensure(ctx); err != nil {
 			c.LogError("Ensuring healthd", "error", err)
 			return errLogged.Wrap(err)
 		}
 
-		if err := h.Log(opts...); err != nil {
+		if err := h.Log(ctx, opts...); err != nil {
 			c.LogError("Getting healthd logs", "error", err)
 			return errLogged.Wrap(err)
 		}
@@ -569,7 +569,7 @@ var healthdReloadCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		if err := h.Ensure(); err != nil {
+		if err := h.Ensure(ctx); err != nil {
 			c.LogError("Ensuring healthd", "error", err)
 			finish(false)
 			return errLogged.Wrap(err)
@@ -629,18 +629,18 @@ var healthdRestartCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		if err := h.Ensure(); err != nil {
+		if err := h.Ensure(ctx); err != nil {
 			c.LogError("Ensuring healthd", "error", err)
 			finish(false)
 			return errLogged.Wrap(err)
 		}
 
 		timeout := cmd.Duration("timeout")
-		if err := h.Stop(client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
+		if err := h.Stop(ctx, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
 			c.LogWarn("Stopping healthd", "error", err)
 		}
 
-		if err := h.Start(); err != nil {
+		if err := h.Start(ctx); err != nil {
 			c.LogError("Starting healthd", "error", err)
 			finish(false)
 			return errLogged.Wrap(err)
@@ -737,7 +737,7 @@ var healthdUpCommand = &cli.Command{
 
 		if params.reCreate {
 			if existing, resources, err := healthdGetResources(c, params); err == nil {
-				if e := healthdDown(c, existing, resources, params.timeout); e != nil {
+				if e := healthdDown(ctx, c, existing, resources, params.timeout); e != nil {
 					c.LogDebug("healthdDown in recreate", "error", e)
 				}
 			}
@@ -752,7 +752,7 @@ var healthdUpCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		if err := healthdUp(c, inst, resources, params); err != nil {
+		if err := healthdUp(ctx, c, inst, resources, params); err != nil {
 			globalClient.LogError("Starting healthd", "error", err)
 			finish(false)
 			return errLogged.Wrap(err)
@@ -821,7 +821,7 @@ var healthdDownCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		err = healthdDown(c, inst, resources, params.timeout)
+		err = healthdDown(ctx, c, inst, resources, params.timeout)
 		finish(err == nil)
 		return err
 	},

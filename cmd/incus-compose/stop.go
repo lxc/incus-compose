@@ -63,13 +63,13 @@ var stopCommand = &cli.Command{
 		}
 
 		var errs error
-		if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {
+		if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
 			c.LogError("Getting resources", "error", err)
 			errs = errors.Join(errs, err)
 		}
 
 		finish := startProgress(globalClient, c, cmd.Root().Writer)
-		errStop := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout))
+		errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout))
 		finish(errStop == nil)
 		if errStop != nil {
 			c.LogWarn("Stopping resources", "error", errStop)

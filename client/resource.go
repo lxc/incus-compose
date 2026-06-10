@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"slices"
 	"time"
 )
@@ -165,31 +166,31 @@ func SupportsAction(r Resource, action Action) bool {
 }
 
 // RunAction runs a action on a resource.
-func RunAction(r Resource, action Action, opts ...Option) error {
+func RunAction(ctx context.Context, r Resource, action Action, opts ...Option) error {
 	switch action {
 	case ActionEnsure:
 		if e, ok := r.(EnsureAble); ok {
-			return e.Ensure(opts...)
+			return e.Ensure(ctx, opts...)
 		}
 		return ErrUnsupportedAction.WithAction(ActionEnsure).WithResource(r)
 	case ActionDelete:
 		if e, ok := r.(DeleteAble); ok {
-			return e.Delete(opts...)
+			return e.Delete(ctx, opts...)
 		}
 		return ErrUnsupportedAction.WithAction(ActionDelete).WithResource(r)
 	case ActionStart:
 		if e, ok := r.(StartAble); ok {
-			return e.Start(opts...)
+			return e.Start(ctx, opts...)
 		}
 		return ErrUnsupportedAction.WithAction(ActionStart).WithResource(r)
 	case ActionStop:
 		if e, ok := r.(StopAble); ok {
-			return e.Stop(opts...)
+			return e.Stop(ctx, opts...)
 		}
 		return ErrUnsupportedAction.WithAction(ActionStop).WithResource(r)
 	case ActionLog:
 		if e, ok := r.(LogAble); ok {
-			return e.Log(opts...)
+			return e.Log(ctx, opts...)
 		}
 		return ErrUnsupportedAction.WithAction(ActionLog).WithResource(r)
 	default:

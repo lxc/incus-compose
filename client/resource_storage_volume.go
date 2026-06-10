@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -107,11 +108,11 @@ func (r *StorageVolume) Created() bool {
 }
 
 // Ensure retrieves an existing storage volume or creates a new one if Create option is set.
-func (r *StorageVolume) Ensure(opts ...Option) error {
+func (r *StorageVolume) Ensure(ctx context.Context, opts ...Option) error {
 	args := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionEnsure, r, args, nil); err != nil {
+		if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
 			return err
 		}
 	}
@@ -124,7 +125,7 @@ func (r *StorageVolume) Ensure(opts ...Option) error {
 	}
 
 	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ActionEnsure, r, args, err)
+		err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
 	}
 
 	return err
@@ -145,7 +146,7 @@ func (r *StorageVolume) get() error {
 }
 
 // Start validates the storage volume.
-func (r *StorageVolume) Start(_ ...Option) error {
+func (r *StorageVolume) Start(_ context.Context, _ ...Option) error {
 	if !r.IsEnsured() || !r.Config.Shifted {
 		return nil
 	}
@@ -300,7 +301,7 @@ func (r *StorageVolume) pushDirectoryContent() error {
 }
 
 // Delete removes the storage volume from Incus.
-func (r *StorageVolume) Delete(opts ...Option) error {
+func (r *StorageVolume) Delete(ctx context.Context, opts ...Option) error {
 	if !r.IsEnsured() {
 		r.IncusVolume = nil
 		r.ETag = ""
@@ -312,7 +313,7 @@ func (r *StorageVolume) Delete(opts ...Option) error {
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionDelete, r, options, nil); err != nil {
+		if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
 			r.IncusVolume = nil
 			r.ETag = ""
 
@@ -324,7 +325,7 @@ func (r *StorageVolume) Delete(opts ...Option) error {
 	err := r.client.incus.DeleteStoragePoolVolume(r.Config.Pool, "custom", r.incusName)
 
 	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ActionDelete, r, options, err)
+		err = r.client.hookAfter(ctx, ActionDelete, r, options, err)
 	}
 
 	if err != nil {

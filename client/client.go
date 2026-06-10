@@ -41,10 +41,10 @@ type Client struct {
 	connectionIP string
 
 	// hookBefore is called before any action
-	hookBefore func(action Action, r Resource, args Options, err error) error
+	hookBefore func(ctx context.Context, action Action, r Resource, args Options, err error) error
 
 	// hookAfter is called after any action
-	hookAfter func(action Action, r Resource, args Options, err error) error
+	hookAfter func(ctx context.Context, action Action, r Resource, args Options, err error) error
 
 	hookOperation       func(ctx context.Context, action Action, r Resource, args Options, op incusClient.Operation, err error) error
 	hookRemoteOperation func(ctx context.Context, action Action, r Resource, args Options, op incusClient.RemoteOperation, err error) error
@@ -384,27 +384,27 @@ func (c *Client) ResetResources() {
 
 // AddHookBefore adds a hook that will be executed before any action.
 // You may use it for abort control.
-func (c *Client) AddHookBefore(hook func(action Action, r Resource, args Options, err error) error) {
+func (c *Client) AddHookBefore(hook func(ctx context.Context, action Action, r Resource, args Options, err error) error) {
 	prevHook := c.hookBefore
-	newHook := func(action Action, r Resource, args Options, err error) error {
+	newHook := func(ctx context.Context, action Action, r Resource, args Options, err error) error {
 		// Run previous hooks FIRST (FIFO)
-		if err := prevHook(action, r, args, err); err != nil {
+		if err := prevHook(ctx, action, r, args, err); err != nil {
 			return err
 		}
 		// Then run the new hook
-		return hook(action, r, args, nil)
+		return hook(ctx, action, r, args, nil)
 	}
 
 	c.hookBefore = newHook
 }
 
 // AddHookAfter adds a hook that will be executed after any action (LIFO order).
-func (c *Client) AddHookAfter(hook func(action Action, r Resource, args Options, err error) error) {
+func (c *Client) AddHookAfter(hook func(ctx context.Context, action Action, r Resource, args Options, err error) error) {
 	prevHook := c.hookAfter
-	newHook := func(action Action, r Resource, args Options, err error) error {
+	newHook := func(ctx context.Context, action Action, r Resource, args Options, err error) error {
 		// Run new hook FIRST, then pass result to previous hooks (LIFO)
-		err = hook(action, r, args, err)
-		return prevHook(action, r, args, err)
+		err = hook(ctx, action, r, args, err)
+		return prevHook(ctx, action, r, args, err)
 	}
 
 	c.hookAfter = newHook
@@ -610,7 +610,7 @@ func (c *Client) NetworkForIP(ip string) (string, error) {
 
 // AddDebuggerHook adds a debugging hook for client resources.
 func AddDebuggerHook(c *GlobalClient) {
-	c.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	c.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if err != nil {
 			c.LogDebug("Result with error", "name", r.Name(), "kind", r.Kind(), "action", action, "created", r.Created(), "error", err)
 			return err

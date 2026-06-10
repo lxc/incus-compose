@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -23,7 +24,7 @@ func (c *Client) RegisterDNSWatcher() error {
 	ownedSet := map[string]struct{}{} // dnsmasq keys this run owns
 	mu := &sync.Mutex{}
 
-	c.AddHookAfter(func(action Action, r Resource, _ Options, err error) error {
+	c.AddHookAfter(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
 		if err != nil || r == nil {
 			return err
 		}

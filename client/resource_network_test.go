@@ -269,7 +269,7 @@ func (s *NetworkSuite) TestEnsure_WithCreate() {
 	r, err := s.client.Resource(KindNetwork, "test-net", &NetworkConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 }
@@ -278,7 +278,7 @@ func (s *NetworkSuite) TestEnsure_WithoutCreate_Fails() {
 	r, err := s.client.Resource(KindNetwork, "non-existent", &NetworkConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure)
+	err = RunAction(s.ctx, r, ActionEnsure)
 	s.Require().Error(err)
 	s.False(r.IsEnsured())
 	s.ErrorIs(err, ErrNotFound)
@@ -289,12 +289,12 @@ func (s *NetworkSuite) TestEnsure_Idempotent() {
 	s.Require().NoError(err)
 
 	// First ensure
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
 	// Second ensure - should return immediately
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 }
@@ -304,12 +304,12 @@ func (s *NetworkSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
 	s.Require().NoError(err)
 
 	// First attempt without create - fails
-	err = RunAction(r, ActionEnsure)
+	err = RunAction(s.ctx, r, ActionEnsure)
 	s.Require().Error(err)
 	s.False(r.IsEnsured())
 
 	// Second attempt with create - succeeds
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 }
@@ -318,7 +318,7 @@ func (s *NetworkSuite) TestEnsure_DefaultType() {
 	r, err := s.client.Resource(KindNetwork, "test-default-type", &NetworkConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 
 	network, ok := r.(*Network)
@@ -333,7 +333,7 @@ func (s *NetworkSuite) TestEnsure_CustomType() {
 	})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 
 	network, ok := r.(*Network)
@@ -373,11 +373,11 @@ func (s *NetworkSuite) TestDelete_AfterEnsure() {
 	r, err := s.client.Resource(KindNetwork, "test-delete", &NetworkConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
-	err = RunAction(r, ActionDelete, OptionForce())
+	err = RunAction(s.ctx, r, ActionDelete, OptionForce())
 	s.Require().NoError(err)
 	s.False(r.IsEnsured())
 }
@@ -387,7 +387,7 @@ func (s *NetworkSuite) TestDelete_NotEnsured_NoError() {
 	s.Require().NoError(err)
 
 	// Delete without ensure should not error
-	err = RunAction(r, ActionDelete)
+	err = RunAction(s.ctx, r, ActionDelete)
 	s.Require().NoError(err)
 }
 
@@ -397,7 +397,7 @@ func (s *NetworkSuite) TestDelete_NotEnsured_NoError() {
 
 func (s *NetworkSuite) TestHook_BeforeIsCalled() {
 	called := false
-	s.client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if action == ActionEnsure && r.Kind() == KindNetwork {
 			called = true
 		}
@@ -407,14 +407,14 @@ func (s *NetworkSuite) TestHook_BeforeIsCalled() {
 	r, err := s.client.Resource(KindNetwork, "test-before-hook", &NetworkConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(called, "before hook should have been called")
 }
 
 func (s *NetworkSuite) TestHook_AfterIsCalled() {
 	called := false
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if action == ActionEnsure && r.Kind() == KindNetwork {
 			called = true
 		}
@@ -424,14 +424,14 @@ func (s *NetworkSuite) TestHook_AfterIsCalled() {
 	r, err := s.client.Resource(KindNetwork, "test-after-hook", &NetworkConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(called, "after hook should have been called")
 }
 
 func (s *NetworkSuite) TestHook_AfterReceivesError() {
 	var receivedErr error
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if action == ActionEnsure && r.Kind() == KindNetwork {
 			receivedErr = err
 		}
@@ -441,12 +441,12 @@ func (s *NetworkSuite) TestHook_AfterReceivesError() {
 	r, err := s.client.Resource(KindNetwork, "non-existent", &NetworkConfig{})
 	s.Require().NoError(err)
 
-	_ = RunAction(r, ActionEnsure) // without create, will fail
+	_ = RunAction(s.ctx, r, ActionEnsure) // without create, will fail
 	s.NotNil(receivedErr, "after hook should receive the error")
 }
 
 func (s *NetworkSuite) TestHook_BeforeCanAbort() {
-	s.client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if r.Name() == "abort-me" {
 			return ErrAborted
 		}
@@ -456,13 +456,13 @@ func (s *NetworkSuite) TestHook_BeforeCanAbort() {
 	r, err := s.client.Resource(KindNetwork, "abort-me", &NetworkConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.ErrorIs(err, ErrAborted)
 	s.False(r.IsEnsured())
 }
 
 func (s *NetworkSuite) TestHook_AfterCanModifyError() {
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if err != nil {
 			return ErrAborted // replace error
 		}
@@ -472,13 +472,13 @@ func (s *NetworkSuite) TestHook_AfterCanModifyError() {
 	r, err := s.client.Resource(KindNetwork, "non-existent", &NetworkConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure) // will fail, hook replaces error
+	err = RunAction(s.ctx, r, ActionEnsure) // will fail, hook replaces error
 	s.ErrorIs(err, ErrAborted)
 }
 
 func (s *NetworkSuite) TestHook_DeleteAction() {
 	var action Action
-	s.client.AddHookBefore(func(a Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, a Action, r Resource, args Options, err error) error {
 		action = a
 		return err
 	})
@@ -486,11 +486,11 @@ func (s *NetworkSuite) TestHook_DeleteAction() {
 	r, err := s.client.Resource(KindNetwork, "test-delete-hook", &NetworkConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.Equal(ActionEnsure, action)
 
-	err = RunAction(r, ActionDelete)
+	err = RunAction(s.ctx, r, ActionDelete)
 	s.Require().NoError(err)
 	s.Equal(ActionDelete, action)
 }
@@ -504,7 +504,7 @@ func (s *NetworkSuite) TestEnsure_ExistsOnNewClient() {
 	r, err := s.client.Resource(KindNetwork, "test-persist", &NetworkConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 
 	// Get new client for same project
@@ -515,7 +515,7 @@ func (s *NetworkSuite) TestEnsure_ExistsOnNewClient() {
 	r2, err := newClient.Resource(KindNetwork, "test-persist", &NetworkConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r2, ActionEnsure) // no create
+	err = RunAction(s.ctx, r2, ActionEnsure) // no create
 	s.Require().NoError(err)
 	s.True(r2.IsEnsured())
 }
@@ -580,7 +580,7 @@ func (s *NetworkSuite) TestExternal_Incusbr0Resolves() {
 	r, err := s.client.Resource(KindNetwork, "incusbr0", &NetworkConfig{External: true})
 	s.Require().NoError(err)
 
-	s.Require().NoError(RunAction(r, ActionEnsure))
+	s.Require().NoError(RunAction(s.ctx, r, ActionEnsure))
 	s.True(r.IsEnsured())
 
 	network, ok := r.(*Network)
@@ -593,7 +593,7 @@ func (s *NetworkSuite) TestExternal_EnsureFailsIfNotExists() {
 	s.Require().NoError(err)
 
 	// External network ensure should fail if network doesn't exist
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().Error(err)
 	s.ErrorIs(err, ErrNotFound)
 	s.False(r.IsEnsured())
@@ -604,7 +604,7 @@ func (s *NetworkSuite) TestExternal_DeleteIsNoOp() {
 	r, err := s.client.Resource(KindNetwork, "test-ext-del", &NetworkConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
@@ -619,12 +619,12 @@ func (s *NetworkSuite) TestExternal_DeleteIsNoOp() {
 	extR, err := newDeleteClient.Resource(KindNetwork, incusName, &NetworkConfig{External: true})
 	s.Require().NoError(err)
 
-	err = RunAction(extR, ActionEnsure)
+	err = RunAction(s.ctx, extR, ActionEnsure)
 	s.Require().NoError(err)
 	s.True(extR.IsEnsured())
 
 	// Delete the external reference - should be no-op
-	err = RunAction(extR, ActionDelete)
+	err = RunAction(s.ctx, extR, ActionDelete)
 	s.Require().NoError(err)
 
 	// Network should still exist (verify with original resource)
@@ -634,7 +634,7 @@ func (s *NetworkSuite) TestExternal_DeleteIsNoOp() {
 	checkR, err := newClient.Resource(KindNetwork, "test-ext-del", &NetworkConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(checkR, ActionEnsure)
+	err = RunAction(s.ctx, checkR, ActionEnsure)
 	s.Require().NoError(err)
 	s.True(checkR.IsEnsured())
 }

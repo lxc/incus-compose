@@ -51,7 +51,7 @@ func (s *StorageVolumeSuite) TestEnsure_WithCreate() {
 	r, err := s.client.Resource(KindStorageVolume, "test-vol", &StorageVolumeConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 }
@@ -60,7 +60,7 @@ func (s *StorageVolumeSuite) TestEnsure_WithoutCreate_Fails() {
 	r, err := s.client.Resource(KindStorageVolume, "non-existent", &StorageVolumeConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure)
+	err = RunAction(s.ctx, r, ActionEnsure)
 	s.Require().Error(err)
 	s.False(r.IsEnsured())
 	s.ErrorIs(err, ErrNotFound)
@@ -71,12 +71,12 @@ func (s *StorageVolumeSuite) TestEnsure_Idempotent() {
 	s.Require().NoError(err)
 
 	// First ensure
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
 	// Second ensure - should return immediately
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 }
@@ -86,12 +86,12 @@ func (s *StorageVolumeSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
 	s.Require().NoError(err)
 
 	// First attempt without create - fails
-	err = RunAction(r, ActionEnsure)
+	err = RunAction(s.ctx, r, ActionEnsure)
 	s.Require().Error(err)
 	s.False(r.IsEnsured())
 
 	// Second attempt with create - succeeds
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 }
@@ -101,7 +101,7 @@ func (s *StorageVolumeSuite) TestEnsure_ShiftedVolume() {
 	s.Require().NoError(err)
 
 	// Create the image
-	s.Require().NoError(RunAction(ir, ActionEnsure, OptionCreate()))
+	s.Require().NoError(RunAction(s.ctx, ir, ActionEnsure, OptionCreate()))
 
 	r, err := s.client.Resource(KindStorageVolume, "test-shifted", &StorageVolumeConfig{
 		Shifted: true,
@@ -110,7 +110,7 @@ func (s *StorageVolumeSuite) TestEnsure_ShiftedVolume() {
 	})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 
 	vol, ok := r.(*StorageVolume)
@@ -129,7 +129,7 @@ func (s *StorageVolumeSuite) TestEnsure_ExtraConfig() {
 	})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 
 	vol, ok := r.(*StorageVolume)
@@ -169,11 +169,11 @@ func (s *StorageVolumeSuite) TestDelete_AfterEnsure() {
 	r, err := s.client.Resource(KindStorageVolume, "test-delete", &StorageVolumeConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
-	err = RunAction(r, ActionDelete, OptionForce())
+	err = RunAction(s.ctx, r, ActionDelete, OptionForce())
 	s.Require().NoError(err)
 	s.False(r.IsEnsured())
 }
@@ -183,7 +183,7 @@ func (s *StorageVolumeSuite) TestDelete_NotEnsured_NoError() {
 	s.Require().NoError(err)
 
 	// Delete without ensure should not error
-	err = RunAction(r, ActionDelete)
+	err = RunAction(s.ctx, r, ActionDelete)
 	s.Require().NoError(err)
 }
 
@@ -193,7 +193,7 @@ func (s *StorageVolumeSuite) TestDelete_NotEnsured_NoError() {
 
 func (s *StorageVolumeSuite) TestHook_BeforeIsCalled() {
 	called := false
-	s.client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if action == ActionEnsure && r.Kind() == KindStorageVolume {
 			called = true
 		}
@@ -203,14 +203,14 @@ func (s *StorageVolumeSuite) TestHook_BeforeIsCalled() {
 	r, err := s.client.Resource(KindStorageVolume, "test-before-hook", &StorageVolumeConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(called, "before hook should have been called")
 }
 
 func (s *StorageVolumeSuite) TestHook_AfterIsCalled() {
 	called := false
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if action == ActionEnsure && r.Kind() == KindStorageVolume {
 			called = true
 		}
@@ -220,14 +220,14 @@ func (s *StorageVolumeSuite) TestHook_AfterIsCalled() {
 	r, err := s.client.Resource(KindStorageVolume, "test-after-hook", &StorageVolumeConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(called, "after hook should have been called")
 }
 
 func (s *StorageVolumeSuite) TestHook_AfterReceivesError() {
 	var receivedErr error
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if action == ActionEnsure && r.Kind() == KindStorageVolume {
 			receivedErr = err
 		}
@@ -237,12 +237,12 @@ func (s *StorageVolumeSuite) TestHook_AfterReceivesError() {
 	r, err := s.client.Resource(KindStorageVolume, "non-existent", &StorageVolumeConfig{})
 	s.Require().NoError(err)
 
-	_ = RunAction(r, ActionEnsure) // without create, will fail
+	_ = RunAction(s.ctx, r, ActionEnsure) // without create, will fail
 	s.NotNil(receivedErr, "after hook should receive the error")
 }
 
 func (s *StorageVolumeSuite) TestHook_BeforeCanAbort() {
-	s.client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if r.Name() == "abort-me" {
 			return ErrAborted
 		}
@@ -252,13 +252,13 @@ func (s *StorageVolumeSuite) TestHook_BeforeCanAbort() {
 	r, err := s.client.Resource(KindStorageVolume, "abort-me", &StorageVolumeConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.ErrorIs(err, ErrAborted)
 	s.False(r.IsEnsured())
 }
 
 func (s *StorageVolumeSuite) TestHook_AfterCanModifyError() {
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if err != nil {
 			return ErrAborted // replace error
 		}
@@ -268,13 +268,13 @@ func (s *StorageVolumeSuite) TestHook_AfterCanModifyError() {
 	r, err := s.client.Resource(KindStorageVolume, "non-existent", &StorageVolumeConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure) // will fail, hook replaces error
+	err = RunAction(s.ctx, r, ActionEnsure) // will fail, hook replaces error
 	s.ErrorIs(err, ErrAborted)
 }
 
 func (s *StorageVolumeSuite) TestHook_DeleteAction() {
 	var action Action
-	s.client.AddHookBefore(func(a Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, a Action, r Resource, args Options, err error) error {
 		action = a
 		return err
 	})
@@ -282,11 +282,11 @@ func (s *StorageVolumeSuite) TestHook_DeleteAction() {
 	r, err := s.client.Resource(KindStorageVolume, "test-delete-hook", &StorageVolumeConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.Equal(ActionEnsure, action)
 
-	err = RunAction(r, ActionDelete)
+	err = RunAction(s.ctx, r, ActionDelete)
 	s.Require().NoError(err)
 	s.Equal(ActionDelete, action)
 }
@@ -300,7 +300,7 @@ func (s *StorageVolumeSuite) TestEnsure_ExistsOnNewClient() {
 	r, err := s.client.Resource(KindStorageVolume, "test-persist", &StorageVolumeConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 
 	// Get new client for same project
@@ -311,7 +311,7 @@ func (s *StorageVolumeSuite) TestEnsure_ExistsOnNewClient() {
 	r2, err := newClient.Resource(KindStorageVolume, "test-persist", &StorageVolumeConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r2, ActionEnsure) // no create
+	err = RunAction(s.ctx, r2, ActionEnsure) // no create
 	s.Require().NoError(err)
 	s.True(r2.IsEnsured())
 }

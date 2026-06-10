@@ -228,11 +228,11 @@ func (r *Instance) fetch() error {
 }
 
 // Ensure retrieves an existing instance or creates a new one if args.Create is true.
-func (r *Instance) Ensure(opts ...Option) error {
+func (r *Instance) Ensure(ctx context.Context, opts ...Option) error {
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionEnsure, r, options, nil); err != nil {
+		if err := r.client.hookBefore(ctx, ActionEnsure, r, options, nil); err != nil {
 			return err
 		}
 	}
@@ -244,7 +244,7 @@ func (r *Instance) Ensure(opts ...Option) error {
 		err = r.ensured()
 
 		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ActionEnsure, r, options, err)
+			err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 		}
 
 		return err
@@ -254,16 +254,16 @@ func (r *Instance) Ensure(opts ...Option) error {
 		err = ErrNotFound.WithResource(r).Wrap(err)
 
 		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ActionEnsure, r, options, err)
+			err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 		}
 
 		return err
 	}
 
-	err = r.create(opts...)
+	err = r.create(ctx, opts...)
 
 	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ActionEnsure, r, options, err)
+		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 	}
 
 	return err
@@ -287,7 +287,7 @@ func (r *Instance) ensured() error {
 	return nil
 }
 
-func (r *Instance) create(opts ...Option) error {
+func (r *Instance) create(ctx context.Context, opts ...Option) error {
 	// Can't create an instance without an image
 	if r.Config.Image == "" {
 		return ErrImageRequired
@@ -373,7 +373,7 @@ func (r *Instance) create(opts ...Option) error {
 
 	// Create instance from project image
 	op, err := r.client.incus.CreateInstanceFromImage(r.client.incus, *incusImage, req)
-	if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, options, op, err); err != nil {
+	if err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, options, op, err); err != nil {
 		return err
 	}
 
@@ -551,7 +551,7 @@ func (r *Instance) attachPostStartDevices() error {
 }
 
 // Start starts the instance.
-func (r *Instance) Start(opts ...Option) error {
+func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 	if !r.IsEnsured() {
 		return ErrNotEnsured
 	}
@@ -559,14 +559,14 @@ func (r *Instance) Start(opts ...Option) error {
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionStart, r, options, nil); err != nil {
+		if err := r.client.hookBefore(ctx, ActionStart, r, options, nil); err != nil {
 			return err
 		}
 	}
 
 	if err := r.waitForDependencies(options); err != nil {
 		if r.client.hookAfter != nil {
-			return r.client.hookAfter(ActionStart, r, options, err)
+			return r.client.hookAfter(ctx, ActionStart, r, options, err)
 		}
 		return err
 	}
@@ -574,7 +574,7 @@ func (r *Instance) Start(opts ...Option) error {
 	err := r.start()
 
 	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ActionStart, r, options, err)
+		err = r.client.hookAfter(ctx, ActionStart, r, options, err)
 	}
 
 	return err
@@ -818,7 +818,7 @@ func (r *Instance) secretExists(sPath string, content []byte) bool {
 }
 
 // Stop stops the instance.
-func (r *Instance) Stop(opts ...Option) error {
+func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 	if !r.IsEnsured() {
 		return ErrNotEnsured
 	}
@@ -826,14 +826,14 @@ func (r *Instance) Stop(opts ...Option) error {
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionStop, r, options, nil); err != nil {
+		if err := r.client.hookBefore(ctx, ActionStop, r, options, nil); err != nil {
 			return err
 		}
 	}
 
 	if err := r.setHealthCheckingStopped(true); err != nil {
 		if r.client.hookAfter != nil {
-			return r.client.hookAfter(ActionStop, r, options, nil)
+			return r.client.hookAfter(ctx, ActionStop, r, options, nil)
 		}
 
 		return err
@@ -841,7 +841,7 @@ func (r *Instance) Stop(opts ...Option) error {
 
 	if r.IncusInstance.Status == "Stopped" {
 		if r.client.hookAfter != nil {
-			return r.client.hookAfter(ActionStop, r, options, nil)
+			return r.client.hookAfter(ctx, ActionStop, r, options, nil)
 		}
 
 		return nil
@@ -853,17 +853,17 @@ func (r *Instance) Stop(opts ...Option) error {
 		Timeout: int(options.Timeout.Seconds()),
 	}, r.ETag)
 
-	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionStop, r, options, op, err)
+	err = r.client.hookOperation(ctx, ActionStop, r, options, op, err)
 	if err != nil {
 		if r.client.hookAfter != nil {
-			return r.client.hookAfter(ActionStop, r, options, err)
+			return r.client.hookAfter(ctx, ActionStop, r, options, err)
 		}
 
 		return err
 	}
 
 	if r.client.hookAfter != nil {
-		return r.client.hookAfter(ActionStop, r, options, err)
+		return r.client.hookAfter(ctx, ActionStop, r, options, err)
 	}
 
 	return err
@@ -899,7 +899,7 @@ func (r *Instance) setHealthCheckingStopped(stopped bool) error {
 }
 
 // Delete removes the instance from Incus.
-func (r *Instance) Delete(opts ...Option) error {
+func (r *Instance) Delete(ctx context.Context, opts ...Option) error {
 	if !r.IsEnsured() {
 		r.IncusInstance = nil
 		r.ETag = ""
@@ -911,7 +911,7 @@ func (r *Instance) Delete(opts ...Option) error {
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionDelete, r, options, nil); err != nil {
+		if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
 			r.IncusInstance = nil
 			r.ETag = ""
 
@@ -923,10 +923,10 @@ func (r *Instance) Delete(opts ...Option) error {
 	op, err := r.client.incus.DeleteInstance(r.incusName)
 
 	// Do the delete
-	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionDelete, r, options, op, err)
+	err = r.client.hookOperation(ctx, ActionDelete, r, options, op, err)
 
 	if r.client.hookAfter != nil {
-		if err := r.client.hookAfter(ActionDelete, r, options, err); err != nil {
+		if err := r.client.hookAfter(ctx, ActionDelete, r, options, err); err != nil {
 			r.IncusInstance = nil
 			r.ETag = ""
 
@@ -949,7 +949,7 @@ func (r *Instance) Delete(opts ...Option) error {
 }
 
 // Log streams the instance console log to the outputHandler.
-func (r *Instance) Log(opts ...Option) error {
+func (r *Instance) Log(ctx context.Context, opts ...Option) error {
 	if !r.IsEnsured() {
 		return ErrNotEnsured
 	}
@@ -961,21 +961,21 @@ func (r *Instance) Log(opts ...Option) error {
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionLog, r, options, nil); err != nil {
+		if err := r.client.hookBefore(ctx, ActionLog, r, options, nil); err != nil {
 			return err
 		}
 	}
 
-	err := r.log(options)
+	err := r.log(ctx, options)
 
 	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ActionLog, r, options, err)
+		err = r.client.hookAfter(ctx, ActionLog, r, options, err)
 	}
 
 	return err
 }
 
-func (r *Instance) log(options Options) error {
+func (r *Instance) log(ctx context.Context, options Options) error {
 	outputHandler := r.client.globalClient.outputHandler
 	if outputHandler == nil {
 		return nil
@@ -985,7 +985,7 @@ func (r *Instance) log(options Options) error {
 		if err := r.logBuffer(outputHandler); err != nil {
 			return err
 		}
-		return r.logStream(options, outputHandler)
+		return r.logStream(ctx, options, outputHandler)
 	}
 
 	return r.logBuffer(outputHandler)
@@ -1010,9 +1010,7 @@ func (r *Instance) logBuffer(outputHandler func(Action, Resource, []byte)) error
 }
 
 // logStream streams the console using WebSocket until context is cancelled.
-func (r *Instance) logStream(options Options, outputHandler func(Action, Resource, []byte)) error {
-	ctx := r.client.globalClient.Ctx
-
+func (r *Instance) logStream(ctx context.Context, options Options, outputHandler func(Action, Resource, []byte)) error {
 	// Channel to signal disconnect
 	consoleDisconnect := make(chan bool)
 

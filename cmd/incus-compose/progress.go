@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -75,7 +76,7 @@ func startProgress(globalClient *client.GlobalClient, c *client.Client, errWrite
 	renderer := newProgressRenderer(errWriter, noColor, isatty.IsTerminal(os.Stderr.Fd()) && !globalClient.IsDebugging())
 	renderer.Start()
 	globalClient.SetProgressHandler(renderer.handle)
-	c.AddHookAfter(func(action client.Action, r client.Resource, _ client.Options, herr error) error {
+	c.AddHookAfter(func(_ context.Context, action client.Action, r client.Resource, _ client.Options, herr error) error {
 		if herr == nil {
 			renderer.markDone(action, r)
 		}

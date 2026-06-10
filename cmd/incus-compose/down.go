@@ -53,7 +53,7 @@ var downCommand = &cli.Command{
 		defer func() { _ = c.Done() }()
 
 		if deleteProject {
-			networks, err := projectNetworks(c, p)
+			networks, err := projectNetworks(ctx, c, p)
 			if err != nil {
 				c.LogWarn("Getting project networks", "project", p.Name, "error", err)
 			}
@@ -88,7 +88,7 @@ var downCommand = &cli.Command{
 
 		finish := startProgress(globalClient, c, cmd.Root().Writer)
 
-		err = runDown(globalClient, c, p, downParams{
+		err = runDown(ctx, globalClient, c, p, downParams{
 			services:  cmd.Args().Slice(),
 			timeout:   cmd.Duration("timeout"),
 			errWriter: cmd.Root().ErrWriter,
@@ -99,7 +99,7 @@ var downCommand = &cli.Command{
 	},
 }
 
-func projectNetworks(c *client.Client, p *project.Project) ([]*client.Network, error) {
+func projectNetworks(ctx context.Context, c *client.Client, p *project.Project) ([]*client.Network, error) {
 	stack := client.NewStack(c)
 	if err := p.ToStack(c, stack, project.ToStackReverse()); err != nil {
 		c.LogError("Adding the project to a stack", "error", err)
@@ -116,7 +116,7 @@ func projectNetworks(c *client.Client, p *project.Project) ([]*client.Network, e
 		}
 	}
 
-	if err := networkStack.Run(client.ActionEnsure); err != nil {
+	if err := networkStack.Run(ctx, client.ActionEnsure); err != nil {
 		return nil, err
 	}
 
@@ -148,7 +148,7 @@ type downParams struct {
 
 // runDown stops and removes the instances of a loaded project, along with their
 // per-project image copies. Volumes and the image cache are left untouched.
-func runDown(globalClient *client.GlobalClient, c *client.Client, p *project.Project, params downParams) error {
+func runDown(ctx context.Context, globalClient *client.GlobalClient, c *client.Client, p *project.Project, params downParams) error {
 	stackOpts := []project.ToStackOption{project.ToStackOnlyServices(params.services)}
 
 	if !params.images {
@@ -182,7 +182,7 @@ func runDown(globalClient *client.GlobalClient, c *client.Client, p *project.Pro
 				globalClient.LogError("Getting healthd resources", "error", err)
 				errs = errors.Join(errs, err)
 			} else {
-				if err := healthdDown(c, inst, resources, params.timeout); err != nil {
+				if err := healthdDown(ctx, c, inst, resources, params.timeout); err != nil {
 					c.LogWarn("Healthd down", "error", err)
 				} else {
 					c.LogDebug("Stopped healthd sidecar")
@@ -191,18 +191,18 @@ func runDown(globalClient *client.GlobalClient, c *client.Client, p *project.Pro
 		}
 	}
 
-	if err := stack.Run(client.ActionEnsure); err != nil {
+	if err := stack.Run(ctx, client.ActionEnsure); err != nil {
 		c.LogError("Getting resources", "error", err)
 		errs = errors.Join(errs, err)
 	}
 
-	errStop := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(params.timeout))
+	errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionForce(), client.OptionTimeout(params.timeout))
 	if errStop != nil {
 		c.LogWarn("Stopping resources", "error", errStop)
 		errs = errors.Join(errs, errStop)
 	}
 
-	errDel := stack.ForAction(client.ActionDelete).Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(params.timeout))
+	errDel := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, client.OptionForce(), client.OptionTimeout(params.timeout))
 	if errDel != nil {
 		c.LogWarn("Deleting resources", "error", errDel)
 		errs = errors.Join(errs, errDel)

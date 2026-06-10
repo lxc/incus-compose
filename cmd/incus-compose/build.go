@@ -112,7 +112,7 @@ var buildCommand = &cli.Command{
 				c.LogError("Image resource does not support Ensure", "service", name)
 				return errLogged.Wrap(fmt.Errorf("image resource for %q is not ensurable", name))
 			}
-			if err := ensurable.Ensure(client.OptionCreate(), client.OptionBuild(client.BuildForce)); err != nil {
+			if err := ensurable.Ensure(ctx, client.OptionCreate(), client.OptionBuild(client.BuildForce)); err != nil {
 				c.LogError("Building image", "service", name, "error", err)
 				return errLogged.Wrap(err)
 			}

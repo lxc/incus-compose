@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -181,11 +182,11 @@ func (r *Image) NativeIncus() bool {
 // Ensure retrieves an existing image from cache or copies it if Create option is set.
 // With the Pull option, a cached image is refreshed from its source registry.
 // When ImageConfig.Build is set the image is built locally via podman/docker.
-func (r *Image) Ensure(opts ...Option) error {
+func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 	args := NewOptions(opts...)
 
 	if r.Config.Build != nil {
-		return r.ensureBuild(args)
+		return r.ensureBuild(ctx, args)
 	}
 
 	// Resolve cache: CacheServer > CacheProject > default imageCache
@@ -222,7 +223,7 @@ func (r *Image) Ensure(opts ...Option) error {
 	}
 
 	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionEnsure, r, args, nil); err != nil {
+		if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
 			return err
 		}
 	}
@@ -235,7 +236,7 @@ func (r *Image) Ensure(opts ...Option) error {
 		}
 
 		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ActionEnsure, r, args, err)
+			err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
 		}
 
 		return err
@@ -243,7 +244,7 @@ func (r *Image) Ensure(opts ...Option) error {
 
 	if !args.Create || !errors.Is(err, ErrNotFound) {
 		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ActionEnsure, r, args, err)
+			err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
 		}
 
 		return err
@@ -252,7 +253,7 @@ func (r *Image) Ensure(opts ...Option) error {
 	err = r.create(args)
 
 	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ActionEnsure, r, args, err)
+		err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
 	}
 
 	return err
@@ -500,9 +501,9 @@ func (r *Image) readOCIConfigFromProperties(props map[string]string) {
 
 // ensureBuild handles the Ensure lifecycle for locally-built images. It does not
 // touch the remote-pull machinery (source image server, cache project).
-func (r *Image) ensureBuild(args Options) error {
+func (r *Image) ensureBuild(ctx context.Context, args Options) error {
 	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionEnsure, r, args, nil); err != nil {
+		if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
 			return err
 		}
 	}
@@ -514,7 +515,7 @@ func (r *Image) ensureBuild(args Options) error {
 			// Delete the existing image so we can replace it.
 			if r.IncusAlias != nil {
 				op, delErr := r.client.incus.DeleteImage(r.IncusAlias.Target)
-				if hookErr := r.client.hookOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, delErr); hookErr != nil {
+				if hookErr := r.client.hookOperation(ctx, ActionEnsure, r, args, op, delErr); hookErr != nil {
 					r.client.LogDebug("deleting image for rebuild", "error", hookErr)
 				}
 			}
@@ -533,7 +534,7 @@ func (r *Image) ensureBuild(args Options) error {
 	}
 
 	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ActionEnsure, r, args, err)
+		err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
 	}
 	return err
 }
@@ -613,7 +614,7 @@ func (r *Image) buildImage(args Options) error {
 // untouched, so cached images persist across down/up cycles.
 //
 // Delete is idempotent: a missing per-project copy is not an error.
-func (r *Image) Delete(opts ...Option) error {
+func (r *Image) Delete(ctx context.Context, opts ...Option) error {
 	if !r.IsEnsured() {
 		r.IncusAlias = nil
 		r.ETag = ""
@@ -625,7 +626,7 @@ func (r *Image) Delete(opts ...Option) error {
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionDelete, r, options, nil); err != nil {
+		if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
 			r.IncusAlias = nil
 			r.ETag = ""
 
@@ -644,20 +645,20 @@ func (r *Image) Delete(opts ...Option) error {
 		r.client.resources.Remove(r)
 
 		if r.client.hookAfter != nil {
-			return r.client.hookAfter(ActionDelete, r, options, err)
+			return r.client.hookAfter(ctx, ActionDelete, r, options, err)
 		}
 		return err
 	}
 
 	op, err := r.client.incus.DeleteImage(alias.Target)
 
-	err = r.client.hookOperation(r.client.globalClient.Ctx, ActionDelete, r, options, op, err)
+	err = r.client.hookOperation(ctx, ActionDelete, r, options, op, err)
 	if r.client.hookAfter != nil {
 		r.IncusAlias = nil
 		r.ETag = ""
 
 		r.client.resources.Remove(r)
-		return r.client.hookAfter(ActionDelete, r, options, err)
+		return r.client.hookAfter(ctx, ActionDelete, r, options, err)
 	}
 
 	r.IncusAlias = nil

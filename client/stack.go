@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"sort"
 )
@@ -123,7 +124,7 @@ func (s *Stack) groupByKind() [][]Resource {
 	return batches
 }
 
-func (s *Stack) runBatch(batch []Resource, kind Kind, action Action, opts ...Option) error {
+func (s *Stack) runBatch(ctx context.Context, batch []Resource, kind Kind, action Action, opts ...Option) error {
 	if len(batch) == 0 {
 		return nil
 	}
@@ -135,7 +136,7 @@ func (s *Stack) runBatch(batch []Resource, kind Kind, action Action, opts ...Opt
 	for _, r := range batch {
 		task := r // capture for closure
 		pool.Submit(func() error {
-			return RunAction(task, action, opts...)
+			return RunAction(ctx, task, action, opts...)
 		})
 	}
 	if err := pool.Run(PoolRunArgs{FailFast: false}); err != nil {
@@ -150,7 +151,7 @@ func (s *Stack) runBatch(batch []Resource, kind Kind, action Action, opts ...Opt
 //
 // Image tasks are executed in parallel using a worker pool.
 // All other tasks are executed sequentially to respect potential dependencies.
-func (s *Stack) Run(action Action, opts ...Option) error {
+func (s *Stack) Run(ctx context.Context, action Action, opts ...Option) error {
 	s.sort()
 
 	// Group tasks by priority into batches
@@ -161,7 +162,7 @@ func (s *Stack) Run(action Action, opts ...Option) error {
 
 	for _, batch := range batches {
 		kind := batch[0].Kind()
-		errs = errors.Join(errs, s.runBatch(batch, kind, action, opts...))
+		errs = errors.Join(errs, s.runBatch(ctx, batch, kind, action, opts...))
 	}
 
 	return errs

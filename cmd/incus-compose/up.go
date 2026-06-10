@@ -137,7 +137,7 @@ var upCommand = &cli.Command{
 				return errLogged.Wrap(err)
 			}
 
-			if err := healthdUp(c, inst, resources, hparams); err != nil {
+			if err := healthdUp(ctx, c, inst, resources, hparams); err != nil {
 				globalClient.LogError("Starting healthd", "error", err)
 
 				finish(err == nil)
@@ -161,7 +161,7 @@ var upCommand = &cli.Command{
 			dependencyTimeout: cmd.Duration("dependency-timeout"),
 			scale:             parseScale(cmd.StringSlice("scale")),
 		}
-		if err := runUp(globalClient, c, p, params); err != nil {
+		if err := runUp(ctx, globalClient, c, p, params); err != nil {
 			_ = c.Done()
 
 			finish(err == nil)
@@ -177,7 +177,7 @@ var upCommand = &cli.Command{
 			}
 
 			finish(err == nil)
-			return runLogs(globalClient, c, p, params.services, true, out)
+			return runLogs(ctx, globalClient, c, p, params.services, true, out)
 		}
 
 		finish(err == nil)
@@ -215,7 +215,7 @@ func parseScale(values []string) map[string]int {
 }
 
 // runUp creates (and optionally starts) the services of a loaded project.
-func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Project, params upParams) error {
+func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Client, p *project.Project, params upParams) error {
 	timeout := params.timeout
 	pull := params.pull
 
@@ -252,11 +252,11 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 		c.LogDebug("Ensure", "resources", stack.All())
 
 		// Ensure without create for "recreate" (resolution only, no progress).
-		if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {
+		if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
 			c.LogDebug("Ensuring for reCreate", "error", err)
 		} else {
 			// Stop
-			errStop := stack.ForAction(client.ActionStop).Run(client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout))
+			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout))
 			if errStop != nil {
 				c.LogDebug("Stopping resources", "error", errStop)
 			}
@@ -264,7 +264,7 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 			// Delete
 			deleteStack := stack.ForAction(client.ActionDelete)
 			c.LogDebug("Recreate delete", "resources", deleteStack.All())
-			errDel := deleteStack.Run(client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout))
+			errDel := deleteStack.Run(ctx, client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout))
 			if errDel != nil {
 				c.LogDebug("Deleting resources", "error", errDel)
 			}
@@ -301,7 +301,7 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 		ensureOpts = append(ensureOpts, client.OptionBuild(params.build))
 	}
 
-	err = stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure, ensureOpts...)
+	err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...)
 	if err != nil {
 		c.LogError("Ensuring resources", "error", err)
 		return errLogged.Wrap(err)
@@ -313,7 +313,7 @@ func runUp(globalClient *client.GlobalClient, c *client.Client, p *project.Proje
 		if params.dependencyTimeout > 0 {
 			startOpts = append(startOpts, client.OptionDependencyTimeout(params.dependencyTimeout))
 		}
-		if err := stack.ForAction(client.ActionStart).Run(client.ActionStart, startOpts...); err != nil {
+		if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, startOpts...); err != nil {
 			c.LogError("Starting resources", "error", err)
 			return errLogged.Wrap(err)
 		}

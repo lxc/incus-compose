@@ -51,7 +51,7 @@ func (s *ProfileSuite) TestEnsure_WithCreate() {
 	r, err := s.client.Resource(KindProfile, "test-profile", &ProfileConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 }
@@ -60,7 +60,7 @@ func (s *ProfileSuite) TestEnsure_WithoutCreate_Fails() {
 	r, err := s.client.Resource(KindProfile, "non-existent", &ProfileConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure)
+	err = RunAction(s.ctx, r, ActionEnsure)
 	s.Require().Error(err)
 	s.False(r.IsEnsured())
 	s.ErrorIs(err, ErrNotFound)
@@ -71,12 +71,12 @@ func (s *ProfileSuite) TestEnsure_Idempotent() {
 	s.Require().NoError(err)
 
 	// First ensure
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
 	// Second ensure - should return immediately
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 }
@@ -86,12 +86,12 @@ func (s *ProfileSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
 	s.Require().NoError(err)
 
 	// First attempt without create - fails
-	err = RunAction(r, ActionEnsure)
+	err = RunAction(s.ctx, r, ActionEnsure)
 	s.Require().Error(err)
 	s.False(r.IsEnsured())
 
 	// Second attempt with create - succeeds
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 }
@@ -101,7 +101,7 @@ func (s *ProfileSuite) TestEnsure_LongName() {
 	r, err := s.client.Resource(KindProfile, longName, &ProfileConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 }
@@ -110,7 +110,7 @@ func (s *ProfileSuite) TestEnsure_CopiesFromDefaultProfile() {
 	r, err := s.client.Resource(KindProfile, "test-default-copy", &ProfileConfig{SourceProject: "default", SourceProfile: "default"})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 
 	profile, ok := r.(*Profile)
@@ -152,11 +152,11 @@ func (s *ProfileSuite) TestDelete_AfterEnsure() {
 	r, err := s.client.Resource(KindProfile, "test-delete", &ProfileConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
-	err = RunAction(r, ActionDelete, OptionForce())
+	err = RunAction(s.ctx, r, ActionDelete, OptionForce())
 	s.Require().NoError(err)
 	s.False(r.IsEnsured())
 }
@@ -166,7 +166,7 @@ func (s *ProfileSuite) TestDelete_NotEnsured_NoError() {
 	s.Require().NoError(err)
 
 	// Delete without ensure should not error
-	err = RunAction(r, ActionDelete)
+	err = RunAction(s.ctx, r, ActionDelete)
 	s.Require().NoError(err)
 }
 
@@ -176,7 +176,7 @@ func (s *ProfileSuite) TestDelete_NotEnsured_NoError() {
 
 func (s *ProfileSuite) TestHook_BeforeIsCalled() {
 	called := false
-	s.client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if action == ActionEnsure && r.Kind() == KindProfile {
 			called = true
 		}
@@ -186,14 +186,14 @@ func (s *ProfileSuite) TestHook_BeforeIsCalled() {
 	r, err := s.client.Resource(KindProfile, "test-before-hook", &ProfileConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(called, "before hook should have been called")
 }
 
 func (s *ProfileSuite) TestHook_AfterIsCalled() {
 	called := false
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if action == ActionEnsure && r.Kind() == KindProfile {
 			called = true
 		}
@@ -203,14 +203,14 @@ func (s *ProfileSuite) TestHook_AfterIsCalled() {
 	r, err := s.client.Resource(KindProfile, "test-after-hook", &ProfileConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(called, "after hook should have been called")
 }
 
 func (s *ProfileSuite) TestHook_AfterReceivesError() {
 	var receivedErr error
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if action == ActionEnsure && r.Kind() == KindProfile {
 			receivedErr = err
 		}
@@ -220,12 +220,12 @@ func (s *ProfileSuite) TestHook_AfterReceivesError() {
 	r, err := s.client.Resource(KindProfile, "non-existent", &ProfileConfig{})
 	s.Require().NoError(err)
 
-	_ = RunAction(r, ActionEnsure) // without create, will fail
+	_ = RunAction(s.ctx, r, ActionEnsure) // without create, will fail
 	s.NotNil(receivedErr, "after hook should receive the error")
 }
 
 func (s *ProfileSuite) TestHook_BeforeCanAbort() {
-	s.client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if r.Name() == "abort-me" {
 			return ErrAborted
 		}
@@ -235,13 +235,13 @@ func (s *ProfileSuite) TestHook_BeforeCanAbort() {
 	r, err := s.client.Resource(KindProfile, "abort-me", &ProfileConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.ErrorIs(err, ErrAborted)
 	s.False(r.IsEnsured())
 }
 
 func (s *ProfileSuite) TestHook_AfterCanModifyError() {
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if err != nil {
 			return ErrAborted // replace error
 		}
@@ -251,21 +251,21 @@ func (s *ProfileSuite) TestHook_AfterCanModifyError() {
 	r, err := s.client.Resource(KindProfile, "non-existent", &ProfileConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure) // will fail, hook replaces error
+	err = RunAction(s.ctx, r, ActionEnsure) // will fail, hook replaces error
 	s.ErrorIs(err, ErrAborted)
 }
 
 func (s *ProfileSuite) TestHook_BeforeFIFO() {
 	var order []int
-	s.client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		order = append(order, 1)
 		return err
 	})
-	s.client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		order = append(order, 2)
 		return err
 	})
-	s.client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		order = append(order, 3)
 		return err
 	})
@@ -273,22 +273,22 @@ func (s *ProfileSuite) TestHook_BeforeFIFO() {
 	r, err := s.client.Resource(KindProfile, "test-fifo", &ProfileConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.Equal([]int{1, 2, 3}, order, "before hooks should run FIFO")
 }
 
 func (s *ProfileSuite) TestHook_AfterLIFO() {
 	var order []int
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		order = append(order, 1)
 		return err
 	})
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		order = append(order, 2)
 		return err
 	})
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		order = append(order, 3)
 		return err
 	})
@@ -296,14 +296,14 @@ func (s *ProfileSuite) TestHook_AfterLIFO() {
 	r, err := s.client.Resource(KindProfile, "test-lifo", &ProfileConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.Equal([]int{3, 2, 1}, order, "after hooks should run LIFO")
 }
 
 func (s *ProfileSuite) TestHook_DeleteAction() {
 	var action Action
-	s.client.AddHookBefore(func(a Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, a Action, r Resource, args Options, err error) error {
 		action = a
 		return err
 	})
@@ -311,11 +311,11 @@ func (s *ProfileSuite) TestHook_DeleteAction() {
 	r, err := s.client.Resource(KindProfile, "test-delete-hook", &ProfileConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.Equal(ActionEnsure, action)
 
-	err = RunAction(r, ActionDelete)
+	err = RunAction(s.ctx, r, ActionDelete)
 	s.Require().NoError(err)
 	s.Equal(ActionDelete, action)
 }
@@ -329,7 +329,7 @@ func (s *ProfileSuite) TestEnsure_ExistsOnNewClient() {
 	r, err := s.client.Resource(KindProfile, "test-persist", &ProfileConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 
 	// Get new client for same project
@@ -340,7 +340,7 @@ func (s *ProfileSuite) TestEnsure_ExistsOnNewClient() {
 	r2, err := newClient.Resource(KindProfile, "test-persist", &ProfileConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r2, ActionEnsure) // no create
+	err = RunAction(s.ctx, r2, ActionEnsure) // no create
 	s.Require().NoError(err)
 	s.True(r2.IsEnsured())
 }

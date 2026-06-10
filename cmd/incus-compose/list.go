@@ -160,7 +160,7 @@ var listCommand = &cli.Command{
 			}
 		}
 
-		err = stack.Run(client.ActionEnsure)
+		err = stack.Run(ctx, client.ActionEnsure)
 		if err != nil {
 			c.LogWarn(err.Error())
 		}
@@ -181,7 +181,7 @@ var listCommand = &cli.Command{
 			w = fd
 		}
 
-		err = stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure)
+		err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure)
 		if err != nil {
 			c.LogWarn("Ensuring the stack", "error", "err")
 		}

@@ -174,12 +174,12 @@ var logsCommand = &cli.Command{
 			out = cmd.Root().Writer
 		}
 
-		return runLogs(globalClient, c, p, cmd.Args().Slice(), cmd.Bool("follow"), out)
+		return runLogs(ctx, globalClient, c, p, cmd.Args().Slice(), cmd.Bool("follow"), out)
 	},
 }
 
 // runLogs streams logs from the given services using an already-open client.
-func runLogs(globalClient *client.GlobalClient, c *client.Client, p *project.Project, services []string, follow bool, out io.Writer) error {
+func runLogs(ctx context.Context, globalClient *client.GlobalClient, c *client.Client, p *project.Project, services []string, follow bool, out io.Writer) error {
 	formatter := newLogFormatter(out, noColor)
 	globalClient.SetOutputHandler(formatter.write)
 
@@ -189,7 +189,7 @@ func runLogs(globalClient *client.GlobalClient, c *client.Client, p *project.Pro
 		return errLogged.Wrap(err)
 	}
 
-	if err := stack.ForAction(client.ActionEnsure).Run(client.ActionEnsure); err != nil {
+	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
 		c.LogWarn("Ensuring the stack", "error", err)
 	}
 
@@ -202,7 +202,7 @@ func runLogs(globalClient *client.GlobalClient, c *client.Client, p *project.Pro
 		opts = append(opts, client.OptionFollow())
 	}
 
-	if err := stack.ForAction(client.ActionLog).Run(client.ActionLog, opts...); err != nil {
+	if err := stack.ForAction(client.ActionLog).Run(ctx, client.ActionLog, opts...); err != nil {
 		c.LogError("Getting logs", "error", err)
 		return errLogged.Wrap(err)
 	}

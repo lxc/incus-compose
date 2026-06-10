@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -90,11 +91,11 @@ func (r *Profile) Created() bool {
 }
 
 // Ensure retrieves an existing resource or creates a new one if args.Create is true.
-func (r *Profile) Ensure(opts ...Option) error {
+func (r *Profile) Ensure(ctx context.Context, opts ...Option) error {
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionEnsure, r, options, nil); err != nil {
+		if err := r.client.hookBefore(ctx, ActionEnsure, r, options, nil); err != nil {
 			return err
 		}
 	}
@@ -106,7 +107,7 @@ func (r *Profile) Ensure(opts ...Option) error {
 			err = r.updateFromSource()
 		}
 		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ActionEnsure, r, options, err)
+			err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 		}
 
 		return err
@@ -114,7 +115,7 @@ func (r *Profile) Ensure(opts ...Option) error {
 
 	if !options.Create || !errors.Is(err, ErrNotFound) {
 		if r.client.hookAfter != nil {
-			err = r.client.hookAfter(ActionEnsure, r, options, err)
+			err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 		}
 
 		return err
@@ -123,7 +124,7 @@ func (r *Profile) Ensure(opts ...Option) error {
 	err = r.create()
 
 	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ActionEnsure, r, options, err)
+		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 	}
 
 	return err
@@ -262,7 +263,7 @@ func (r *Profile) HasDevice(name string) bool {
 }
 
 // Delete removes the profile from Incus.
-func (r *Profile) Delete(opts ...Option) error {
+func (r *Profile) Delete(ctx context.Context, opts ...Option) error {
 	if !r.IsEnsured() {
 		r.IncusProfile = nil
 		r.ETag = ""
@@ -274,7 +275,7 @@ func (r *Profile) Delete(opts ...Option) error {
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ActionDelete, r, options, nil); err != nil {
+		if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
 			r.IncusProfile = nil
 			r.ETag = ""
 
@@ -287,7 +288,7 @@ func (r *Profile) Delete(opts ...Option) error {
 	err := r.client.incus.DeleteProfile(r.incusName)
 
 	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ActionDelete, r, options, err)
+		err = r.client.hookAfter(ctx, ActionDelete, r, options, err)
 	}
 
 	if err != nil {

@@ -192,7 +192,7 @@ func (s *ImageSuite) SetupTest() {
 func (s *ImageSuite) TearDownTest() {
 	for _, r := range s.cleanup {
 		if SupportsAction(r, ActionDelete) {
-			_ = RunAction(r, ActionDelete, OptionForce())
+			_ = RunAction(s.ctx, r, ActionDelete, OptionForce())
 		}
 	}
 
@@ -206,7 +206,7 @@ func (s *ImageSuite) TestEnsure_WithCreate_Github() {
 	r, err := s.client.Resource(KindImage, "ghcr.io/linuxcontainers/alpine:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
@@ -221,7 +221,7 @@ func (s *ImageSuite) TestEnsure_WithCreate() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
@@ -236,7 +236,7 @@ func (s *ImageSuite) TestEnsure_WithoutCreate_Fails() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/nonexistent-image-xyz123:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure)
+	err = RunAction(s.ctx, r, ActionEnsure)
 	s.Require().Error(err)
 	s.False(r.IsEnsured())
 	s.ErrorIs(err, ErrNotFound)
@@ -247,13 +247,13 @@ func (s *ImageSuite) TestEnsure_Idempotent() {
 	s.Require().NoError(err)
 
 	// First ensure - puts image in cache (or finds existing)
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 	// Note: Created() may be false if image was already in cache
 
 	// Second ensure - should return immediately
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
@@ -265,12 +265,12 @@ func (s *ImageSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
 	s.Require().NoError(err)
 
 	// First attempt without create - fails (not in project cache)
-	err = RunAction(r, ActionEnsure)
+	err = RunAction(s.ctx, r, ActionEnsure)
 	s.Require().Error(err)
 	s.False(r.IsEnsured())
 
 	// Second attempt with create - succeeds (downloads it)
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
@@ -282,7 +282,7 @@ func (s *ImageSuite) TestEnsure_ExistingImage_NewResource() {
 	r1, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r1, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r1, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r1.IsEnsured())
 	// Note: Created() may be false if image was already in cache from previous test
@@ -298,7 +298,7 @@ func (s *ImageSuite) TestEnsure_ExistingImage_NewResource() {
 	s.Require().NoError(err)
 
 	// Ensure without create should find existing image in cache
-	err = RunAction(r2, ActionEnsure)
+	err = RunAction(s.ctx, r2, ActionEnsure)
 	s.Require().NoError(err)
 	s.True(r2.IsEnsured())
 	s.False(r2.Created(), "fetched resource should have Created() false")
@@ -336,11 +336,11 @@ func (s *ImageSuite) TestDelete_ImageExists_Removed() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(r.IsEnsured())
 
-	err = RunAction(r, ActionDelete, OptionForce())
+	err = RunAction(s.ctx, r, ActionDelete, OptionForce())
 	s.Require().NoError(err)
 
 	alias, _, _ := s.client.Connection().GetImageAlias(r.(*Image).IncusName())
@@ -352,7 +352,7 @@ func (s *ImageSuite) TestDelete_NoImage_IsNoop() {
 	s.Require().NoError(err)
 
 	// Delete without prior Ensure — no image in project, must not error.
-	err = RunAction(r, ActionDelete, OptionForce())
+	err = RunAction(s.ctx, r, ActionDelete, OptionForce())
 	s.Require().NoError(err)
 }
 
@@ -362,7 +362,7 @@ func (s *ImageSuite) TestEnsure_Pull_SkipsWhenFingerprintUnchanged() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:1.37", &ImageConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 
 	// Use a fresh client so the resource store is empty and Ensure doesn't
@@ -374,7 +374,7 @@ func (s *ImageSuite) TestEnsure_Pull_SkipsWhenFingerprintUnchanged() {
 	s.Require().NoError(err)
 
 	// Pull with unchanged remote fingerprint: refresh is skipped.
-	err = RunAction(r2, ActionEnsure, OptionCreate(), OptionPull())
+	err = RunAction(s.ctx, r2, ActionEnsure, OptionCreate(), OptionPull())
 	s.Require().NoError(err)
 	s.True(r2.IsEnsured())
 
@@ -389,7 +389,7 @@ func (s *ImageSuite) TestDelete_NotEnsured_NoError() {
 	s.Require().NoError(err)
 
 	// Delete without ensure should not error
-	err = RunAction(r, ActionDelete)
+	err = RunAction(s.ctx, r, ActionDelete)
 	s.Require().NoError(err)
 }
 
@@ -399,7 +399,7 @@ func (s *ImageSuite) TestDelete_NotEnsured_NoError() {
 
 func (s *ImageSuite) TestHook_BeforeIsCalled() {
 	called := false
-	s.client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if action == ActionEnsure && r.Kind() == KindImage {
 			called = true
 		}
@@ -409,14 +409,14 @@ func (s *ImageSuite) TestHook_BeforeIsCalled() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(called, "before hook should have been called")
 }
 
 func (s *ImageSuite) TestHook_AfterIsCalled() {
 	called := false
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if action == ActionEnsure && r.Kind() == KindImage {
 			called = true
 		}
@@ -426,14 +426,14 @@ func (s *ImageSuite) TestHook_AfterIsCalled() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.True(called, "after hook should have been called")
 }
 
 func (s *ImageSuite) TestHook_AfterReceivesError() {
 	var receivedErr error
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if action == ActionEnsure && r.Kind() == KindImage {
 			receivedErr = err
 		}
@@ -443,12 +443,12 @@ func (s *ImageSuite) TestHook_AfterReceivesError() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/nonexistent:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
-	_ = RunAction(r, ActionEnsure) // without create, will fail
+	_ = RunAction(s.ctx, r, ActionEnsure) // without create, will fail
 	s.NotNil(receivedErr, "after hook should receive the error")
 }
 
 func (s *ImageSuite) TestHook_BeforeCanAbort() {
-	s.client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if r.Name() == "docker.io/library/abort-me:latest" {
 			return ErrAborted
 		}
@@ -458,13 +458,13 @@ func (s *ImageSuite) TestHook_BeforeCanAbort() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/abort-me:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.ErrorIs(err, ErrAborted)
 	s.False(r.IsEnsured())
 }
 
 func (s *ImageSuite) TestHook_AfterCanModifyError() {
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if err != nil {
 			return ErrAborted // replace error
 		}
@@ -474,13 +474,13 @@ func (s *ImageSuite) TestHook_AfterCanModifyError() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/nonexistent:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure) // will fail, hook replaces error
+	err = RunAction(s.ctx, r, ActionEnsure) // will fail, hook replaces error
 	s.ErrorIs(err, ErrAborted)
 }
 
 func (s *ImageSuite) TestHook_DeleteAction() {
 	var action Action
-	s.client.AddHookBefore(func(a Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, a Action, r Resource, args Options, err error) error {
 		action = a
 		return err
 	})
@@ -488,12 +488,12 @@ func (s *ImageSuite) TestHook_DeleteAction() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 	s.Equal(ActionEnsure, action)
 
 	// Delete fires the before hook (it removes any per-project copy).
-	err = RunAction(r, ActionDelete)
+	err = RunAction(s.ctx, r, ActionDelete)
 	s.Require().NoError(err)
 	s.Equal(ActionDelete, action)
 }
@@ -507,7 +507,7 @@ func (s *ImageSuite) TestEnsure_ExistsOnNewClient() {
 	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 
 	s.cleanup = append(s.cleanup, r)
@@ -520,7 +520,7 @@ func (s *ImageSuite) TestEnsure_ExistsOnNewClient() {
 	r2, err := newClient.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r2, ActionEnsure) // no create
+	err = RunAction(s.ctx, r2, ActionEnsure) // no create
 	s.Require().NoError(err)
 	s.True(r2.IsEnsured())
 }
@@ -557,7 +557,7 @@ func (s *ImageSuite) TestProperties() {
 	r, err := s.client.Resource(KindImage, "registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest", &ImageConfig{})
 	s.Require().NoError(err)
 
-	err = RunAction(r, ActionEnsure, OptionCreate())
+	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 
 	s.cleanup = append(s.cleanup, r)

@@ -150,7 +150,7 @@ func TestParallelImageDownload(t *testing.T) {
 	assert.Len(t, batches[0], 3, "batch should have 3 images")
 
 	// Run with parallelism
-	err = stack.Run(ActionEnsure, OptionCreate())
+	err = stack.Run(ctx, ActionEnsure, OptionCreate())
 	assert.NoError(t, err)
 
 	// Verify all images ensured
@@ -682,7 +682,7 @@ func (s *StackTestSuite) TestHooksWithStack() {
 	var beforeCalled, afterCalled bool
 	var afterErr error
 
-	s.client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if action == ActionEnsure && r.Kind() == KindProfile {
 			if _, ok := r.(*Profile); ok {
 				beforeCalled = true
@@ -692,7 +692,7 @@ func (s *StackTestSuite) TestHooksWithStack() {
 		return err
 	})
 
-	s.client.AddHookAfter(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		if action == ActionEnsure && r.Kind() == KindProfile {
 			if _, ok := r.(*Profile); ok {
 				afterCalled = true
@@ -709,7 +709,7 @@ func (s *StackTestSuite) TestHooksWithStack() {
 	s.Require().NoError(err)
 
 	stack.Add(profile)
-	err = stack.Run(ActionEnsure, OptionCreate())
+	err = stack.Run(s.ctx, ActionEnsure, OptionCreate())
 
 	s.NoError(err)
 	s.True(beforeCalled, "before hook should be called")
@@ -722,7 +722,7 @@ func (s *StackTestSuite) TestKindOrdering() {
 	// Track execution order via hooks
 	var executionOrder []string
 
-	s.client.AddHookBefore(func(action Action, r Resource, args Options, err error) error {
+	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
 		executionOrder = append(executionOrder, fmt.Sprintf("%v:%v", r.Kind(), r.Name()))
 		return err
 	})
@@ -740,7 +740,7 @@ func (s *StackTestSuite) TestKindOrdering() {
 	// Add in reverse priority order
 	stack := NewStack(s.client, StackSortDescending())
 	stack.Add(profile, network, volume)
-	err = stack.Run(ActionEnsure, OptionCreate())
+	err = stack.Run(s.ctx, ActionEnsure, OptionCreate())
 	s.Require().NoError(err)
 
 	// Profile and Network have same priority (512), Volume has 1024
@@ -765,7 +765,7 @@ func (s *StackTestSuite) TestErrorAggregation() {
 
 	stack.Add(p1, p2)
 
-	err = stack.Run(ActionEnsure)
+	err = stack.Run(s.ctx, ActionEnsure)
 
 	s.Require().Error(err)
 	s.Contains(err.Error(), "error-test-1")
@@ -797,7 +797,7 @@ func (s *StackTestSuite) TestScenarios() {
 
 			for _, stackRun := range scenario.runs {
 				stack := allStack.ForAction(stackRun.action)
-				err = stack.Run(stackRun.action, stackRun.options...)
+				err = stack.Run(s.ctx, stackRun.action, stackRun.options...)
 
 				if stackRun.wantError {
 					if !s.Error(err) {
