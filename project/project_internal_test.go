@@ -131,31 +131,21 @@ func (s *ProjectInternalSuite) TestServiceGraphOrdersDependencies() {
 }
 
 func (s *ProjectInternalSuite) TestServiceGraphReturnsEdgeErrors() {
-	tests := []struct {
-		name     string
-		services types.Services
-	}{
-		{
-			name: "missing dependency",
-			services: types.Services{
-				"api": {Name: "api", DependsOn: types.DependsOnConfig{"db": types.ServiceDependency{}}},
-			},
-		},
-		{
-			name: "cycle",
-			services: types.Services{
-				"api": {Name: "api", DependsOn: types.DependsOnConfig{"web": types.ServiceDependency{}}},
-				"web": {Name: "web", DependsOn: types.DependsOnConfig{"api": types.ServiceDependency{}}},
-			},
-		},
-	}
+	// Cycles are still an error.
+	_, err := ServiceGraph(types.Services{
+		"api": {Name: "api", DependsOn: types.DependsOnConfig{"web": types.ServiceDependency{}}},
+		"web": {Name: "web", DependsOn: types.DependsOnConfig{"api": types.ServiceDependency{}}},
+	}, false)
+	s.Error(err)
+}
 
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			_, err := ServiceGraph(tt.services, false)
-			s.Error(err)
-		})
-	}
+func (s *ProjectInternalSuite) TestServiceGraphSkipsMissingDependency() {
+	// A dependency not present in the service set is silently skipped (filtered subset case).
+	order, err := ServiceGraph(types.Services{
+		"api": {Name: "api", DependsOn: types.DependsOnConfig{"db": types.ServiceDependency{}}},
+	}, false)
+	s.Require().NoError(err)
+	s.Equal([]string{"api"}, order)
 }
 
 func (s *ProjectInternalSuite) TestProjectConfigExtractsXIncus() {

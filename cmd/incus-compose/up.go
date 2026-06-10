@@ -236,7 +236,7 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 	if params.reCreate {
 		stack := client.NewStack(c)
 		toStackOpts := []project.ToStackOption{}
-		toStackOpts = append(toStackOpts, project.ToStackNoImages())
+		toStackOpts = append(toStackOpts, project.ToStackNoImages(), project.ToStackReverse())
 		if len(params.services) > 0 {
 			toStackOpts = append(toStackOpts, project.ToStackOnlyServices(params.services))
 		}

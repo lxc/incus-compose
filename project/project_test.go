@@ -627,6 +627,70 @@ func (s *LoadProjectTestSuite) TestContainerNameUsedAsInstanceName() {
 	s.Equal("my-nginx", instanceName, "container_name should be used as instance name")
 }
 
+// instanceNamesInStack returns the Name() of all KindInstance resources in the stack.
+func instanceNamesInStack(stack *client.Stack) []string {
+	var names []string
+	for _, r := range stack.All() {
+		if r.Kind() == client.KindInstance {
+			names = append(names, r.Name())
+		}
+	}
+	return names
+}
+
+// TestOnlyServicesStopDoesNotCascadeToDependencies verifies that stop web does not pull in database.
+func (s *LoadProjectTestSuite) TestOnlyServicesStopDoesNotCascadeToDependencies() {
+	proj, err := project.New().Load(s.ctx, project.LoadWorkingDir(s.fixturePath("wordpress")))
+	s.Require().NoError(err)
+
+	c := client.NewOfflineClient(s.ctx, proj.Name)
+	stack := client.NewStack(c)
+	s.Require().NoError(proj.ToStack(c, stack,
+		project.ToStackOnlyServices([]string{"wordpress"}),
+		project.ToStackReverse(),
+		project.ToStackNoImages(),
+	))
+
+	names := instanceNamesInStack(stack)
+	s.Contains(names, "wordpress-1", "wordpress instance should be in stop stack")
+	s.NotContains(names, "db-1", "db must not be stopped when only wordpress is requested")
+}
+
+// TestOnlyServicesStopIncludesDependants verifies that stop db also pulls in wordpress.
+func (s *LoadProjectTestSuite) TestOnlyServicesStopIncludesDependants() {
+	proj, err := project.New().Load(s.ctx, project.LoadWorkingDir(s.fixturePath("wordpress")))
+	s.Require().NoError(err)
+
+	c := client.NewOfflineClient(s.ctx, proj.Name)
+	stack := client.NewStack(c)
+	s.Require().NoError(proj.ToStack(c, stack,
+		project.ToStackOnlyServices([]string{"db"}),
+		project.ToStackReverse(),
+		project.ToStackNoImages(),
+	))
+
+	names := instanceNamesInStack(stack)
+	s.Contains(names, "db-1", "db instance should be in stop stack")
+	s.Contains(names, "wordpress-1", "wordpress must also be stopped because it depends on db")
+}
+
+// TestOnlyServicesStartIncludesDependencies verifies that start wordpress also pulls in db.
+func (s *LoadProjectTestSuite) TestOnlyServicesStartIncludesDependencies() {
+	proj, err := project.New().Load(s.ctx, project.LoadWorkingDir(s.fixturePath("wordpress")))
+	s.Require().NoError(err)
+
+	c := client.NewOfflineClient(s.ctx, proj.Name)
+	stack := client.NewStack(c)
+	s.Require().NoError(proj.ToStack(c, stack,
+		project.ToStackOnlyServices([]string{"wordpress"}),
+		project.ToStackNoImages(),
+	))
+
+	names := instanceNamesInStack(stack)
+	s.Contains(names, "wordpress-1", "wordpress instance should be in start stack")
+	s.Contains(names, "db-1", "db must also be started because wordpress depends on it")
+}
+
 // TestLoadProjectSuite runs the test suite.
 func TestLoadProjectSuite(t *testing.T) {
 	// Skip if fixtures don't exist.

@@ -351,7 +351,7 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 	postConfig["user.image_alias"] = image.IncusName()
 
 	// Healthd should wait until we allow it to work with it.
-	postConfig["user.stopped"] = "true"
+	postConfig[HealthStoppedKey] = "true"
 
 	// Create instance request
 	req := incusApi.InstancesPost{
@@ -555,6 +555,10 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 		return ErrNotEnsured
 	}
 
+	if r.Running() {
+		return nil
+	}
+
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
@@ -570,7 +574,7 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 		return err
 	}
 
-	err := r.start(ctx)
+	err := r.start(ctx, options)
 
 	if r.client.hookAfter != nil {
 		err = r.client.hookAfter(ctx, ActionStart, r, options, err)
@@ -585,7 +589,7 @@ func (r *Instance) Running() bool {
 		return false
 	}
 
-	return r.IncusInstance.Status == "Running"
+	return r.IncusInstance.StatusCode == incusApi.Running
 }
 
 // waitForDependencies blocks until all Config.Dependencies reach their required
@@ -633,19 +637,20 @@ func (r *Instance) waitForDependencies(ctx context.Context, options Options) err
 	return nil
 }
 
-func (r *Instance) start(ctx context.Context) error {
+func (r *Instance) start(ctx context.Context, options Options) error {
 	if r.Running() {
 		return nil
 	}
 
 	op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
-		Action: "start",
+		Action:  "start",
+		Timeout: int(options.Timeout.Seconds()),
 	}, r.ETag)
 	if err != nil {
 		return ErrOperation.WithText("starting instance").Wrap(err)
 	}
 
-	if err := op.Wait(); err != nil {
+	if err := r.client.hookOperation(ctx, ActionStart, r, options, op, err); err != nil {
 		return err
 	}
 
@@ -830,6 +835,10 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 		return ErrNotEnsured
 	}
 
+	if !r.Running() {
+		return nil
+	}
+
 	options := NewOptions(opts...)
 
 	if r.client.hookBefore != nil {
@@ -884,17 +893,17 @@ func (r *Instance) setHealthCheckingStopped(stopped bool) error {
 		return err
 	}
 
-	current, exists := r.IncusInstance.Config["user.stopped"]
+	current, exists := r.IncusInstance.Config[HealthStoppedKey]
 	if stopped {
 		if exists && current == "true" {
 			return nil
 		}
-		r.IncusInstance.Config["user.stopped"] = "true"
+		r.IncusInstance.Config[HealthStoppedKey] = "true"
 	} else {
 		if !exists {
 			return nil
 		}
-		delete(r.IncusInstance.Config, "user.stopped")
+		delete(r.IncusInstance.Config, HealthStoppedKey)
 	}
 
 	op, err := r.client.incus.UpdateInstance(r.incusName, r.IncusInstance.Writable(), r.ETag)

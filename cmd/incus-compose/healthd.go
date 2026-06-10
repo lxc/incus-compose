@@ -155,7 +155,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 	}
 
 	instanceConfig := &client.InstanceConfig{
-		Image: imageName,
+		Image: imgRes.IncusName(),
 		Type:  incusApi.InstanceTypeContainer,
 		Config: map[string]string{
 			"limits.cpu":              defaultHealthdCPULimit,
@@ -325,7 +325,7 @@ func healthdUp(ctx context.Context, c *client.Client, inst *client.Instance, res
 
 // healthdDown stops the instance, deletes it, and revokes its Incus trust certificate.
 func healthdDown(ctx context.Context, c *client.Client, inst *client.Instance, resources []client.Resource, timeout time.Duration) error {
-	stack := client.NewStack(c)
+	stack := client.NewStack(c, client.StackSortDescending())
 
 	for _, r := range resources {
 		if r.Kind() != client.KindImage {

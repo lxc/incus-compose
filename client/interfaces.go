@@ -11,9 +11,13 @@ const (
 	HealthStatusStarting  = "starting"
 	HealthStatusHealthy   = "healthy"
 	HealthStatusUnhealthy = "unhealthy"
+	HealthStatusStopped   = "stopped"
 
 	// HealthConfigKey is the instance config key used to store health status.
 	HealthConfigKey = "user.healthcheck.status"
+
+	// HealthStoppedKey when "true" means healthchecking is stopped.
+	HealthStoppedKey = "user.healthcheck.stopped"
 )
 
 // Kind identifies a resource type.

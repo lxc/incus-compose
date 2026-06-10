@@ -891,9 +891,12 @@ func ServiceGraph(serviceConfigs types.Services, reverse bool) ([]string, error)
 		_ = g.AddVertex(s.Name)
 	}
 
-	// Add edges for dependencies
+	// Add edges for dependencies that are in scope.
 	for s := range maps.Values(serviceConfigs) {
 		for dep := range s.DependsOn {
+			if _, ok := serviceConfigs[dep]; !ok {
+				continue
+			}
 			// Edge from dependency to dependent (dep must start before n)
 			err := g.AddEdge(dep, s.Name)
 			if err != nil && err != graph.ErrEdgeAlreadyExists {
@@ -1063,8 +1066,18 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 			for _, on := range options.OnlyServices {
 				if strings.HasPrefix(on+"-", n+"-") {
 					services[n] = svc
-					for depName := range svc.DependsOn {
-						services[depName] = p.Services[depName]
+					if options.Reverse {
+						// stop direction: include services that depend on this one
+						for otherName, otherSvc := range p.Services {
+							if _, ok := otherSvc.DependsOn[n]; ok {
+								services[otherName] = otherSvc
+							}
+						}
+					} else {
+						// start direction: include services this one depends on
+						for depName := range svc.DependsOn {
+							services[depName] = p.Services[depName]
+						}
 					}
 				}
 			}
@@ -1117,6 +1130,7 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 		return errs
 	}
 
+	stack.Sort(options.Reverse)
 	stack.Add(resources...)
 
 	if !c.IsConnected() {

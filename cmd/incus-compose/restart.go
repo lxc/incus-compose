@@ -76,6 +76,21 @@ var restartCommand = &cli.Command{
 			errs = errors.Join(errs, errStop)
 		}
 
+		// Start fresh after stop
+		c.ResetResources()
+
+		stack = client.NewStack(c)
+		err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice())) // No reverse here
+		if err != nil {
+			c.LogError("Adding the project to a stack", "error", err)
+			errs = errors.Join(errs, errStop)
+		}
+
+		if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
+			c.LogError("Getting resources", "error", err)
+			errs = errors.Join(errs, err)
+		}
+
 		errStart := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, client.OptionTimeout(timeout))
 		if errStart != nil {
 			c.LogError("Starting resources", "error", errStart)

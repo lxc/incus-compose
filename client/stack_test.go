@@ -717,42 +717,6 @@ func (s *StackTestSuite) TestHooksWithStack() {
 	s.NoError(afterErr, "after hook should receive nil error")
 }
 
-// TestPriorityOrdering verifies resources are executed in correct priority order.
-func (s *StackTestSuite) TestKindOrdering() {
-	// Track execution order via hooks
-	var executionOrder []string
-
-	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		executionOrder = append(executionOrder, fmt.Sprintf("%v:%v", r.Kind(), r.Name()))
-		return err
-	})
-
-	// Create resources with different priorities
-	profile, err := s.client.Resource(KindProfile, "p1", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	network, err := s.client.Resource(KindNetwork, "n1", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	volume, err := s.client.Resource(KindStorageVolume, "v1", &StorageVolumeConfig{})
-	s.Require().NoError(err)
-
-	// Add in reverse priority order
-	stack := NewStack(s.client, StackSortDescending())
-	stack.Add(profile, network, volume)
-	err = stack.Run(s.ctx, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	// Profile and Network have same priority (512), Volume has 1024
-	// So profile/network should come before volume
-	s.Require().Len(executionOrder, 3, "should have 3 executions")
-
-	s.Equal("profile:p1", executionOrder[2], "volume should be last")
-
-	s.Contains(executionOrder[:2], "storage-volume:v1")
-	s.Contains(executionOrder[:2], "network:n1")
-}
-
 // TestErrorAggregation verifies errors from multiple tasks are aggregated.
 func (s *StackTestSuite) TestErrorAggregation() {
 	stack := NewStack(s.client)

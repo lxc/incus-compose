@@ -9,7 +9,8 @@ const (
 )
 
 const (
-	maxRestartDelay = 60 * time.Second
+	checkInstanceRunningDelay = 5 * time.Second
+	maxRestartDelay           = 5 * time.Minute
 )
 
 // Default healthcheck settings when keys are missing on the instance.

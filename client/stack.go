@@ -86,6 +86,11 @@ func (s *Stack) All() []Resource {
 	return s.resources
 }
 
+// Sort sets the sort order.
+func (s *Stack) Sort(desc bool) {
+	s.sortDescending = desc
+}
+
 func (s *Stack) sort() {
 	if s.sortDescending {
 		sort.SliceStable(s.resources, func(i, j int) bool {
@@ -170,26 +175,10 @@ func (s *Stack) Run(ctx context.Context, action Action, opts ...Option) error {
 
 // ForAction returns a new stack with resources filtered for the given action.
 func (s *Stack) ForAction(action Action) *Stack {
-	sortDescending := s.sortDescending
-
-	// Automatically set priority sort direction based on action.
-	// This controls cross-kind ordering (e.g. instances before networks on start,
-	// networks before instances on stop). Within the same kind, insertion order
-	// is preserved — use ToStackReverse() on ToStack to reverse dependency-graph
-	// order for services of the same kind (e.g. stop dependants before dependencies).
-	switch action {
-	case ActionStop, ActionDelete:
-		sortDescending = true
-	case ActionEnsure, ActionStart:
-		sortDescending = false
-	case ActionLog:
-		// ActionLog: no sort order change, logs run in parallel anyway
-	}
-
 	result := &Stack{
 		client:         s.client,
 		workers:        s.workers,
-		sortDescending: sortDescending,
+		sortDescending: s.sortDescending,
 		seen:           make(map[Resource]struct{}),
 	}
 

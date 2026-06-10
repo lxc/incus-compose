@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
 	incus "github.com/lxc/incus/v7/client"
-	"github.com/lxc/incus/v7/shared/api"
+	incusApi "github.com/lxc/incus/v7/shared/api"
 
 	"gitlab.com/r3j0/incus-compose/client"
 )
@@ -48,6 +49,8 @@ const (
 // backoff when it stays unhealthy. inStart selects the start-period checker;
 // startInstance restarts the instance before checking.
 func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
+	ticker := time.NewTicker(checkInstanceRunningDelay)
+
 	for {
 		slog.Debug("Loop starting checker",
 			"instance", c.name,
@@ -65,6 +68,20 @@ func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
 		if startInstance {
 			if err := c.restart(ctx); err != nil {
 				slog.Error("restart failed", "instance", c.name, "error", err)
+			}
+		}
+
+		inst, _, err := c.client.GetInstance(c.name)
+		if err != nil ||
+			(inst != nil && inst.StatusCode != incusApi.Running) ||
+			(inst != nil && inst.Config[client.HealthStoppedKey] == "true") {
+			slog.Debug("Loop not ready", "instance", c.name, "error", err)
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				continue
 			}
 		}
 
@@ -104,14 +121,16 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 	}
 	defer cancel()
 
-	if c.status != client.HealthStatusHealthy && c.check(phaseCtx) == nil {
+	if inStart && c.check(phaseCtx) == nil {
+		// First success during the start period: switch to the normal checker.
 		c.failures = 0
 		c.restartDelay = c.config.RestartDelay
 
-		// First success during the start period: switch to the normal checker.
 		if err := c.writeStatus(client.HealthStatusHealthy); err != nil {
 			slog.Debug("updating healthcheck status", "instance", c.name, "error", err)
 		}
+
+		return phaseNormal
 	}
 
 	ticker := time.NewTicker(interval)
@@ -124,7 +143,8 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 			var result phaseResult
 			done := false
 
-			if c.check(phaseCtx) == nil {
+			err := c.check(phaseCtx)
+			if err == nil {
 				c.failures = 0
 				c.restartDelay = c.config.RestartDelay
 				status = client.HealthStatusHealthy
@@ -140,6 +160,7 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 					"failures", c.failures,
 					"retries", c.config.Retries,
 					"inStart", inStart,
+					"error", err,
 				)
 				status = client.HealthStatusUnhealthy
 
@@ -195,7 +216,7 @@ func (c *Checker) check(ctx context.Context) error {
 		return err
 	}
 
-	if inst.Status != "Running" {
+	if inst.StatusCode != incusApi.Running {
 		return errors.New("not running")
 	}
 
@@ -228,7 +249,7 @@ func (c *Checker) check(ctx context.Context) error {
 	}
 
 	if exitCode != 0 {
-		return errors.New("cmd failed")
+		return fmt.Errorf("cmd failed, exit code: %d", exitCode)
 	}
 
 	return nil
@@ -236,7 +257,7 @@ func (c *Checker) check(ctx context.Context) error {
 
 // exec runs a command inside the instance and returns the exit code.
 func (c *Checker) exec(ctx context.Context, cmd []string) (int, string, string, error) {
-	req := api.InstanceExecPost{
+	req := incusApi.InstanceExecPost{
 		Command:     cmd,
 		WaitForWS:   true,
 		Interactive: false,
@@ -294,6 +315,15 @@ func (c *Checker) writeStatus(status string) error {
 		return err
 	}
 
+	if inst.Config[client.HealthStoppedKey] == "true" {
+		status = client.HealthStatusStopped
+
+		if c.status == status {
+			// We already wrote that.
+			return nil
+		}
+	}
+
 	inst.Config[client.HealthConfigKey] = status
 	op, err := c.client.UpdateInstance(c.name, inst.Writable(), etag)
 	if err != nil {
@@ -308,14 +338,14 @@ func (c *Checker) writeStatus(status string) error {
 	return nil
 }
 
-// isStopped reports whether the instance has user.stopped=true, meaning it was
+// isStopped reports whether the instance has user.healthcheck.stopped=true, meaning it was
 // intentionally stopped. Returns true on API error (instance gone counts as stopped).
 func (c *Checker) isStopped() bool {
 	inst, _, err := c.client.GetInstance(c.name)
 	if err != nil {
 		return true
 	}
-	return inst.Config["user.stopped"] == "true"
+	return inst.Config[client.HealthStoppedKey] == "true"
 }
 
 // restart brings the instance back to Running. If it's already stopped we
@@ -327,8 +357,8 @@ func (c *Checker) restart(_ context.Context) error {
 		return err
 	}
 
-	if state.StatusCode != api.Stopped {
-		stopReq := api.InstanceStatePut{
+	if state.StatusCode != incusApi.Stopped {
+		stopReq := incusApi.InstanceStatePut{
 			Action:  "stop",
 			Timeout: -1,
 			Force:   true,
@@ -344,7 +374,7 @@ func (c *Checker) restart(_ context.Context) error {
 		}
 	}
 
-	startReq := api.InstanceStatePut{
+	startReq := incusApi.InstanceStatePut{
 		Action:  "start",
 		Timeout: -1,
 	}

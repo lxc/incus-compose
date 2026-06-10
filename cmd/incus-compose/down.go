@@ -149,7 +149,7 @@ type downParams struct {
 // runDown stops and removes the instances of a loaded project, along with their
 // per-project image copies. Volumes and the image cache are left untouched.
 func runDown(ctx context.Context, globalClient *client.GlobalClient, c *client.Client, p *project.Project, params downParams) error {
-	stackOpts := []project.ToStackOption{project.ToStackOnlyServices(params.services)}
+	stackOpts := []project.ToStackOption{project.ToStackOnlyServices(params.services), project.ToStackReverse()}
 
 	if !params.images {
 		stackOpts = append(stackOpts, project.ToStackNoImages())

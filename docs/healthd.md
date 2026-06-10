@@ -91,7 +91,7 @@ services:
 block is also handled. ic-healthd monitors the instance state and restarts it
 when stopped, without running an exec-based test command.
 
-With `unless-stopped`, instances stopped intentionally (`user.stopped=true`,
+With `unless-stopped`, instances stopped intentionally (`user.healthcheck.stopped=true`,
 set by `incus-compose stop`) are not restarted.
 
 ## Network Configuration

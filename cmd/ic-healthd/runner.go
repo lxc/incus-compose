@@ -256,6 +256,7 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		Interval:      defaultInterval,
 		Timeout:       defaultTimeout,
 		Retries:       defaultRetries,
+		RestartDelay:  defaultRestartDelay,
 	}
 
 	if err := json.Unmarshal([]byte(cfg["user.healthcheck.test"]), &svc.Test); err != nil {
@@ -317,10 +318,11 @@ func parseInstance(cfg map[string]string) (InstanceConfig, error) {
 		svc.UnlessStopped = true
 	}
 
-	if svc.Interval > 0 && svc.Retries > 0 {
-		svc.RestartDelay = min(svc.Interval*time.Duration(svc.Retries), maxRestartDelay)
-	} else {
-		svc.RestartDelay = defaultRestartDelay
+	if svc.Interval.Seconds() > 0 && svc.Retries > 0 {
+		svc.RestartDelay = max(
+			min(time.Duration(svc.Interval.Milliseconds()*int64(svc.Retries)), maxRestartDelay),
+			defaultRestartDelay,
+		)
 	}
 
 	return svc, nil
