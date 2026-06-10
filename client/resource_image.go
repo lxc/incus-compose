@@ -269,7 +269,7 @@ func (r *Image) get() error {
 	r.IncusAlias = alias
 	r.ETag = eTag
 
-	if img, _, err := r.cache.GetImage(alias.Target); err == nil {
+	if img, _, err := r.client.incus.GetImage(alias.Target); err == nil {
 		r.readOCIConfigFromProperties(img.Properties)
 	}
 
@@ -383,9 +383,24 @@ func (r *Image) create(ctx context.Context, args Options) error {
 			Mode:       "pull",
 		}
 
+		if r.Cwd == "/" {
+			// Copy from cache, read oci.* from it.
+			if img, _, err := r.cache.GetImage(cacheAlias.Target); err == nil {
+				r.readOCIConfigFromProperties(img.Properties)
+			}
+		}
+
 		// Build image info for copy
 		projectImageInfo := incusApi.Image{
 			Fingerprint: cacheAlias.Target,
+			ImagePut: incusApi.ImagePut{
+				Properties: map[string]string{
+					"oci.uid":        strconv.FormatUint(r.UID, 10),
+					"oci.gid":        strconv.FormatUint(r.GID, 10),
+					"oci.cwd":        r.Cwd,
+					"oci.entrypoint": r.Entrypoint,
+				},
+			},
 		}
 
 		// Copy from cache to project
