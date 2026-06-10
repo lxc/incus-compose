@@ -293,12 +293,12 @@ func healthdUp(ctx context.Context, c *client.Client, inst *client.Instance, res
 
 	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...); err != nil {
 		c.LogError("Creating healthd resources", "error", err)
-		return errLogged.Wrap(err)
+		return err
 	}
 
 	if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart); err != nil {
 		c.LogError("Starting healthd resources", "error", err)
-		return errLogged.Wrap(err)
+		return err
 	}
 
 	if params.binary != "" {
@@ -324,7 +324,7 @@ func healthdUp(ctx context.Context, c *client.Client, inst *client.Instance, res
 }
 
 // healthdDown stops the instance, deletes it, and revokes its Incus trust certificate.
-func healthdDown(ctx context.Context, c *client.Client, inst *client.Instance, resources []client.Resource, timeout time.Duration) error {
+func healthdDown(ctx context.Context, c *client.Client, inst *client.Instance, resources []client.Resource, timeout time.Duration) {
 	stack := client.NewStack(c, client.StackSortDescending())
 
 	for _, r := range resources {
@@ -348,7 +348,9 @@ func healthdDown(ctx context.Context, c *client.Client, inst *client.Instance, r
 		c.LogWarn("Deleting healthd resources", "error", err)
 	}
 
-	return healthdRevokeCert(c)
+	if err := healthdRevokeCert(c); err != nil {
+		c.LogWarn("Cannot revoke the healthd cert", "error", err)
+	}
 }
 
 // healthdResolve returns the existing healthd Instance or errors if the sidecar
@@ -737,9 +739,7 @@ var healthdUpCommand = &cli.Command{
 
 		if params.reCreate {
 			if existing, resources, err := healthdGetResources(c, params); err == nil {
-				if e := healthdDown(ctx, c, existing, resources, params.timeout); e != nil {
-					c.LogDebug("healthdDown in recreate", "error", e)
-				}
+				healthdDown(ctx, c, existing, resources, params.timeout)
 			}
 
 			c.ResetResources()
@@ -821,8 +821,8 @@ var healthdDownCommand = &cli.Command{
 			return errLogged.Wrap(err)
 		}
 
-		err = healthdDown(ctx, c, inst, resources, params.timeout)
-		finish(err == nil)
+		healthdDown(ctx, c, inst, resources, params.timeout)
+		finish(true)
 		return err
 	},
 }

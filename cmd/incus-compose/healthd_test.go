@@ -4,7 +4,7 @@ func (s *E2ESuite) TestLifecycleHealthd() {
 	compose := "../../test/fixtures/healthd-debug/compose.yaml"
 
 	defer func() {
-		_ = s.run("-f", compose, "down", "--project")
+		_, _, _ = s.run("-f", compose, "down", "--project")
 	}()
 
 	tests := []struct {
@@ -47,7 +47,8 @@ func (s *E2ESuite) TestLifecycleHealthd() {
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			s.Require().NoError(s.run(tt.args...))
+			_, _, err := s.run(tt.args...)
+			s.Require().NoError(err)
 		})
 	}
 }
