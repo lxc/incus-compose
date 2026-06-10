@@ -49,6 +49,17 @@ type Options struct {
 	Build BuildMode
 }
 
+// incusTimeout converts Timeout to the seconds value expected by the Incus
+// state API. Zero maps to -1 (daemon default) because Incus treats 0 as an
+// immediate kill on stop instead of a graceful shutdown.
+func (o Options) incusTimeout() int {
+	if o.Timeout == 0 {
+		return -1
+	}
+
+	return int(o.Timeout.Seconds())
+}
+
 // Option configures action arguments.
 type Option func(o *Options)
 

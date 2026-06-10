@@ -641,14 +641,15 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 
 	op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
 		Action:  "start",
-		Timeout: int(options.Timeout.Seconds()),
+		Timeout: options.incusTimeout(),
 	}, r.ETag)
 	if err != nil {
 		return ErrOperation.WithText("starting instance").Wrap(err)
 	}
 
+	// The operation completes once the instance is running or failed to start.
 	if err := r.client.hookOperation(ctx, ActionStart, r, options, op, err); err != nil {
-		return nil
+		return err
 	}
 
 	if err := r.fetch(); err != nil {
@@ -838,48 +839,38 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 
 	options := NewOptions(opts...)
 
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ctx, ActionStop, r, options, nil); err != nil {
-			return err
-		}
-	}
-
-	if err := r.setHealthCheckingStopped(true); err != nil {
-		if r.client.hookAfter != nil {
-			return r.client.hookAfter(ctx, ActionStop, r, options, nil)
-		}
-
+	if err := r.client.hookBefore(ctx, ActionStop, r, options, nil); err != nil {
 		return err
 	}
 
-	if r.IncusInstance.Status == "Stopped" {
-		if r.client.hookAfter != nil {
-			return r.client.hookAfter(ctx, ActionStop, r, options, nil)
-		}
+	return r.client.hookAfter(ctx, ActionStop, r, options, r.stop(ctx, options))
+}
 
+func (r *Instance) stop(ctx context.Context, options Options) error {
+	if err := r.setHealthCheckingStopped(true); err != nil {
+		return err
+	}
+
+	// setHealthCheckingStopped refetched the instance; it may have stopped meanwhile.
+	if !r.Running() {
 		return nil
 	}
 
 	op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
 		Action:  "stop",
 		Force:   options.Force,
-		Timeout: int(options.Timeout.Seconds()),
+		Timeout: options.incusTimeout(),
 	}, r.ETag)
-
-	err = r.client.hookOperation(ctx, ActionStop, r, options, op, err)
 	if err != nil {
-		if r.client.hookAfter != nil {
-			return r.client.hookAfter(ctx, ActionStop, r, options, err)
-		}
+		return ErrOperation.WithText("stopping instance").Wrap(err)
+	}
 
+	// The operation completes once the instance is stopped or failed to stop.
+	if err := r.client.hookOperation(ctx, ActionStop, r, options, op, err); err != nil {
 		return err
 	}
 
-	if r.client.hookAfter != nil {
-		return r.client.hookAfter(ctx, ActionStop, r, options, err)
-	}
-
-	return err
+	return r.fetch()
 }
 
 // setHealthCheckingStopped writes or clears the user.stopped config key on the instance.
