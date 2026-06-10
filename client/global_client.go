@@ -25,15 +25,6 @@ type ClientConfig struct {
 	// Logger to use within this client.
 	Logger *slog.Logger
 
-	// InsecureSkipVerify accepts any certificate (insecure, for testing only).
-	InsecureSkipVerify bool
-
-	// TLSClientCert is the path to TLS client certificate for authentication.
-	TLSClientCert string
-
-	// TLSClientKey is the path to TLS client key for authentication.
-	TLSClientKey string
-
 	// NetworkPrefix is the prefix for new networks (default: "ic-").
 	NetworkPrefix string
 
@@ -62,21 +53,6 @@ func ClientURL(u string) ClientOption {
 // ClientLogger sets the client to use within the created client.
 func ClientLogger(l *slog.Logger) ClientOption {
 	return func(c *ClientConfig) { c.Logger = l }
-}
-
-// ClientInsecureSkipVerify disables TLS certificate verification.
-func ClientInsecureSkipVerify() ClientOption {
-	return func(c *ClientConfig) { c.InsecureSkipVerify = true }
-}
-
-// ClientTLSClientCert sets the path to the TLS client certificate.
-func ClientTLSClientCert(f string) ClientOption {
-	return func(c *ClientConfig) { c.TLSClientCert = f }
-}
-
-// ClientTLSClientKey sets the path to the TLS client key.
-func ClientTLSClientKey(f string) ClientOption {
-	return func(c *ClientConfig) { c.TLSClientKey = f }
 }
 
 // ClientDefaultStoragePool sets the default storage pool name.
@@ -315,25 +291,6 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 			ClientLogger(logger),
 			ClientProvideConnection(server),
 		}
-	} else if u, ok := os.LookupEnv("INCUS_COMPOSE_URL"); ok {
-		// 2. If INCUS_COMPOSE_URL is set, use direct URL connection
-		slog.DebugContext(ctx, "Connecting", "url", u)
-
-		cert := resolvePath(os.Getenv("INCUS_COMPOSE_CERT"))
-		key := resolvePath(os.Getenv("INCUS_COMPOSE_KEY"))
-
-		opts = []ClientOption{
-			ClientURL(u),
-			ClientLogger(logger),
-			ClientInsecureSkipVerify(),
-		}
-
-		if cert != "" {
-			opts = append(opts, ClientTLSClientCert(cert))
-		}
-		if key != "" {
-			opts = append(opts, ClientTLSClientKey(key))
-		}
 	} else {
 		// 3. Fall back to "local" remote
 		slog.DebugContext(ctx, "Connecting", "remote", "local")
@@ -388,11 +345,7 @@ func (c *GlobalClient) Connect() error {
 		return c.connectProvided()
 	}
 
-	if c.Config.URL != "" && c.Config.TLSClientCert != "" && c.Config.TLSClientKey != "" {
-		return c.connectTLS()
-	}
-
-	return errors.New("provide either URL with TLS certs or ProvidedInstanceServer")
+	return errors.New("provide a ProvidedInstanceServer")
 }
 
 // Connection returns the project-scoped Connection client.
@@ -416,60 +369,6 @@ func (c *GlobalClient) connectProvided() error {
 	}
 
 	c.incus = pIncus
-	c.logger = c.logger.With("url", c.Config.URL)
-	c.connected = true
-
-	if c.Config.DefaultStoragePool == "detect" {
-		if err = c.detectStoragePool(); err != nil {
-			return err
-		}
-	}
-
-	return c.setupImageCache()
-}
-
-func (c *GlobalClient) connectTLS() error {
-	certPath, err := filepath.Abs(c.Config.TLSClientCert)
-	if err != nil {
-		return ErrConnectionFailed.WithText("while reading cert").Wrap(err)
-	}
-
-	certData, err := os.ReadFile(certPath)
-	if err != nil {
-		return ErrConnectionFailed.WithText("while reading cert").Wrap(err)
-	}
-
-	keyPath, err := filepath.Abs(c.Config.TLSClientKey)
-	if err != nil {
-		// Not wrapping "err" so we hide the key path.
-		return ErrConnectionFailed.WithText(fmt.Sprintf("while reading key for cert %v", certPath))
-	}
-
-	keyData, err := os.ReadFile(keyPath)
-	if err != nil {
-		// Not wrapping "err" so we hide the key path.
-		return ErrConnectionFailed.WithText(fmt.Sprintf("while reading key for cert %v", certPath))
-	}
-
-	args := &incusClient.ConnectionArgs{
-		InsecureSkipVerify: c.Config.InsecureSkipVerify,
-		AuthType:           "tls",
-		TLSClientCert:      string(certData),
-		TLSClientKey:       string(keyData),
-	}
-
-	incus, err := incusClient.ConnectIncusWithContext(c.ctx, c.Config.URL, args)
-	if err != nil {
-		return fmt.Errorf("%w: %w", ErrConnectionFailed, err)
-	}
-
-	pIncus, ok := incus.(*incusClient.ProtocolIncus)
-	if !ok {
-		return fmt.Errorf("%w: cannot cast to ProtocolIncus", ErrConnectionFailed)
-	}
-
-	c.incus = pIncus
-	c.unix = false
 	c.logger = c.logger.With("url", c.Config.URL)
 	c.connected = true
 
