@@ -24,7 +24,7 @@ Treat these as non-negotiable for agent behavior:
 Preload these because `CONTRIBUTING.md` cites them as authoritative:
 
 - `docs/architecture.md`
-- `docs/testing.md`
+- `docs/testing.md` - use `just test` instead `just test-local`.
 
 ## Lazy-load on demand
 

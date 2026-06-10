@@ -19,6 +19,10 @@ type E2EBuildSuite struct {
 }
 
 func TestE2EBuildSuite(t *testing.T) {
+	if os.Getenv("INCUS_COMPOSE_TEST_SLOW") == "" {
+		t.Skip("Skipping: env INCUS_COMPOSE_TEST_SLOW is not set")
+	}
+
 	suite.Run(t, new(E2EBuildSuite))
 }
 
