@@ -193,7 +193,7 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 				c.reportProgress(action, r, args, opAPI)
 			})
 			if err != nil {
-				return fmt.Errorf("adding a progress handler to %w", err)
+				return ErrOperation.Wrap(err)
 			}
 		}
 
@@ -220,7 +220,7 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 				c.reportProgress(action, r, args, opAPI)
 			})
 			if err != nil {
-				return fmt.Errorf("adding a progress handler to %w", err)
+				return ErrOperation.Wrap(err)
 			}
 		}
 

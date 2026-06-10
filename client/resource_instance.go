@@ -561,26 +561,11 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 
 	options := NewOptions(opts...)
 
-	if r.client.hookBefore != nil {
-		if err := r.client.hookBefore(ctx, ActionStart, r, options, nil); err != nil {
-			return err
-		}
-	}
-
-	if err := r.waitForDependencies(ctx, options); err != nil {
-		if r.client.hookAfter != nil {
-			return r.client.hookAfter(ctx, ActionStart, r, options, err)
-		}
+	if err := r.client.hookBefore(ctx, ActionStart, r, options, nil); err != nil {
 		return err
 	}
 
-	err := r.start(ctx, options)
-
-	if r.client.hookAfter != nil {
-		err = r.client.hookAfter(ctx, ActionStart, r, options, err)
-	}
-
-	return err
+	return r.client.hookAfter(ctx, ActionStart, r, options, r.start(ctx, options))
 }
 
 // Running returns true if the instance is running.
@@ -642,6 +627,18 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 		return nil
 	}
 
+	if err := r.waitForDependencies(ctx, options); err != nil {
+		return err
+	}
+
+	if err := r.fetch(); err != nil {
+		return err
+	}
+
+	if r.Running() {
+		return nil
+	}
+
 	op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
 		Action:  "start",
 		Timeout: int(options.Timeout.Seconds()),
@@ -651,7 +648,7 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 	}
 
 	if err := r.client.hookOperation(ctx, ActionStart, r, options, op, err); err != nil {
-		return err
+		return nil
 	}
 
 	if err := r.fetch(); err != nil {
