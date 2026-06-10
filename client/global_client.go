@@ -546,6 +546,22 @@ func (c *GlobalClient) DeleteProject(name string, force bool) error {
 
 	// c.logger.DebugContext(c.Ctx, "Deleting project", "name", name, "incus_name", incusName)
 
+	// Delete networks first - they are global, not project-scoped
+	for _, p := range c.projects {
+		if p.project == name {
+			// Delete networks first - they are global, not project-scoped
+			networks, err := ByKind[*Network](p.resources.All(), KindNetwork)
+			if err != nil {
+				continue
+			}
+
+			for _, n := range networks {
+				_ = RunAction(c.ctx, n, ActionDelete, OptionForce())
+			}
+			break
+		}
+	}
+
 	var err error
 	if force {
 		err = c.incus.DeleteProjectForce(incusName)
