@@ -24,7 +24,7 @@ func (c *Client) RegisterDNSWatcher() error {
 	ownedSet := map[string]struct{}{} // dnsmasq keys this run owns
 	mu := &sync.Mutex{}
 
-	c.AddHookAfter(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+	c.AddHookAfter(func(ctx context.Context, action Action, r Resource, _ Options, err error) error {
 		if err != nil || r == nil {
 			return err
 		}
@@ -53,7 +53,7 @@ func (c *Client) RegisterDNSWatcher() error {
 			switch action {
 			case ActionEnsure:
 				if !inst.Created() && inst.Running() {
-					ips, ipErr := inst.WaitIPs(dnsIPWaitTimeout)
+					ips, ipErr := inst.WaitIPs(ctx, dnsIPWaitTimeout)
 					if ipErr != nil {
 						return ipErr
 					}
@@ -64,7 +64,7 @@ func (c *Client) RegisterDNSWatcher() error {
 					changed = true
 				}
 			case ActionStart:
-				ips, ipErr := inst.WaitIPs(dnsIPWaitTimeout)
+				ips, ipErr := inst.WaitIPs(ctx, dnsIPWaitTimeout)
 				if ipErr != nil {
 					return ipErr
 				}

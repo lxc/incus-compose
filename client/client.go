@@ -23,6 +23,7 @@ import (
 
 // Client wraps a project-scoped Incus client with resource management.
 type Client struct {
+	ctx          context.Context
 	globalClient *GlobalClient
 	config       ClientConfig
 
@@ -66,6 +67,7 @@ func (c *GlobalClient) newClientProject(name, incusName string, created bool) (*
 	}
 
 	cp := &Client{
+		ctx:          c.ctx,
 		globalClient: c,
 		config:       config,
 		project:      name,
@@ -141,25 +143,25 @@ func (c *Client) IsDebugging() bool {
 // LogDebug logs an debug message.
 // The `any` here is ok.
 func (c *Client) LogDebug(msg string, args ...any) {
-	c.logger.DebugContext(c.globalClient.Ctx, msg, args...)
+	c.logger.DebugContext(c.ctx, msg, args...)
 }
 
 // LogInfo logs an info message.
 // The `any` here is ok.
 func (c *Client) LogInfo(msg string, args ...any) {
-	c.logger.InfoContext(c.globalClient.Ctx, msg, args...)
+	c.logger.InfoContext(c.ctx, msg, args...)
 }
 
 // LogWarn logs an warning message.
 // The `any` here is ok.
 func (c *Client) LogWarn(msg string, args ...any) {
-	c.logger.WarnContext(c.globalClient.Ctx, msg, args...)
+	c.logger.WarnContext(c.ctx, msg, args...)
 }
 
 // LogError logs an error.
 // The `any` here is ok.
 func (c *Client) LogError(msg string, args ...any) {
-	c.logger.ErrorContext(c.globalClient.Ctx, msg, args...)
+	c.logger.ErrorContext(c.ctx, msg, args...)
 }
 
 // Connection returns the project-scoped Connection client.

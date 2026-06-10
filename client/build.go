@@ -111,7 +111,7 @@ func buildRootfs(ctx context.Context, builder string, cfg *BuildConfig, logW io.
 	}
 
 	// Remove the temporary image tag; ignore errors (best-effort cleanup).
-	rmi := exec.CommandContext(context.Background(), builder, "rmi", tmpTag)
+	rmi := exec.CommandContext(ctx, builder, "rmi", tmpTag)
 	rmi.Stderr = logW
 	_ = rmi.Run()
 

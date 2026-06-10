@@ -115,7 +115,7 @@ func ClientCacheProject(n string) ClientOption {
 
 // GlobalClient provides a high-level interface to Incus operations.
 type GlobalClient struct {
-	Ctx    context.Context
+	ctx    context.Context
 	Config ClientConfig
 
 	logger    *slog.Logger
@@ -159,7 +159,7 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 	cliConf, _ := cliconfig.LoadConfig(cliconfig.DefaultConfig().ConfigDir)
 
 	c := &GlobalClient{
-		Ctx:       ctx,
+		ctx:       ctx,
 		Config:    config,
 		logger:    config.Logger,
 		cliConfig: cliConf,
@@ -311,7 +311,7 @@ func (c *GlobalClient) connectTLS() error {
 		TLSClientKey:       string(keyData),
 	}
 
-	incus, err := incusClient.ConnectIncusWithContext(c.Ctx, c.Config.URL, args)
+	incus, err := incusClient.ConnectIncusWithContext(c.ctx, c.Config.URL, args)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrConnectionFailed, err)
 	}
@@ -372,18 +372,18 @@ func (c *GlobalClient) setupImageCache() error {
 // LogError logs an error.
 // The `any` here is ok.
 func (c *GlobalClient) LogError(msg string, args ...any) {
-	c.logger.ErrorContext(c.Ctx, msg, args...)
+	c.logger.ErrorContext(c.ctx, msg, args...)
 }
 
 // LogDebug logs a debug message.
 // The `any` here is ok.
 func (c *GlobalClient) LogDebug(msg string, args ...any) {
-	c.logger.Log(c.Ctx, slog.LevelDebug, msg, args...)
+	c.logger.Log(c.ctx, slog.LevelDebug, msg, args...)
 }
 
 // IsDebugging returns true if debug logging is enabled.
 func (c *GlobalClient) IsDebugging() bool {
-	return c.logger.Enabled(c.Ctx, slog.LevelDebug)
+	return c.logger.Enabled(c.ctx, slog.LevelDebug)
 }
 
 // IsConnected returns true if the client is connected.
@@ -409,7 +409,7 @@ func (c *GlobalClient) getProject(name string) (*Client, error) {
 		return nil, err
 	}
 
-	c.logger.DebugContext(c.Ctx, "Got project", "name", name, "incus_name", incusName)
+	c.logger.DebugContext(c.ctx, "Got project", "name", name, "incus_name", incusName)
 	return c.newClientProject(name, incusName, false)
 }
 
@@ -513,7 +513,7 @@ func (c *GlobalClient) DeleteProject(name string, force bool) error {
 			}
 
 			for _, n := range networks {
-				_ = RunAction(c.Ctx, n, ActionDelete, OptionForce())
+				_ = RunAction(c.ctx, n, ActionDelete, OptionForce())
 			}
 			break
 		}

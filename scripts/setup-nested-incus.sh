@@ -205,7 +205,7 @@ SOURCES_EOF
 
 echo "Installing Incus..."
 apt-get update -q
-apt-get install -y -q incus-base
+apt-get install -y -q incus-base skopeo
 
 # Disable AppArmor in nested environment to prevent conflicts with container security profiles.
 # This is safe for development VMs but should NEVER be done on production hosts.

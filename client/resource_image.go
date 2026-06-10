@@ -232,7 +232,7 @@ func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 	err := r.get()
 	if err == nil {
 		if args.Pull {
-			err = r.refresh(args)
+			err = r.refresh(ctx, args)
 		}
 
 		if r.client.hookAfter != nil {
@@ -250,7 +250,7 @@ func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 		return err
 	}
 
-	err = r.create(args)
+	err = r.create(ctx, args)
 
 	if r.client.hookAfter != nil {
 		err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
@@ -288,7 +288,7 @@ func (r *Image) get() error {
 // Before deleting, the remote fingerprint is queried (skopeo inspect for OCI,
 // no layer pull). If it matches the cached fingerprint, the refresh is skipped.
 // On query failure the refresh proceeds to be safe.
-func (r *Image) refresh(args Options) error {
+func (r *Image) refresh(ctx context.Context, args Options) error {
 	// No source || no cache || no alias, no download.
 	if r.source == nil || r.cache == nil || r.IncusAlias == nil {
 		return nil
@@ -304,24 +304,24 @@ func (r *Image) refresh(args Options) error {
 		op, err := r.cache.DeleteImage(r.IncusAlias.Target)
 
 		// On the cache the error is ignored.
-		if err = r.client.hookOperation(r.client.globalClient.Ctx, ActionDelete, r, args, op, err); err != nil {
+		if err = r.client.hookOperation(ctx, ActionDelete, r, args, op, err); err != nil {
 			r.client.LogDebug("deleting stale cache image for refresh", "error", err)
 			return nil
 		}
 	}
 
 	op, err := r.client.incus.DeleteImage(r.IncusAlias.Target)
-	if err = r.client.hookOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
+	if err = r.client.hookOperation(ctx, ActionEnsure, r, args, op, err); err != nil {
 		r.client.LogDebug("deleting stale project image for refresh", "error", err)
 		return nil
 	}
 
 	r.IncusAlias = nil
 	r.ETag = ""
-	return r.create(args)
+	return r.create(ctx, args)
 }
 
-func (r *Image) create(args Options) error {
+func (r *Image) create(ctx context.Context, args Options) error {
 	if r.source == nil {
 		return ErrImageSource.WithText("not configured")
 	}
@@ -362,7 +362,7 @@ func (r *Image) create(args Options) error {
 		op, err := r.cache.CopyImage(r.source, cacheImgInfo, cacheCopyArgs)
 
 		// Wait for copy to complete
-		if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
+		if err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, args, op, err); err != nil {
 			return ErrCreate.WithText("caching image").Wrap(err)
 		}
 
@@ -392,7 +392,7 @@ func (r *Image) create(args Options) error {
 		op, err := r.client.incus.CopyImage(r.cache, projectImageInfo, projectCopyArgs)
 
 		// Wait for copy to complete
-		if err = r.client.hookRemoteOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
+		if err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, args, op, err); err != nil {
 			return ErrCreate.WithText("project image").Wrap(err)
 		}
 	}
@@ -521,14 +521,14 @@ func (r *Image) ensureBuild(ctx context.Context, args Options) error {
 			}
 			r.IncusAlias = nil
 			r.ETag = ""
-			err = r.buildImage(args)
+			err = r.buildImage(ctx, args)
 		}
 		// BuildAuto or BuildNever with an existing image: nothing to do.
 	} else {
 		if args.Build == BuildNever {
 			err = fmt.Errorf("image %q is missing and --no-build was set", r.incusName)
 		} else if args.Create {
-			err = r.buildImage(args)
+			err = r.buildImage(ctx, args)
 		}
 		// !args.Create and BuildAuto: leave err non-nil (not found, don't create).
 	}
@@ -541,7 +541,7 @@ func (r *Image) ensureBuild(ctx context.Context, args Options) error {
 
 // buildImage shells out to the detected container builder, imports the rootfs
 // into Incus as a split (metadata + rootfs) image, and records the alias.
-func (r *Image) buildImage(args Options) error {
+func (r *Image) buildImage(ctx context.Context, args Options) error {
 	server, _, err := r.client.incus.GetServer()
 	if err != nil {
 		return ErrCreate.WithText("getting Incus server info").Wrap(err)
@@ -571,7 +571,7 @@ func (r *Image) buildImage(args Options) error {
 		return ErrCreate.WithText("no container builder").Wrap(err)
 	}
 
-	rootfs, configJSON, err := buildRootfs(r.client.globalClient.Ctx, builder, &buildCfg, os.Stderr)
+	rootfs, configJSON, err := buildRootfs(ctx, builder, &buildCfg, os.Stderr)
 	if err != nil {
 		return ErrCreate.WithText("building container image").Wrap(err)
 	}
@@ -590,7 +590,7 @@ func (r *Image) buildImage(args Options) error {
 		RootfsFile: rootfs,
 		RootfsName: "rootfs.tar",
 	})
-	if err = r.client.hookOperation(r.client.globalClient.Ctx, ActionEnsure, r, args, op, err); err != nil {
+	if err = r.client.hookOperation(ctx, ActionEnsure, r, args, op, err); err != nil {
 		return ErrCreate.WithText("importing built image").Wrap(err)
 	}
 

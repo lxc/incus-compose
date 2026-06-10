@@ -199,7 +199,7 @@ func (r *Network) Ensure(ctx context.Context, opts ...Option) error {
 		return err
 	}
 
-	err = r.create()
+	err = r.create(ctx)
 
 	if r.client.hookAfter != nil {
 		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
@@ -220,7 +220,7 @@ func (r *Network) get() error {
 	return err
 }
 
-func (r *Network) create() error {
+func (r *Network) create(ctx context.Context) error {
 	config, err := networkCreateConfig(r.Config.Extensions)
 	if err != nil {
 		return fmt.Errorf("preparing network config for %q: %w", r.Name(), err)
@@ -243,7 +243,7 @@ func (r *Network) create() error {
 	// Wait for the network to become ready (Status == Created) using context-aware timeout.
 	// This mirrors the pattern used for instances to avoid races in tests that act
 	// on networks immediately after creation.
-	ctx, cancel := context.WithTimeout(r.client.globalClient.Ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	interval := 100 * time.Millisecond
 	for {

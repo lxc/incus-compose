@@ -21,7 +21,8 @@ const (
 )
 
 func TestBindMounts(t *testing.T) {
-	gc, err := client.NewTestClient(context.Background())
+	ctx := context.Background()
+	gc, err := client.NewTestClient(ctx)
 	if err != nil {
 		t.Skip(err.Error())
 	}
@@ -31,7 +32,7 @@ func TestBindMounts(t *testing.T) {
 		cmd := newRootCommand()
 		cmd.Writer = &stdout
 		cmd.ErrWriter = &stderr
-		return cmd.Run(gc.Ctx, append([]string{"incus-compose"}, args...))
+		return cmd.Run(ctx, append([]string{"incus-compose"}, args...))
 	}
 
 	t.Cleanup(func() {

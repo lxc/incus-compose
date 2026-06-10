@@ -172,7 +172,7 @@ func (r *Instance) ServiceName() string {
 // or the timeout elapses. A freshly started container may not have its DHCP
 // lease yet, so this gives it time. On timeout it returns whatever was found
 // (possibly empty).
-func (r *Instance) WaitIPs(timeout time.Duration) (ips []InterfaceIPs, err error) {
+func (r *Instance) WaitIPs(ctx context.Context, timeout time.Duration) (ips []InterfaceIPs, err error) {
 	if err := r.fetch(); err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func (r *Instance) WaitIPs(timeout time.Duration) (ips []InterfaceIPs, err error
 		return nil, ErrNotRunning.WithText("in WaitIPs")
 	}
 
-	deadline, cancel := context.WithTimeout(r.client.globalClient.Ctx, timeout)
+	deadline, cancel := context.WithTimeout(ctx, timeout)
 
 	for {
 		ips, err = r.client.InstanceIPs(r.IncusName())
@@ -482,7 +482,7 @@ func (r *Instance) ensureVolumes() error {
 	return nil
 }
 
-func (r *Instance) attachPostStartDevices() error {
+func (r *Instance) attachPostStartDevices(ctx context.Context) error {
 	// Fetch fresh state and ETag before modifying devices — start may have
 	// invalidated the cached ETag via UpdateInstanceState.
 	if err := r.fetch(); err != nil {
@@ -492,7 +492,7 @@ func (r *Instance) attachPostStartDevices() error {
 	instance := r.IncusInstance
 
 	// Resolve container IPs once — instance is running so this should be fast.
-	ips, err := r.WaitIPs(30 * time.Second)
+	ips, err := r.WaitIPs(ctx, 30*time.Second)
 	if err != nil {
 		r.client.LogWarn("could not resolve IPs for post-start devices", "instance", r.incusName, "err", err)
 	}
@@ -564,14 +564,14 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 		}
 	}
 
-	if err := r.waitForDependencies(options); err != nil {
+	if err := r.waitForDependencies(ctx, options); err != nil {
 		if r.client.hookAfter != nil {
 			return r.client.hookAfter(ctx, ActionStart, r, options, err)
 		}
 		return err
 	}
 
-	err := r.start()
+	err := r.start(ctx)
 
 	if r.client.hookAfter != nil {
 		err = r.client.hookAfter(ctx, ActionStart, r, options, err)
@@ -591,7 +591,7 @@ func (r *Instance) Running() bool {
 
 // waitForDependencies blocks until all Config.Dependencies reach their required
 // health status, or until the dependency timeout elapses.
-func (r *Instance) waitForDependencies(options Options) error {
+func (r *Instance) waitForDependencies(ctx context.Context, options Options) error {
 	if len(r.Config.Dependencies) == 0 {
 		return nil
 	}
@@ -601,32 +601,40 @@ func (r *Instance) waitForDependencies(options Options) error {
 		timeout = options.Timeout
 	}
 
-	deadline := time.Now()
+	var cancel context.CancelFunc
 	if timeout > 0 {
-		deadline = time.Now().Add(timeout)
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
 	}
 
 	for depName, requiredStatus := range r.Config.Dependencies {
 		r.client.LogDebug("Waiting for dependency", "instance", r.incusName, "dep", depName, "status", requiredStatus)
 		for {
+			ticker := time.NewTicker(2 * time.Second)
+
 			inst, _, err := r.client.incus.GetInstance(depName)
 			if err == nil && inst.Config[HealthConfigKey] == requiredStatus {
 				r.client.LogDebug("Dependency ready", "dep", depName)
 				break
 			}
 
-			if time.Now().After(deadline) {
+			select {
+			case <-ticker.C:
+				r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthConfigKey])
+				time.Sleep(2 * time.Second)
+			case <-ctx.Done():
+				cancel()
 				return fmt.Errorf("dependency %q did not reach status %q within %s", depName, requiredStatus, timeout)
 			}
-
-			r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthConfigKey])
-			time.Sleep(2 * time.Second)
 		}
 	}
+
+	cancel()
 	return nil
 }
 
-func (r *Instance) start() error {
+func (r *Instance) start(ctx context.Context) error {
 	if r.Running() {
 		return nil
 	}
@@ -660,7 +668,7 @@ func (r *Instance) start() error {
 	}
 
 	if r.created && len(r.Config.PostStartDevices) > 0 {
-		if err := r.attachPostStartDevices(); err != nil {
+		if err := r.attachPostStartDevices(ctx); err != nil {
 			return err
 		}
 	}
