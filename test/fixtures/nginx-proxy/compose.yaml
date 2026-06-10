@@ -1,38 +1,52 @@
+name: nginx-proxy
+
 services:
   nginx:
-    image: docker.io/library/nginx:alpine
+    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    restart: unless-stopped
+    environment:
+      NGINX_WORKER_PROCESSES: 1
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./certs:/etc/nginx/certs:ro
+      - "8080:8080"
     depends_on:
-      - backend1
-      - backend2
+      backend1:
+        condition: service_healthy
+      backend2:
+        condition: service_healthy
     networks:
       - frontend
       - backend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   backend1:
-    image: docker.io/library/python:3.11-slim
-    command: python -m http.server 8000
-    expose:
-      - "8000"
+    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    restart: unless-stopped
     environment:
-      SERVICE_NAME: backend1
+      NGINX_WORKER_PROCESSES: 1
     networks:
       - backend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   backend2:
-    image: docker.io/library/python:3.11-slim
-    command: python -m http.server 8000
-    expose:
-      - "8000"
+    image: docker.io/nginxinc/nginx-unprivileged:alpine
+    restart: unless-stopped
     environment:
-      SERVICE_NAME: backend2
+      NGINX_WORKER_PROCESSES: 1
     networks:
       - backend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 networks:
   frontend:

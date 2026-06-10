@@ -1,4 +1,6 @@
 services:
   app:
     image: docker.io/nginx:alpine
+    environment:
+      NGINX_WORKER_PROCESSES: 1
     shm_size: 134217728

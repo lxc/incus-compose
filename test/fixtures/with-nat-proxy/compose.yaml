@@ -1,6 +1,8 @@
 services:
   web:
     image: docker.io/nginx:alpine
+    environment:
+      NGINX_WORKER_PROCESSES: 1
     networks:
       frontend:
         ipv4_address: 10.139.38.17

@@ -1,6 +1,8 @@
 services:
   web:
     image: docker.io/library/nginx:alpine
+    environment:
+      NGINX_WORKER_PROCESSES: 1
     ports:
       - "80:80"
     volumes:

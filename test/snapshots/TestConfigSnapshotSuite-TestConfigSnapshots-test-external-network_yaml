@@ -1,6 +1,8 @@
 name: test-external-network
 services:
   web:
+    environment:
+      NGINX_WORKER_PROCESSES: "1"
     image: docker.io/nginx:alpine
     networks:
       br0: null

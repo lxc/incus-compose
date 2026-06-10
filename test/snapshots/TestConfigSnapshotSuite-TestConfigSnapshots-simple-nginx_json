@@ -4,6 +4,9 @@
     "web": {
       "command": null,
       "entrypoint": null,
+      "environment": {
+        "NGINX_WORKER_PROCESSES": "1"
+      },
       "image": "docker.io/nginx:alpine",
       "networks": {
         "default": null

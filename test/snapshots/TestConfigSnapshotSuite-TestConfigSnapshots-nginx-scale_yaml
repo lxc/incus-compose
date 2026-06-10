@@ -3,10 +3,14 @@ services:
   web:
     deploy:
       replicas: 2
+    environment:
+      NGINX_WORKER_PROCESSES: "1"
     image: docker.io/nginx:alpine
     networks:
       default: null
   web2:
+    environment:
+      NGINX_WORKER_PROCESSES: "1"
     image: docker.io/nginx:alpine
     networks:
       default: null

@@ -7,6 +7,8 @@ x-incus:
 services:
   web:
     image: docker.io/nginx:alpine
+    environment:
+      NGINX_WORKER_PROCESSES: 1
     deploy:
       replicas: 4
     x-incus:

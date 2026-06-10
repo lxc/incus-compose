@@ -40,6 +40,8 @@ services:
         published: "9090"
         protocol: tcp
   web:
+    environment:
+      NGINX_WORKER_PROCESSES: "1"
     image: docker.io/library/nginx:alpine
     networks:
       default: null

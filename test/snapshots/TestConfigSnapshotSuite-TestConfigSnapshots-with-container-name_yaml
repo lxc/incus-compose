@@ -2,6 +2,8 @@ name: with-container-name
 services:
   web:
     container_name: my-nginx
+    environment:
+      NGINX_WORKER_PROCESSES: "1"
     image: docker.io/nginx:alpine
     networks:
       default: null

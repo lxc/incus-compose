@@ -3,6 +3,8 @@ name: healthcheck-test
 services:
   web:
     image: docker.io/nginx:alpine
+    environment:
+      NGINX_WORKER_PROCESSES: 1
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost"]
       interval: 10s

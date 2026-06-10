@@ -1,8 +1,12 @@
 services:
   web:
     image: docker.io/nginx:alpine
+    environment:
+      NGINX_WORKER_PROCESSES: 1
     deploy:
       replicas: 2
 
   web2:
     image: docker.io/nginx:alpine
+    environment:
+      NGINX_WORKER_PROCESSES: 1
