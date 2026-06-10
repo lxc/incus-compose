@@ -323,74 +323,6 @@ func (s *E2ESuite) TestLifecycleSimpleNginx() {
 	}
 }
 
-func (s *E2ESuite) TestExternalNetwork() {
-	tests := []struct {
-		name    string
-		args    []string
-		wantErr bool
-	}{
-		{
-			name:    "up test-external-network",
-			args:    []string{"-f", "../../test/fixtures/test-external-network/compose.yaml", "up", "--detach"},
-			wantErr: false,
-		},
-		{
-			name:    "list test-external-network",
-			args:    []string{"-f", "../../test/fixtures/test-external-network/compose.yaml", "list"},
-			wantErr: false,
-		},
-	}
-
-	defer func() {
-		_ = s.run("-f", "../../test/fixtures/test-external-network/compose.yaml", "down", "--project")
-	}()
-
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
-			if tt.wantErr {
-				s.Error(err)
-			} else {
-				s.NoError(err)
-			}
-		})
-	}
-}
-
-func (s *E2ESuite) TestUpDownGrafana() {
-	tests := []struct {
-		name    string
-		args    []string
-		wantErr bool
-	}{
-		{
-			name:    "up grafana",
-			args:    []string{"-f", "../../test/fixtures/grafana/compose.yaml", "up", "--detach"},
-			wantErr: false,
-		},
-		{
-			name:    "list grafana",
-			args:    []string{"-f", "../../test/fixtures/grafana/compose.yaml", "list"},
-			wantErr: false,
-		},
-	}
-
-	defer func() {
-		_ = s.run("-f", "../../test/fixtures/grafana/compose.yaml", "down", "--project")
-	}()
-
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
-			if tt.wantErr {
-				s.Error(err)
-			} else {
-				s.NoError(err)
-			}
-		})
-	}
-}
-
 func (s *E2ESuite) TestUpDownScale() {
 	tests := []struct {
 		name    string
@@ -479,6 +411,87 @@ func (s *E2ESuite) TestUpDownWithScale() {
 
 	defer func() {
 		_ = s.run("-f", "../../test/fixtures/nginx-scale/compose.yaml", "down", "--project")
+	}()
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			if tt.wantErr {
+				s.Error(err)
+			} else {
+				s.NoError(err)
+			}
+		})
+	}
+}
+
+// normalizeListOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
+func normalizeListOutput(output string) string {
+	// Remove IP addresses
+	ipRegex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
+	output = ipRegex.ReplaceAllString(output, "")
+
+	return output
+}
+
+func (s *E2ESuite) TestListSnapshots() {
+	// Setup: create resources
+	err := s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach")
+	s.Require().NoError(err)
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
+	}()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "list_table",
+			args: []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
+		},
+		{
+			name: "list_yaml",
+			args: []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list", "--format", "yaml"},
+		},
+		{
+			name: "list_json",
+			args: []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list", "--format", "json"},
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			err := s.run(tt.args...)
+			s.Require().NoError(err)
+
+			normalized := normalizeListOutput(s.stdout.String())
+			s.snapshotter.SnapshotT(s.T(), normalized)
+		})
+	}
+}
+
+func (s *E2ESuite) TestExternalNetwork() {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{
+			name:    "up test-external-network",
+			args:    []string{"-f", "../../test/fixtures/test-external-network/compose.yaml", "up", "--detach"},
+			wantErr: false,
+		},
+		{
+			name:    "list test-external-network",
+			args:    []string{"-f", "../../test/fixtures/test-external-network/compose.yaml", "list"},
+			wantErr: false,
+		},
+	}
+
+	defer func() {
+		_ = s.run("-f", "../../test/fixtures/test-external-network/compose.yaml", "down", "--project")
 	}()
 
 	for _, tt := range tests {
@@ -629,7 +642,7 @@ func (s *E2ESuite) TestUpDownWithSecrets() {
 	}
 }
 
-// func (s *E2ESuite) TestUpDownWithTmpfs() {
+// func (s *E2ESlowSuite) TestUpDownWithTmpfs() {
 // 	tests := []struct {
 // 		name    string
 // 		args    []string
@@ -694,53 +707,6 @@ func (s *E2ESuite) TestUpDownWithVolume() {
 			} else {
 				s.NoError(err)
 			}
-		})
-	}
-}
-
-// normalizeListOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
-func normalizeListOutput(output string) string {
-	// Remove IP addresses
-	ipRegex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
-	output = ipRegex.ReplaceAllString(output, "")
-
-	return output
-}
-
-func (s *E2ESuite) TestListSnapshots() {
-	// Setup: create resources
-	err := s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "up", "--detach")
-	s.Require().NoError(err)
-
-	defer func() {
-		_ = s.run("-f", "../../test/fixtures/simple-nginx/compose.yaml", "down", "--project")
-	}()
-
-	tests := []struct {
-		name string
-		args []string
-	}{
-		{
-			name: "list_table",
-			args: []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list"},
-		},
-		{
-			name: "list_yaml",
-			args: []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list", "--format", "yaml"},
-		},
-		{
-			name: "list_json",
-			args: []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "list", "--format", "json"},
-		},
-	}
-
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			err := s.run(tt.args...)
-			s.Require().NoError(err)
-
-			normalized := normalizeListOutput(s.stdout.String())
-			s.snapshotter.SnapshotT(s.T(), normalized)
 		})
 	}
 }

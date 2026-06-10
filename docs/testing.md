@@ -92,9 +92,9 @@ The test cache is configured via `ClientProvideConnection` in test setup, pointi
 
 The nested Incus environment is configured via `.env` file:
 
-- `INCUS_COMPOSE_URL` - Nested Incus HTTPS endpoint
-- `INCUS_COMPOSE_CERT` - Client certificate path
-- `INCUS_COMPOSE_KEY` - Client key path
+- `INCUS_REMOTE` - The remote to use.
+
+Theres also `just test-slow` this includes slow as in long running tests.
 
 **First-time setup**:
 
