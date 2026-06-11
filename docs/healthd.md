@@ -153,6 +153,11 @@ The `healthd` command group manages the sidecar directly without touching servic
 error when no service in the project requires healthd (no healthcheck, no restart
 policy, no `service_healthy` dependency).
 
+Healthd debug logging is controlled by the global incus-compose `--debug` flag,
+which is inherited by healthd operations.
+Use `incus-compose --debug healthd up --recreate` to enable debug logs;
+omit `--debug` to keep normal log verbosity.
+
 ## Disabling the Sidecar
 
 ```bash
