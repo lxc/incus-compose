@@ -40,7 +40,7 @@ fix folder="./...":
 update-local-snapshots folder="./..." *args:
     go clean -testcache
     LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-update-local-snapshots.log; \
-        INCUS_COMPOSE_TEST_LOCAL=1 UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} | tee ${LOGFILE} || true; \
+        NO_COLOR=1 INCUS_COMPOSE_TEST_LOCAL=1 UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} | tee ${LOGFILE} || true; \
         echo `date +%Y%m%d-%H%M%S` >> "${LOGFILE}"; \
         echo "Log: ${LOGFILE}"
 
@@ -48,7 +48,7 @@ update-local-snapshots folder="./..." *args:
 update-snapshots folder="./..." *args:
     go clean -testcache
     LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-update-snapshots.log; \
-        UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} | tee ${LOGFILE} || true; \
+        NO_COLOR=1 UPDATE_SNAPSHOTS=true go test {{ folder }} -v {{ args }} | tee ${LOGFILE} || true; \
         echo `date +%Y%m%d-%H%M%S` >> "${LOGFILE}"; \
         echo "Log: ${LOGFILE}"
 
@@ -137,7 +137,7 @@ run-debug *args:
 test folder="./..." *args:
     @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
     LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-test.log; \
-        go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee ${LOGFILE} || EXIT_CODE=$?; \
+        NO_COLOR=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee ${LOGFILE} || EXIT_CODE=$?; \
         echo "Log: ${LOGFILE}"; \
         echo `date +%Y%m%d-%H%M%S` >> "${LOGFILE}"; \
         exit ${EXIT_CODE:-0}
@@ -146,7 +146,7 @@ test folder="./..." *args:
 test-slow folder="./..." *args:
     @if [[ ! -f .env ]]; then echo "Error: .env not found. Run 'just dev-install' first."; exit 1; fi
     LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-test-slow.log; \
-        INCUS_COMPOSE_TEST_SLOW=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee ${LOGFILE} || EXIT_CODE=$?; \
+        NO_COLOR=1 INCUS_COMPOSE_TEST_SLOW=1 go test {{ folder }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} | tee ${LOGFILE} || EXIT_CODE=$?; \
         echo "Log: ${LOGFILE}"; \
         echo `date +%Y%m%d-%H%M%S` >> "${LOGFILE}"; \
         exit ${EXIT_CODE:-0}
@@ -158,17 +158,17 @@ test-coverage folder="./..." *args:
     echo ""
     echo "For detailed HTML report, run: go tool cover -html=coverage.out"
 
-# Purge all dangling networks (0 users) from the configured remote
+# Purge all dangling networks (managed and 0 users) from the configured remote
 purge-networks:
     #!/usr/bin/env bash
     set -euo pipefail
 
     remote="${INCUS_REMOTE:-local}"
-    networks=$(incus --project default network list "${remote}:" -f json | jq -r '.[] | select(.used_by | length == 0) | .name')
+    networks=$(incus network list "${remote}:" -f json | jq -r '.[] | select(.used_by | length == 0) | select(.managed == true) | .name')
 
     if [[ -z "${networks}" ]]; then
         echo "No dangling networks found."
-        exit 0
+        exit 1
     fi
 
     echo "Deleting dangling networks on remote '${remote}':"
