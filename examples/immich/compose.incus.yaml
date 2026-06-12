@@ -47,3 +47,8 @@ networks:
     x-incus:
       ipv4.nat: "true"
       ipv4.address: 10.131.32.1/24
+
+volumes:
+  library:
+    x-incus-compose:
+      pool: ${UPLOAD_POOL}
