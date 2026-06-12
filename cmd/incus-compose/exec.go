@@ -112,13 +112,13 @@ func newExecCommand() *cli.Command {
 
 			// Build stack with the requested service and its dependencies
 			stack := client.NewStack(c)
-			err = p.ToStack(c, stack, project.ToStackFull(), project.ToStackOnlyServices([]string{service}))
+			err = p.ToStack(c, stack, project.ToStackFull(), project.ToStackOnlyServices([]string{service}), project.ToStackInstancesOnly())
 			if err != nil {
 				c.LogError(err.Error())
 				return errLogged.Wrap(err)
 			}
 
-			err = stack.Run(ctx, client.ActionEnsure)
+			err = stack.Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter)
 			if err != nil {
 				c.LogError(err.Error())
 				return errLogged.Wrap(err)

@@ -37,6 +37,8 @@ type healthdParams struct {
 	reCreate    bool
 	network     string // Incus bridge name; empty = auto-detect
 	timeout     time.Duration
+	stdout      io.Writer
+	stderr      io.Writer
 }
 
 // closingBufferReader wraps bytes.Reader to add a no-op Close.
@@ -291,12 +293,12 @@ func healthdUp(ctx context.Context, c *client.Client, inst *client.Instance, res
 		ensureOpts = append(ensureOpts, client.OptionPull())
 	}
 
-	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...); err != nil {
+	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, params.stdout, params.stderr, ensureOpts...); err != nil {
 		c.LogError("Creating healthd resources", "error", err)
 		return err
 	}
 
-	if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart); err != nil {
+	if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, params.stdout, params.stderr); err != nil {
 		c.LogError("Starting healthd resources", "error", err)
 		return err
 	}
@@ -324,7 +326,7 @@ func healthdUp(ctx context.Context, c *client.Client, inst *client.Instance, res
 }
 
 // healthdDown stops the instance, deletes it, and revokes its Incus trust certificate.
-func healthdDown(ctx context.Context, c *client.Client, inst *client.Instance, resources []client.Resource, timeout time.Duration) {
+func healthdDown(ctx context.Context, c *client.Client, inst *client.Instance, resources []client.Resource, timeout time.Duration, stdout, stderr io.Writer) {
 	stack := client.NewStack(c, client.StackSortDescending())
 
 	for _, r := range resources {
@@ -336,15 +338,15 @@ func healthdDown(ctx context.Context, c *client.Client, inst *client.Instance, r
 
 	c.LogDebug("Ensure", "resources", stack.All())
 
-	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
+	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, stdout, stderr); err != nil {
 		c.LogWarn("Ensuring healthd", "error", err)
 	}
 
-	if err := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
+	if err := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, stdout, stderr, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
 		c.LogWarn("Stopping healthd resources", "error", err)
 	}
 
-	if err := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
+	if err := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, stdout, stderr, client.OptionForce(), client.OptionTimeout(timeout)); err != nil {
 		c.LogWarn("Deleting healthd resources", "error", err)
 	}
 
@@ -482,6 +484,9 @@ func newHealthdLogsCommand() *cli.Command {
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			globalClient, err := clientFromContext(ctx)
 			if err != nil {
+				return err
+			}
+			if err := globalClient.Connect(); err != nil {
 				return err
 			}
 
@@ -736,6 +741,8 @@ func newHealthdUpCommand() *cli.Command {
 				reCreate:    cmd.Bool("recreate"),
 				network:     cmd.String("network"),
 				timeout:     cmd.Duration("timeout"),
+				stdout:      cmd.Root().Writer,
+				stderr:      cmd.Root().ErrWriter,
 			}
 
 			c, err := globalClient.EnsureProject(
@@ -757,7 +764,7 @@ func newHealthdUpCommand() *cli.Command {
 
 			if params.reCreate {
 				if existing, resources, err := healthdGetResources(c, params); err == nil {
-					healthdDown(ctx, c, existing, resources, params.timeout)
+					healthdDown(ctx, c, existing, resources, params.timeout, params.stdout, params.stderr)
 				}
 
 				c.ResetResources()
@@ -821,6 +828,8 @@ func newHealthdDownCommand() *cli.Command {
 				reCreate:    false,
 				network:     "auto",
 				timeout:     cmd.Duration("timeout"),
+				stdout:      cmd.Root().Writer,
+				stderr:      cmd.Root().ErrWriter,
 			}
 
 			c, err := globalClient.EnsureProject(p.Name)
@@ -844,7 +853,7 @@ func newHealthdDownCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			healthdDown(ctx, c, inst, resources, params.timeout)
+			healthdDown(ctx, c, inst, resources, params.timeout, params.stdout, params.stderr)
 			finish(true)
 			return err
 		},

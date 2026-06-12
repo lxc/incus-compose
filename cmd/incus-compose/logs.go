@@ -5,10 +5,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 
-	"github.com/mattn/go-colorable"
 	"github.com/urfave/cli/v3"
 
 	"gitlab.com/r3j0/incus-compose/client"
@@ -175,54 +173,40 @@ func newLogsCommand() *cli.Command {
 			}
 			defer func() { _ = c.Done() }()
 
-			var out io.Writer
-			if f, ok := cmd.Root().Writer.(*os.File); ok {
-				out = colorable.NewColorable(f)
-			} else {
-				out = cmd.Root().Writer
+			formatter := newLogFormatter(cmd.Root().Writer, noColor)
+			globalClient.SetOutputHandler(formatter.write)
+
+			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice())}
+			if cmd.Bool("with-deps") {
+				stackOpts = append(stackOpts, project.ToStackWithDeps())
 			}
 
-			return runLogs(ctx, globalClient, c, p, cmd.Args().Slice(), cmd.Bool("follow"), cmd.Bool("with-deps"), out)
+			stack := client.NewStack(c)
+			if err := p.ToStack(c, stack, stackOpts...); err != nil {
+				c.LogError(err.Error())
+				return errLogged.Wrap(err)
+			}
+
+			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
+				c.LogWarn("Ensuring the stack", "error", err)
+			}
+
+			for _, r := range stack.ForAction(client.ActionLog).All() {
+				formatter.registerService(r.Name())
+			}
+
+			var opts []client.Option
+			if cmd.Bool("follow") {
+				opts = append(opts, client.OptionFollow())
+			}
+
+			if err := stack.ForAction(client.ActionLog).Run(ctx, client.ActionLog, cmd.Root().Writer, cmd.Root().ErrWriter, opts...); err != nil {
+				c.LogError("Getting logs", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			formatter.flush()
+			return nil
 		},
 	}
-}
-
-// runLogs streams logs from the given services using an already-open client.
-// When withDeps is set the selection follows depends_on, matching the linked
-// services that `up` started.
-func runLogs(ctx context.Context, globalClient *client.GlobalClient, c *client.Client, p *project.Project, services []string, follow, withDeps bool, out io.Writer) error {
-	formatter := newLogFormatter(out, noColor)
-	globalClient.SetOutputHandler(formatter.write)
-
-	stackOpts := []project.ToStackOption{project.ToStackOnlyServices(services)}
-	if withDeps {
-		stackOpts = append(stackOpts, project.ToStackWithDeps())
-	}
-
-	stack := client.NewStack(c)
-	if err := p.ToStack(c, stack, stackOpts...); err != nil {
-		c.LogError(err.Error())
-		return errLogged.Wrap(err)
-	}
-
-	if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
-		c.LogWarn("Ensuring the stack", "error", err)
-	}
-
-	for _, r := range stack.ForAction(client.ActionLog).All() {
-		formatter.registerService(r.Name())
-	}
-
-	var opts []client.Option
-	if follow {
-		opts = append(opts, client.OptionFollow())
-	}
-
-	if err := stack.ForAction(client.ActionLog).Run(ctx, client.ActionLog, opts...); err != nil {
-		c.LogError("Getting logs", "error", err)
-		return errLogged.Wrap(err)
-	}
-
-	formatter.flush()
-	return nil
 }

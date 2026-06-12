@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/urfave/cli/v3"
@@ -23,6 +22,14 @@ func newDownCommand() *cli.Command {
 				// The alias volumes is for docker-compose compatibility
 				Aliases: []string{"volumes"},
 				Usage:   "Remove the project",
+			},
+			&cli.StringFlag{
+				Name:  "rmi",
+				Usage: `Remove images used by services. "local" for known images.`,
+			},
+			&cli.BoolFlag{
+				Name:  "images",
+				Usage: `Remove known images from the project.`,
 			},
 			&cli.DurationFlag{
 				Name:  "timeout",
@@ -72,7 +79,17 @@ func newDownCommand() *cli.Command {
 
 			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackReverse()}
 			if !cmd.Bool("no-deps") {
-				stackOpts = append(stackOpts, project.ToStackWithDeps())
+				if cmd.Args().Len() > 0 {
+					stackOpts = append(stackOpts, project.ToStackInstancesOnly())
+				} else {
+					stackOpts = append(stackOpts, project.ToStackWithDeps())
+				}
+			} else {
+				stackOpts = append(stackOpts, project.ToStackInstancesOnly())
+			}
+
+			if !cmd.Bool("images") && cmd.String("rmi") != "local" && cmd.String("rmi") != "all" {
+				stackOpts = append(stackOpts, project.ToStackNoImages())
 			}
 
 			stack := client.NewStack(c)
@@ -81,9 +98,7 @@ func newDownCommand() *cli.Command {
 				return errLogged
 			}
 
-			var errs error
-
-			if err := stack.Run(ctx, client.ActionEnsure); err != nil {
+			if err := stack.Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
 				c.LogWarn("Getting resources", "error", err)
 			}
 
@@ -98,20 +113,19 @@ func newDownCommand() *cli.Command {
 				return nil
 			}
 
-			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout")))
+			runOpts := []client.Option{
+				client.OptionForce(),
+				client.OptionTimeout(cmd.Duration("timeout")),
+			}
+
+			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, runOpts...)
 			if errStop != nil {
 				c.LogWarn("Stopping resources", "error", errStop)
-				errs = errors.Join(errs, errStop)
 			}
 
-			errDel := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, client.OptionForce(), client.OptionTimeout(cmd.Duration("timeout")))
+			errDel := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, cmd.Root().Writer, cmd.Root().ErrWriter, runOpts...)
 			if errDel != nil {
 				c.LogWarn("Deleting resources", "error", errDel)
-				errs = errors.Join(errs, errDel)
-			}
-
-			if errs != nil {
-				return errLogged.Wrap(errs)
 			}
 
 			finish(err == nil)

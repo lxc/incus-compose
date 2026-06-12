@@ -66,7 +66,9 @@ func newRestartCommand() *cli.Command {
 
 			// Without --with-deps the linked services are not in scope; skip the
 			// healthd interaction/dependency waits that target out-of-scope services.
-			runOpts := []client.Option{client.OptionTimeout(timeout)}
+			runOpts := []client.Option{
+				client.OptionTimeout(timeout),
+			}
 			if !withDeps {
 				runOpts = append(runOpts, client.OptionNoHealthd())
 			}
@@ -74,6 +76,8 @@ func newRestartCommand() *cli.Command {
 			stopStackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackReverse()}
 			if withDeps {
 				stopStackOpts = append(stopStackOpts, project.ToStackWithDeps())
+			} else {
+				stopStackOpts = append(stopStackOpts, project.ToStackInstancesOnly())
 			}
 
 			stack := client.NewStack(c)
@@ -84,14 +88,19 @@ func newRestartCommand() *cli.Command {
 			}
 
 			var errs error
-			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
+			if err := stack.ForAction(client.ActionEnsure).Run(
+				ctx,
+				client.ActionEnsure,
+				cmd.Root().Writer,
+				cmd.Root().ErrWriter,
+			); err != nil {
 				c.LogError("Getting resources", "error", err)
 				errs = errors.Join(errs, err)
 			}
 
 			finish := startProgress(globalClient, c, cmd.Root().Writer)
 
-			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, append([]client.Option{client.OptionForce()}, runOpts...)...)
+			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, append([]client.Option{client.OptionForce()}, runOpts...)...)
 			if errStop != nil {
 				c.LogWarn("Stopping resources", "error", errStop)
 				errs = errors.Join(errs, errStop)
@@ -103,6 +112,8 @@ func newRestartCommand() *cli.Command {
 			startStackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice())} // No reverse here
 			if withDeps {
 				startStackOpts = append(startStackOpts, project.ToStackWithDeps())
+			} else {
+				startStackOpts = append(startStackOpts, project.ToStackInstancesOnly())
 			}
 
 			stack = client.NewStack(c)
@@ -112,12 +123,17 @@ func newRestartCommand() *cli.Command {
 				errs = errors.Join(errs, errStop)
 			}
 
-			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
+			if err := stack.ForAction(client.ActionEnsure).Run(
+				ctx,
+				client.ActionEnsure,
+				cmd.Root().Writer,
+				cmd.Root().ErrWriter,
+			); err != nil {
 				c.LogError("Getting resources", "error", err)
 				errs = errors.Join(errs, err)
 			}
 
-			errStart := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, runOpts...)
+			errStart := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, cmd.Root().Writer, cmd.Root().ErrWriter, runOpts...)
 			if errStart != nil {
 				c.LogError("Starting resources", "error", errStart)
 				errs = errors.Join(errs, errStart)

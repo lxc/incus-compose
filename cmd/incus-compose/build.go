@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 
 	"github.com/urfave/cli/v3"
 
@@ -62,53 +63,59 @@ func newBuildCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			// This populates client.resources
 			stack := client.NewStack(c)
-			err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()))
+			err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackImagesOnly())
 			if err != nil {
 				c.LogError("Creating the stack", "error", err)
 				return errLogged.Wrap(err)
 			}
 
-			// Collect only build-configured images from the compose project.
 			noCache := cmd.Bool("no-cache")
 			pull := cmd.String("pull")
 
-			stack = client.NewStack(c)
-			instances, err := client.ByKind[*client.Instance](
-				c.Resources().All(),
-				client.KindInstance,
-			)
-			if err != nil {
-				c.LogError("Getting instances", "error", err)
-				return errLogged.Wrap(err)
-			}
+			images := []*client.Image{}
+			for _, r := range stack.All() {
+				img, ok := r.(*client.Image)
+				if !ok {
+					continue
+				}
 
-			for _, i := range instances {
-				r, err := c.Resource(client.KindImage, i.Config.Image, &client.ImageConfig{})
-				if err != nil {
-					c.LogError("Getting an image", "error", err)
-					return errLogged.Wrap(err)
+				if img.Config.Build == nil {
+					continue
 				}
 
 				if noCache {
-					img, ok := r.(*client.Image)
-					if !ok {
-						continue
-					}
-
 					img.Config.Build.NoCache = noCache
 				}
 
-				stack.Add(r)
+				images = append(images, img)
 			}
 
-			ensureOpts := []client.Option{client.OptionCreate(), client.OptionBuild(client.BuildInfo{Mode: client.BuildForce, PreferredBuilder: cmd.String("builder")})}
+			if len(images) < 1 {
+				if cmd.Args().Len() > 0 {
+					err = errors.New("no build-configured services matched the filter")
+					c.LogError(err.Error())
+					return errLogged.Wrap(err)
+				}
+
+				c.LogInfo("No services have a build configuration")
+				return nil
+			}
+
+			buildInfo := client.BuildInfo{
+				Mode:             client.BuildForce,
+				PreferredBuilder: cmd.String("builder"),
+			}
+
+			ensureOpts := []client.Option{
+				client.OptionCreate(),
+				client.OptionBuild(buildInfo),
+			}
 			if pull == "always" {
 				ensureOpts = append(ensureOpts, client.OptionPull())
 			}
 
-			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, ensureOpts...)
+			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter, ensureOpts...)
 			if err != nil {
 				c.LogError("Ensuring resources", "error", err)
 				return errLogged.Wrap(err)

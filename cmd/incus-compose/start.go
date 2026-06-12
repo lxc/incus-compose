@@ -67,6 +67,8 @@ func newStartCommand() *cli.Command {
 			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice())}
 			if withDeps {
 				stackOpts = append(stackOpts, project.ToStackWithDeps())
+			} else {
+				stackOpts = append(stackOpts, project.ToStackInstancesOnly())
 			}
 
 			stack := client.NewStack(c)
@@ -77,20 +79,27 @@ func newStartCommand() *cli.Command {
 			}
 
 			var errs error
-			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
+			if err := stack.ForAction(client.ActionEnsure).Run(
+				ctx,
+				client.ActionEnsure,
+				cmd.Root().Writer,
+				cmd.Root().ErrWriter,
+			); err != nil {
 				c.LogError("Getting resources", "error", err)
 				errs = errors.Join(errs, err)
 			}
 
 			// Without --with-deps the linked services are not in scope, so don't
 			// wait on healthd dependency conditions that can never be satisfied.
-			startOpts := []client.Option{client.OptionTimeout(timeout)}
+			startOpts := []client.Option{
+				client.OptionTimeout(timeout),
+			}
 			if !withDeps {
 				startOpts = append(startOpts, client.OptionNoHealthd())
 			}
 
 			finish := startProgress(globalClient, c, cmd.Root().Writer)
-			errStart := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, startOpts...)
+			errStart := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, cmd.Root().Writer, cmd.Root().ErrWriter, startOpts...)
 			finish(errStart == nil)
 			if errStart != nil {
 				c.LogError("Starting resources", "error", errStart)

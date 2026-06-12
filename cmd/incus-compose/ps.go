@@ -92,7 +92,7 @@ func newPsCommand() *cli.Command {
 			}
 
 			// Run ensure (without create) to populate resource metadata/state where possible.
-			if err := stack.Run(ctx, client.ActionEnsure); err != nil {
+			if err := stack.Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
 				c.LogWarn("Ensuring the stack", "error", err)
 			}
 
@@ -130,25 +130,28 @@ func newPsCommand() *cli.Command {
 					continue
 				}
 
+				inst, ok := r.(*client.Instance)
+				if !ok {
+					continue
+				}
+
 				status := "Unknown"
 				if r.IsEnsured() {
 					status = "Exists"
 				}
 
-				incusName := r.IncusName()
-
 				// Default entry with minimal info. We'll try to fill from Instance resource if available.
 				entry := psEntry{
-					Service:   r.Name(),
-					Name:      r.Name(),
-					IncusName: incusName,
+					Service:   inst.ServiceName(),
+					Name:      inst.Name(),
+					IncusName: inst.IncusName(),
 					Image:     "",
 					Status:    status,
 					Addresses: []string{},
 				}
 
 				// If resource is an Instance resource and has full details, use them.
-				if inst, ok := r.(*client.Instance); ok && r.IsEnsured() && inst.HasFull() {
+				if inst.IsEnsured() && inst.HasFull() {
 					full := inst.IncusInstanceFull
 					if full == nil || full.State == nil {
 						continue
@@ -233,9 +236,8 @@ func newPsCommand() *cli.Command {
 						Status:    o.Status,
 						Addresses: []string{},
 					}
-					addIfMatches(e)
-					if cmd.Bool("services") {
-						seenServices[e.Service] = struct{}{}
+					if !cmd.Bool("services") {
+						addIfMatches(e)
 					}
 				}
 			}()

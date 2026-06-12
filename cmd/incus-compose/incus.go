@@ -40,8 +40,8 @@ func newIncusCommand() *cli.Command {
 
 			execCmd := exec.CommandContext(ctx, execPath, cmd.Args().Slice()...) //nolint:gosec
 			execCmd.Stdin = os.Stdin
-			execCmd.Stdout = os.Stdout
-			execCmd.Stderr = os.Stderr
+			execCmd.Stdout = cmd.Root().Writer
+			execCmd.Stderr = cmd.Root().ErrWriter
 			execCmd.Env = append(os.Environ(), "INCUS_PROJECT="+incusProject)
 
 			if err := execCmd.Run(); err != nil {

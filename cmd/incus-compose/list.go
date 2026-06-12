@@ -179,7 +179,7 @@ func newListCommand() *cli.Command {
 				}
 			}
 
-			err = stack.Run(ctx, client.ActionEnsure)
+			err = stack.Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter)
 			if err != nil {
 				c.LogWarn(err.Error())
 			}
@@ -187,9 +187,6 @@ func newListCommand() *cli.Command {
 			var rErr error
 
 			w := cmd.Root().Writer
-			if w == nil {
-				w = os.Stdout
-			}
 			if cmd.String("output") != "" {
 				fd, err := os.OpenFile(cmd.String("output"), os.O_APPEND|os.O_CREATE, 0o644)
 				if err != nil {
@@ -200,7 +197,7 @@ func newListCommand() *cli.Command {
 				w = fd
 			}
 
-			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure)
+			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter)
 			if err != nil {
 				c.LogWarn("Ensuring the stack", "error", "err")
 			}

@@ -67,6 +67,8 @@ func newStopCommand() *cli.Command {
 			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackReverse()}
 			if withDeps {
 				stackOpts = append(stackOpts, project.ToStackWithDeps())
+			} else {
+				stackOpts = append(stackOpts, project.ToStackInstancesOnly())
 			}
 
 			stack := client.NewStack(c)
@@ -77,20 +79,28 @@ func newStopCommand() *cli.Command {
 			}
 
 			var errs error
-			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
+			if err := stack.ForAction(client.ActionEnsure).Run(
+				ctx,
+				client.ActionEnsure,
+				cmd.Root().Writer,
+				cmd.Root().ErrWriter,
+			); err != nil {
 				c.LogError("Getting resources", "error", err)
 				errs = errors.Join(errs, err)
 			}
 
 			// Without --with-deps the linked services are not in scope; skip the
 			// healthd interaction that targets out-of-scope dependencies.
-			stopOpts := []client.Option{client.OptionForce(), client.OptionTimeout(timeout)}
+			stopOpts := []client.Option{
+				client.OptionForce(),
+				client.OptionTimeout(timeout),
+			}
 			if !withDeps {
 				stopOpts = append(stopOpts, client.OptionNoHealthd())
 			}
 
 			finish := startProgress(globalClient, c, cmd.Root().Writer)
-			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, stopOpts...)
+			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, stopOpts...)
 			finish(errStop == nil)
 			if errStop != nil {
 				c.LogWarn("Stopping resources", "error", errStop)

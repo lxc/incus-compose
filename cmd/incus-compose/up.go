@@ -3,12 +3,10 @@ package main
 import (
 	"context"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/mattn/go-colorable"
 	"github.com/urfave/cli/v3"
 
 	"gitlab.com/r3j0/incus-compose/client"
@@ -69,7 +67,7 @@ func newUpCommand() *cli.Command {
 			&cli.BoolFlag{
 				Name:    "detach",
 				Aliases: []string{"d"},
-				Usage:   "Detached mode: run containers in the background",
+				Usage:   "Detached mode: run containers in the background (a WIP)",
 			},
 			&cli.BoolFlag{
 				Name:  "no-healthd",
@@ -145,6 +143,8 @@ func newUpCommand() *cli.Command {
 					reCreate:    cmd.Bool("recreate"),
 					network:     cmd.String("healthd-network"),
 					timeout:     cmd.Duration("timeout"),
+					stdout:      cmd.Root().Writer,
+					stderr:      cmd.Root().ErrWriter,
 				}
 
 				inst, resources, err := healthdGetResources(c, hparams)
@@ -169,20 +169,24 @@ func newUpCommand() *cli.Command {
 			} else if cmd.Bool("no-build") {
 				buildMode = client.BuildNever
 			}
+			buildInfo := client.BuildInfo{
+				Mode:             buildMode,
+				PreferredBuilder: cmd.String("builder"),
+			}
+
 			params := upParams{
-				reCreate: cmd.Bool("recreate"),
-				start:    !cmd.Bool("no-start"),
-				healthd:  usesHealthd,
-				deps:     !cmd.Bool("no-deps"),
-				services: cmd.Args().Slice(),
-				pull:     cmd.String("pull"),
-				build: client.BuildInfo{
-					Mode:             buildMode,
-					PreferredBuilder: cmd.String("builder"),
-				},
+				reCreate:          cmd.Bool("recreate"),
+				start:             !cmd.Bool("no-start"),
+				healthd:           usesHealthd,
+				deps:              !cmd.Bool("no-deps"),
+				services:          cmd.Args().Slice(),
+				pull:              cmd.String("pull"),
+				build:             buildInfo,
 				timeout:           cmd.Duration("timeout"),
 				dependencyTimeout: cmd.Duration("dependency-timeout"),
 				scale:             parseScale(cmd.StringSlice("scale")),
+				stdout:            cmd.Root().Writer,
+				stderr:            cmd.Root().ErrWriter,
 			}
 			if err := runUp(ctx, globalClient, c, p, params); err != nil {
 				_ = c.Done()
@@ -191,17 +195,6 @@ func newUpCommand() *cli.Command {
 				return err
 			}
 			_ = c.Done()
-			if params.start && !cmd.Bool("detach") {
-				var out io.Writer
-				if f, ok := cmd.Root().Writer.(*os.File); ok {
-					out = colorable.NewColorable(f)
-				} else {
-					out = cmd.Root().Writer
-				}
-
-				finish(err == nil)
-				return runLogs(ctx, globalClient, c, p, params.services, true, params.deps, out)
-			}
 
 			finish(err == nil)
 
@@ -224,6 +217,8 @@ type upParams struct {
 	timeout           time.Duration
 	dependencyTimeout time.Duration
 	scale             map[string]int
+	stdout            io.Writer
+	stderr            io.Writer
 }
 
 // parseScale parses --scale flags of the form "service=num".
@@ -243,7 +238,10 @@ func parseScale(values []string) map[string]int {
 // runUp creates (and optionally starts) the services of a loaded project.
 func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Client, p *project.Project, params upParams) error {
 	runOptions := []client.Option{client.OptionTimeout(params.timeout)}
-	if !params.healthd {
+	// With --no-deps the linked services are out of scope, so don't wait on
+	// healthd dependency conditions (depends_on: service_healthy) that can never
+	// be satisfied because those dependencies were never started.
+	if !params.healthd || !params.deps {
 		runOptions = append(runOptions, client.OptionNoHealthd())
 	}
 
@@ -282,11 +280,11 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 		recreateOptions := append(runOptions, client.OptionForce())
 
 		// Ensure without create for "recreate" (resolution only, no progress).
-		if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure); err != nil {
+		if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, params.stdout, params.stderr); err != nil {
 			c.LogDebug("Ensuring for reCreate", "error", err)
 		} else {
 			// Stop
-			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, recreateOptions...)
+			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, params.stdout, params.stderr, recreateOptions...)
 			if errStop != nil {
 				c.LogDebug("Stopping resources", "error", errStop)
 			}
@@ -294,7 +292,7 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 			// Delete
 			deleteStack := stack.ForAction(client.ActionDelete)
 			c.LogDebug("Recreate delete", "resources", deleteStack.All())
-			errDel := deleteStack.Run(ctx, client.ActionDelete, recreateOptions...)
+			errDel := deleteStack.Run(ctx, client.ActionDelete, params.stdout, params.stderr, recreateOptions...)
 			if errDel != nil {
 				c.LogDebug("Deleting resources", "error", errDel)
 			}
@@ -334,7 +332,7 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 		startOptions = append(startOptions, client.OptionDependencyTimeout(params.dependencyTimeout))
 	}
 
-	err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, startOptions...)
+	err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, params.stdout, params.stderr, startOptions...)
 	if err != nil {
 		c.LogError("Ensuring resources", "error", err)
 		return errLogged.Wrap(err)
@@ -342,7 +340,7 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 
 	// Start
 	if params.start {
-		if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, startOptions...); err != nil {
+		if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, params.stdout, params.stderr, startOptions...); err != nil {
 			c.LogError("Starting resources", "error", err)
 			return errLogged.Wrap(err)
 		}

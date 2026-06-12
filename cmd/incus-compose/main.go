@@ -182,6 +182,12 @@ func newRootCommand() *cli.Command {
 				Usage: `Default storage pool to use, 'detect' will auto detect the name`,
 				Value: "detect",
 			},
+			&cli.StringFlag{
+				Name:    "image-cache",
+				Usage:   `Image cache project to use`,
+				Value:   "default",
+				Sources: cli.EnvVars("INCUS_COMPOSE_IMAGE_CACHE"),
+			},
 			&cli.StringSliceFlag{
 				Name:    "file",
 				Aliases: []string{"f"},
@@ -230,18 +236,13 @@ func newRootCommand() *cli.Command {
 
 			// Connect to Incus server.
 			// Priority: INCUS_COMPOSE_URL -> INCUS_REMOTE/--remote -> incus CLI default remote
-			cacheProject := "default"
-			if v, ok := os.LookupEnv("INCUS_COMPOSE_IMAGE_CACHE"); ok {
-				cacheProject = v
-			}
-
 			// Use Incus CLI config (explicit --remote flag, or configured default remote)
 			conf, err := cliconfig.LoadConfig("")
 			if err != nil {
 				return ctx, err
 			}
 
-			remote := cmd.Root().String("remote")
+			remote := cmd.String("remote")
 			if remote == "" {
 				remote = conf.DefaultRemote
 			}
@@ -254,7 +255,7 @@ func newRootCommand() *cli.Command {
 			opts := []client.ClientOption{
 				client.ClientLogger(slog.Default()),
 				client.ClientProvideInstanceServer(server),
-				client.ClientCacheProject(cacheProject),
+				client.ClientCacheProject(cmd.String("image-cache")),
 				client.ClientDefaultStoragePool(cmd.String("storage-pool")),
 			}
 
