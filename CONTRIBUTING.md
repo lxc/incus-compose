@@ -179,7 +179,7 @@ chore(client): rename Resource interface method
 
 For comprehensive testing documentation including patterns, fixtures, and best practices, see [docs/testing.md](docs/testing.md).
 
-We use `testify/suite` for all tests. Tests are categorized as unit tests (using mocks) or integration tests (using real Incus instances).
+Tests are categorized as unit tests (using mocks) or integration tests (using real Incus instances).
 
 ## Docker Compose Compatibility
 
