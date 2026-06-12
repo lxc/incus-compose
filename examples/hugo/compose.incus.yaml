@@ -1,0 +1,24 @@
+services:
+  blog:
+    build:
+      args:
+        BASE_URL: http://10.134.32.17
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    x-incus:
+      limits.cpu: 1
+    ports: !reset []
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      default:
+        ipv4_address: 10.134.32.17
+
+networks:
+  default:
+    x-incus:
+      ipv4.nat: "true"
+      ipv4.address: 10.134.32.1/24

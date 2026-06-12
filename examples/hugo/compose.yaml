@@ -1,0 +1,22 @@
+services:
+  blog:
+    build:
+      args:
+        BASE_URL: http://localhost:8080
+      dockerfile_inline: |-
+        ARG BASE_URL
+
+        FROM docker.io/alpine:latest AS builder
+
+        RUN echo "${BASE_URL}"
+
+        RUN apk add --no-cache hugo
+        WORKDIR /site
+        COPY site/ .
+        RUN hugo build -b "${BASE_URL}"
+
+        FROM docker.io/nginxinc/nginx-unprivileged:alpine
+        COPY --from=builder /site/public /usr/share/nginx/html
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
