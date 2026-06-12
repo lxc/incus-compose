@@ -5,9 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
 )
 
 // ----------------------------------------------------------------------------
@@ -15,6 +13,8 @@ import (
 // ----------------------------------------------------------------------------
 
 func TestNetworkNameForProject(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		projectName string
@@ -54,33 +54,31 @@ func TestNetworkNameForProject(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := sanitizeNetworkName(tt.projectName, tt.prefix, tt.networkName)
 
-			// All results should fit within maxInterfaceNameLen
-			assert.LessOrEqual(t, len(result), maxInterfaceNameLen, "Network name too long")
+			require.LessOrEqual(t, len(result), maxInterfaceNameLen, "Network name too long")
 
-			// Hash-based names should have the ic- prefix
 			if len(tt.projectName+"-"+tt.networkName) > maxInterfaceNameLen && tt.prefix != "" {
-				assert.True(t, strings.HasPrefix(result, tt.prefix))
-				assert.Len(t, result, len(tt.prefix)+networkNameHashLen) // prefix + 10 char hash
+				require.True(t, strings.HasPrefix(result, tt.prefix))
+				require.Len(t, result, len(tt.prefix)+networkNameHashLen)
 			}
 
-			// Should not contain underscores
-			assert.NotContains(t, result, "_")
+			require.NotContains(t, result, "_")
 
-			// Determinism: same input should produce same output
 			result2 := sanitizeNetworkName(tt.projectName, tt.prefix, tt.networkName)
-			assert.Equal(t, result, result2, "Network name generation should be deterministic")
+			require.Equal(t, result, result2, "Network name generation should be deterministic")
 		})
 	}
 
 	p1n1 := sanitizeNetworkName("p1", "ic-", "n1")
 	p2n1 := sanitizeNetworkName("p2", "ic-", "n1")
-
-	assert.NotEqual(t, p1n1, p2n1, "Same name different projects should give different names")
+	require.NotEqual(t, p1n1, p2n1, "Same name different projects should give different names")
 }
 
 func TestNetworkCreateConfig(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		extensions map[string]string
@@ -123,14 +121,17 @@ func TestNetworkCreateConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := networkCreateConfig(tt.extensions)
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
 
 func TestDNSmasqRecords(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		serviceIPs map[string][]string
@@ -165,7 +166,8 @@ func TestDNSmasqRecords(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, dnsmasqRecords(tt.serviceIPs))
+			t.Parallel()
+			require.Equal(t, tt.expected, dnsmasqRecords(tt.serviceIPs))
 		})
 	}
 }
@@ -175,6 +177,7 @@ func TestDNSmasqRecords(t *testing.T) {
 // ----------------------------------------------------------------------------
 
 func TestCandidateNames_WithOverride(t *testing.T) {
+	t.Parallel()
 	c := NewOfflineClient(context.Background(), "myproject")
 	r, err := c.Resource(KindNetwork, "shared", &NetworkConfig{
 		External:     true,
@@ -186,13 +189,14 @@ func TestCandidateNames_WithOverride(t *testing.T) {
 
 	candidates := net.candidateNames()
 	require.Len(t, candidates, 4)
-	assert.Equal(t, "my-production-net", candidates[0], "override raw first")
-	assert.True(t, strings.HasPrefix(candidates[1], "ic-"), "override sanitized second")
-	assert.Equal(t, "shared", candidates[2], "compose name raw third")
-	assert.True(t, strings.HasPrefix(candidates[3], "ic-"), "compose name sanitized fourth")
+	require.Equal(t, "my-production-net", candidates[0], "override raw first")
+	require.True(t, strings.HasPrefix(candidates[1], "ic-"), "override sanitized second")
+	require.Equal(t, "shared", candidates[2], "compose name raw third")
+	require.True(t, strings.HasPrefix(candidates[3], "ic-"), "compose name sanitized fourth")
 }
 
 func TestCandidateNames_WithoutOverride(t *testing.T) {
+	t.Parallel()
 	c := NewOfflineClient(context.Background(), "myproject")
 	r, err := c.Resource(KindNetwork, "shared", &NetworkConfig{External: true})
 	require.NoError(t, err)
@@ -201,13 +205,12 @@ func TestCandidateNames_WithoutOverride(t *testing.T) {
 
 	candidates := net.candidateNames()
 	require.Len(t, candidates, 2)
-	assert.Equal(t, "shared", candidates[0], "compose name raw first")
-	assert.True(t, strings.HasPrefix(candidates[1], "ic-"), "compose name sanitized second")
+	require.Equal(t, "shared", candidates[0], "compose name raw first")
+	require.True(t, strings.HasPrefix(candidates[1], "ic-"), "compose name sanitized second")
 }
 
 func TestCandidateNames_DeduplicatesShortName(t *testing.T) {
-	// With empty project name, sanitize(name) == name for short names.
-	// The raw and sanitized candidates collapse into one entry.
+	t.Parallel()
 	c := NewOfflineClient(context.Background(), "")
 	r, err := c.Resource(KindNetwork, "mynet", &NetworkConfig{External: true})
 	require.NoError(t, err)
@@ -216,463 +219,497 @@ func TestCandidateNames_DeduplicatesShortName(t *testing.T) {
 
 	candidates := net.candidateNames()
 	require.Len(t, candidates, 1, "raw and sanitized are the same — should deduplicate")
-	assert.Equal(t, "mynet", candidates[0])
+	require.Equal(t, "mynet", candidates[0])
 }
 
 // ----------------------------------------------------------------------------
-// Integration Tests
+// Local-only Tests (no Incus required)
 // ----------------------------------------------------------------------------
 
-// NetworkSuite tests Network operations against a real Incus instance.
-type NetworkSuite struct {
-	suite.Suite
-	ctx          context.Context
-	globalClient *GlobalClient
-	client       *Client
+func TestNetworkResource_ReturnsSameInstance(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "network-test")
+
+	r1, err := c.Resource(KindNetwork, "test-same", &NetworkConfig{})
+	require.NoError(t, err)
+
+	r2, err := c.Resource(KindNetwork, "test-same", &NetworkConfig{})
+	require.NoError(t, err)
+
+	require.Same(t, r1, r2)
 }
 
-// SetupSuite runs once before all tests.
-func (s *NetworkSuite) SetupSuite() {
-	s.ctx = context.Background()
+func TestNetworkResource_DifferentNamesAreDifferent(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "network-test")
 
-	gc, err := NewTestClient(s.ctx)
-	if err != nil {
-		s.T().Skipf("Skipping tests: %v", err)
-		return
-	}
-	s.globalClient = gc
+	r1, err := c.Resource(KindNetwork, "network-a", &NetworkConfig{})
+	require.NoError(t, err)
+
+	r2, err := c.Resource(KindNetwork, "network-b", &NetworkConfig{})
+	require.NoError(t, err)
+
+	require.NotSame(t, r1, r2)
 }
 
-// SetupTest runs before each test - creates fresh project.
-func (s *NetworkSuite) SetupTest() {
-	client, err := createProjectClient(s.globalClient, "")
-	if err != nil {
-		s.T().Fatalf("Failed to create test project: %v", err)
-	}
-	s.client = client
+func TestNetworkIncusName_ShortName(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "network-test")
+
+	r, err := c.Resource(KindNetwork, "web", &NetworkConfig{})
+	require.NoError(t, err)
+
+	network, ok := r.(*Network)
+	require.True(t, ok)
+	require.LessOrEqual(t, len(network.IncusName()), maxInterfaceNameLen)
 }
 
-// TearDownTest runs after each test - cleans up project.
-func (s *NetworkSuite) TearDownTest() {
-	if s.client != nil {
-		if err := s.globalClient.DeleteProject(s.client.Project(), true); err != nil {
-			s.T().Fatalf("Failed to delete the project after run: %v", err)
-		}
-	}
+func TestNetworkIncusName_LongNameHashed(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "network-test")
+
+	r, err := c.Resource(KindNetwork, "very-long-network-name", &NetworkConfig{})
+	require.NoError(t, err)
+
+	network, ok := r.(*Network)
+	require.True(t, ok)
+	require.LessOrEqual(t, len(network.IncusName()), maxInterfaceNameLen)
+	require.True(t, strings.HasPrefix(network.IncusName(), "ic-"))
+}
+
+func TestNetworkIncusName_Deterministic(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "network-test")
+
+	r1, err := c.Resource(KindNetwork, "det-test", &NetworkConfig{})
+	require.NoError(t, err)
+
+	r2, err := c.Resource(KindNetwork, "det-test", &NetworkConfig{})
+	require.NoError(t, err)
+
+	network1, ok := r1.(*Network)
+	require.True(t, ok)
+	network2, ok := r2.(*Network)
+	require.True(t, ok)
+	require.Equal(t, network1.IncusName(), network2.IncusName())
+}
+
+func TestNetworkExternal_InitialIncusNameIsRaw(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "network-test")
+
+	r, err := c.Resource(KindNetwork, "incusbr0", &NetworkConfig{External: true})
+	require.NoError(t, err)
+
+	network, ok := r.(*Network)
+	require.True(t, ok)
+	require.Equal(t, "incusbr0", network.IncusName())
 }
 
 // ----------------------------------------------------------------------------
 // Ensure Tests
 // ----------------------------------------------------------------------------
 
-func (s *NetworkSuite) TestEnsure_WithCreate() {
-	r, err := s.client.Resource(KindNetwork, "test-net", &NetworkConfig{})
-	s.Require().NoError(err)
+func TestNetworkEnsure(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	tests := []struct {
+		name     string
+		network  string
+		config   *NetworkConfig
+		opts     []Option
+		wantErr  bool
+		validate func(*testing.T, Resource)
+	}{
+		{
+			name:    "with create",
+			network: "test-net",
+			config:  &NetworkConfig{},
+			opts:    []Option{OptionCreate()},
+		},
+		{
+			name:    "without create fails",
+			network: "non-existent",
+			config:  &NetworkConfig{},
+			wantErr: true,
+			validate: func(t *testing.T, r Resource) {
+				t.Helper()
+				require.False(t, r.IsEnsured())
+			},
+		},
+		{
+			name:    "default type is bridge",
+			network: "test-default-type",
+			config:  &NetworkConfig{},
+			opts:    []Option{OptionCreate()},
+			validate: func(t *testing.T, r Resource) {
+				t.Helper()
+				network, ok := r.(*Network)
+				require.True(t, ok)
+				require.NotNil(t, network.IncusNetwork)
+				require.Equal(t, "bridge", network.IncusNetwork.Type)
+			},
+		},
+		{
+			name:    "custom type",
+			network: "test-custom-type",
+			config:  &NetworkConfig{Type: "bridge"},
+			opts:    []Option{OptionCreate()},
+			validate: func(t *testing.T, r Resource) {
+				t.Helper()
+				network, ok := r.(*Network)
+				require.True(t, ok)
+				require.Equal(t, "bridge", network.IncusNetwork.Type)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := newRandomTestClient(t, ctx, "network-ensure-")
+
+			r, err := c.Resource(KindNetwork, tt.network, tt.config)
+			require.NoError(t, err)
+
+			err = RunAction(ctx, r, ActionEnsure, tt.opts...)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.ErrorIs(t, err, ErrNotFound)
+			} else {
+				require.NoError(t, err)
+				require.True(t, r.IsEnsured())
+			}
+			if tt.validate != nil {
+				tt.validate(t, r)
+			}
+		})
+	}
 }
 
-func (s *NetworkSuite) TestProjectDeletesNetwork() {
-	r, err := s.client.Resource(KindNetwork, "test-project-net", &NetworkConfig{})
-	s.Require().NoError(err)
+func TestNetworkEnsure_Idempotent(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "network-idempotent-")
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	r, err := c.Resource(KindNetwork, "test-idempotent", &NetworkConfig{})
+	require.NoError(t, err)
 
-	// Delete the project
-	s.Require().NoError(s.globalClient.DeleteProject(s.client.Project(), true))
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.True(t, r.IsEnsured())
 
-	// Create it again and query the net
-	client, err := createProjectClient(s.globalClient, s.client.Project())
-	s.Require().NoError(err)
-	s.client = client
-
-	r, err = client.Resource(KindNetwork, "test-project-net", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	// No create
-	err = RunAction(s.ctx, r, ActionEnsure)
-	s.Require().Error(err, "The network should be gone")
-	s.Require().False(r.IsEnsured())
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.True(t, r.IsEnsured())
 }
 
-func (s *NetworkSuite) TestEnsure_WithoutCreate_Fails() {
-	r, err := s.client.Resource(KindNetwork, "non-existent", &NetworkConfig{})
-	s.Require().NoError(err)
+func TestNetworkEnsure_WithoutCreate_ThenWithCreate(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "network-retry-")
 
-	err = RunAction(s.ctx, r, ActionEnsure)
-	s.Require().Error(err)
-	s.False(r.IsEnsured())
-	s.ErrorIs(err, ErrNotFound)
+	r, err := c.Resource(KindNetwork, "test-retry", &NetworkConfig{})
+	require.NoError(t, err)
+
+	err = RunAction(ctx, r, ActionEnsure)
+	require.Error(t, err)
+	require.False(t, r.IsEnsured())
+
+	err = RunAction(ctx, r, ActionEnsure, OptionCreate())
+	require.NoError(t, err)
+	require.True(t, r.IsEnsured())
 }
 
-func (s *NetworkSuite) TestEnsure_Idempotent() {
-	r, err := s.client.Resource(KindNetwork, "test-idempotent", &NetworkConfig{})
-	s.Require().NoError(err)
+func TestNetworkEnsure_ExistsOnNewClient(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "network-persist-")
 
-	// First ensure
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	r, err := c.Resource(KindNetwork, "test-persist", &NetworkConfig{})
+	require.NoError(t, err)
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
 
-	// Second ensure - should return immediately
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	newClient, err := c.globalClient.getProject(c.project)
+	require.NoError(t, err)
+
+	r2, err := newClient.Resource(KindNetwork, "test-persist", &NetworkConfig{})
+	require.NoError(t, err)
+
+	require.NoError(t, RunAction(ctx, r2, ActionEnsure))
+	require.True(t, r2.IsEnsured())
 }
 
-func (s *NetworkSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
-	r, err := s.client.Resource(KindNetwork, "test-retry", &NetworkConfig{})
-	s.Require().NoError(err)
+func TestNetworkProjectDeletesNetwork(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "network-projdel-")
 
-	// First attempt without create - fails
-	err = RunAction(s.ctx, r, ActionEnsure)
-	s.Require().Error(err)
-	s.False(r.IsEnsured())
+	r, err := c.Resource(KindNetwork, "test-project-net", &NetworkConfig{})
+	require.NoError(t, err)
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.True(t, r.IsEnsured())
 
-	// Second attempt with create - succeeds
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
-}
+	require.NoError(t, c.globalClient.DeleteProject(c.project, true))
 
-func (s *NetworkSuite) TestEnsure_DefaultType() {
-	r, err := s.client.Resource(KindNetwork, "test-default-type", &NetworkConfig{})
-	s.Require().NoError(err)
+	newC, err := createProjectClient(c.globalClient, c.project)
+	require.NoError(t, err)
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
+	r, err = newC.Resource(KindNetwork, "test-project-net", &NetworkConfig{})
+	require.NoError(t, err)
 
-	network, ok := r.(*Network)
-	s.Require().True(ok)
-	s.NotNil(network.IncusNetwork)
-	s.Equal("bridge", network.IncusNetwork.Type)
-}
-
-func (s *NetworkSuite) TestEnsure_CustomType() {
-	r, err := s.client.Resource(KindNetwork, "test-custom-type", &NetworkConfig{
-		Type: "bridge",
-	})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	network, ok := r.(*Network)
-	s.Require().True(ok)
-	s.Equal("bridge", network.IncusNetwork.Type)
-}
-
-// ----------------------------------------------------------------------------
-// ResourceStore Tests
-// ----------------------------------------------------------------------------
-
-func (s *NetworkSuite) TestResource_ReturnsSameInstance() {
-	r1, err := s.client.Resource(KindNetwork, "test-same", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	r2, err := s.client.Resource(KindNetwork, "test-same", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	s.Same(r1, r2)
-}
-
-func (s *NetworkSuite) TestResource_DifferentNamesAreDifferent() {
-	r1, err := s.client.Resource(KindNetwork, "network-a", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	r2, err := s.client.Resource(KindNetwork, "network-b", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	s.NotSame(r1, r2)
+	err = RunAction(ctx, r, ActionEnsure)
+	require.Error(t, err, "network should be gone after project deletion")
+	require.False(t, r.IsEnsured())
 }
 
 // ----------------------------------------------------------------------------
 // Delete Tests
 // ----------------------------------------------------------------------------
 
-func (s *NetworkSuite) TestDelete_AfterEnsure() {
-	r, err := s.client.Resource(KindNetwork, "test-delete", &NetworkConfig{})
-	s.Require().NoError(err)
+func TestNetworkDelete(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	tests := []struct {
+		name   string
+		ensure bool
+	}{
+		{
+			name:   "after ensure",
+			ensure: true,
+		},
+		{
+			name: "not ensured no error",
+		},
+	}
 
-	err = RunAction(s.ctx, r, ActionDelete, OptionForce())
-	s.Require().NoError(err)
-	s.False(r.IsEnsured())
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := newRandomTestClient(t, ctx, "network-delete-")
 
-func (s *NetworkSuite) TestDelete_NotEnsured_NoError() {
-	r, err := s.client.Resource(KindNetwork, "never-created", &NetworkConfig{})
-	s.Require().NoError(err)
+			r, err := c.Resource(KindNetwork, "test-delete", &NetworkConfig{})
+			require.NoError(t, err)
 
-	// Delete without ensure should not error
-	err = RunAction(s.ctx, r, ActionDelete)
-	s.Require().NoError(err)
+			if tt.ensure {
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.True(t, r.IsEnsured())
+			}
+
+			require.NoError(t, RunAction(ctx, r, ActionDelete, OptionForce()))
+			require.False(t, r.IsEnsured())
+		})
+	}
 }
 
 // ----------------------------------------------------------------------------
 // Hook Tests
 // ----------------------------------------------------------------------------
 
-func (s *NetworkSuite) TestHook_BeforeIsCalled() {
-	called := false
-	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if action == ActionEnsure && r.Kind() == KindNetwork {
-			called = true
-		}
-		return err
-	})
+func TestNetworkHooks(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
 
-	r, err := s.client.Resource(KindNetwork, "test-before-hook", &NetworkConfig{})
-	s.Require().NoError(err)
+	tests := []struct {
+		name string
+		run  func(*testing.T, *Client)
+	}{
+		{
+			name: "before is called",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				called := false
+				c.AddHookBefore(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+					if action == ActionEnsure && r.Kind() == KindNetwork {
+						called = true
+					}
+					return err
+				})
+				r, err := c.Resource(KindNetwork, "test-before-hook", &NetworkConfig{})
+				require.NoError(t, err)
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.True(t, called, "before hook should have been called")
+			},
+		},
+		{
+			name: "after is called",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				called := false
+				c.AddHookAfter(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+					if action == ActionEnsure && r.Kind() == KindNetwork {
+						called = true
+					}
+					return err
+				})
+				r, err := c.Resource(KindNetwork, "test-after-hook", &NetworkConfig{})
+				require.NoError(t, err)
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.True(t, called, "after hook should have been called")
+			},
+		},
+		{
+			name: "after receives error",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				var receivedErr error
+				c.AddHookAfter(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+					if action == ActionEnsure && r.Kind() == KindNetwork {
+						receivedErr = err
+					}
+					return err
+				})
+				r, err := c.Resource(KindNetwork, "non-existent", &NetworkConfig{})
+				require.NoError(t, err)
+				_ = RunAction(ctx, r, ActionEnsure)
+				require.NotNil(t, receivedErr, "after hook should receive the error")
+			},
+		},
+		{
+			name: "before can abort",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				c.AddHookBefore(func(_ context.Context, _ Action, r Resource, _ Options, err error) error {
+					if r.Name() == "abort-me" {
+						return ErrAborted
+					}
+					return err
+				})
+				r, err := c.Resource(KindNetwork, "abort-me", &NetworkConfig{})
+				require.NoError(t, err)
+				err = RunAction(ctx, r, ActionEnsure, OptionCreate())
+				require.ErrorIs(t, err, ErrAborted)
+				require.False(t, r.IsEnsured())
+			},
+		},
+		{
+			name: "after can modify error",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				c.AddHookAfter(func(_ context.Context, _ Action, _ Resource, _ Options, err error) error {
+					if err != nil {
+						return ErrAborted
+					}
+					return nil
+				})
+				r, err := c.Resource(KindNetwork, "non-existent", &NetworkConfig{})
+				require.NoError(t, err)
+				err = RunAction(ctx, r, ActionEnsure)
+				require.ErrorIs(t, err, ErrAborted)
+			},
+		},
+		{
+			name: "delete action",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				var lastAction Action
+				c.AddHookBefore(func(_ context.Context, a Action, _ Resource, _ Options, err error) error {
+					lastAction = a
+					return err
+				})
+				r, err := c.Resource(KindNetwork, "test-delete-hook", &NetworkConfig{})
+				require.NoError(t, err)
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.Equal(t, ActionEnsure, lastAction)
+				require.NoError(t, RunAction(ctx, r, ActionDelete))
+				require.Equal(t, ActionDelete, lastAction)
+			},
+		},
+	}
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(called, "before hook should have been called")
-}
-
-func (s *NetworkSuite) TestHook_AfterIsCalled() {
-	called := false
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if action == ActionEnsure && r.Kind() == KindNetwork {
-			called = true
-		}
-		return err
-	})
-
-	r, err := s.client.Resource(KindNetwork, "test-after-hook", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(called, "after hook should have been called")
-}
-
-func (s *NetworkSuite) TestHook_AfterReceivesError() {
-	var receivedErr error
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if action == ActionEnsure && r.Kind() == KindNetwork {
-			receivedErr = err
-		}
-		return err
-	})
-
-	r, err := s.client.Resource(KindNetwork, "non-existent", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	_ = RunAction(s.ctx, r, ActionEnsure) // without create, will fail
-	s.NotNil(receivedErr, "after hook should receive the error")
-}
-
-func (s *NetworkSuite) TestHook_BeforeCanAbort() {
-	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if r.Name() == "abort-me" {
-			return ErrAborted
-		}
-		return err
-	})
-
-	r, err := s.client.Resource(KindNetwork, "abort-me", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.ErrorIs(err, ErrAborted)
-	s.False(r.IsEnsured())
-}
-
-func (s *NetworkSuite) TestHook_AfterCanModifyError() {
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if err != nil {
-			return ErrAborted // replace error
-		}
-		return nil
-	})
-
-	r, err := s.client.Resource(KindNetwork, "non-existent", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure) // will fail, hook replaces error
-	s.ErrorIs(err, ErrAborted)
-}
-
-func (s *NetworkSuite) TestHook_DeleteAction() {
-	var action Action
-	s.client.AddHookBefore(func(_ context.Context, a Action, r Resource, args Options, err error) error {
-		action = a
-		return err
-	})
-
-	r, err := s.client.Resource(KindNetwork, "test-delete-hook", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.Equal(ActionEnsure, action)
-
-	err = RunAction(s.ctx, r, ActionDelete)
-	s.Require().NoError(err)
-	s.Equal(ActionDelete, action)
-}
-
-// ----------------------------------------------------------------------------
-// New Client Tests (persistence)
-// ----------------------------------------------------------------------------
-
-func (s *NetworkSuite) TestEnsure_ExistsOnNewClient() {
-	// Create network
-	r, err := s.client.Resource(KindNetwork, "test-persist", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	// Get new client for same project
-	newClient, err := s.globalClient.getProject(s.client.Project())
-	s.Require().NoError(err)
-
-	// Ensure without create should find it
-	r2, err := newClient.Resource(KindNetwork, "test-persist", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r2, ActionEnsure) // no create
-	s.Require().NoError(err)
-	s.True(r2.IsEnsured())
-}
-
-// ----------------------------------------------------------------------------
-// IncusName Tests
-// ----------------------------------------------------------------------------
-
-func (s *NetworkSuite) TestIncusName_ShortName() {
-	r, err := s.client.Resource(KindNetwork, "web", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	network, ok := r.(*Network)
-	s.Require().True(ok)
-	// Project is "network-test", so full name would be "network-test-web" (15 chars)
-	// This exceeds 13 chars, so it should be hashed
-	s.LessOrEqual(len(network.IncusName()), maxInterfaceNameLen)
-}
-
-func (s *NetworkSuite) TestIncusName_LongNameHashed() {
-	r, err := s.client.Resource(KindNetwork, "very-long-network-name", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	network, ok := r.(*Network)
-	s.Require().True(ok)
-	s.LessOrEqual(len(network.IncusName()), maxInterfaceNameLen)
-	s.True(strings.HasPrefix(network.IncusName(), "ic-"))
-}
-
-func (s *NetworkSuite) TestIncusName_Deterministic() {
-	r1, err := s.client.Resource(KindNetwork, "det-test", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	r2, err := s.client.Resource(KindNetwork, "det-test", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	network1, ok := r1.(*Network)
-	s.Require().True(ok)
-	network2, ok := r2.(*Network)
-	s.Require().True(ok)
-	s.Equal(network1.IncusName(), network2.IncusName())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := newRandomTestClient(t, ctx, "network-hook-")
+			tt.run(t, c)
+		})
+	}
 }
 
 // ----------------------------------------------------------------------------
 // External Network Tests
 // ----------------------------------------------------------------------------
 
-func (s *NetworkSuite) TestExternal_InitialIncusNameIsRaw() {
-	// Without an OverrideName the static initial guess is the raw compose name.
-	// The real Incus name is confirmed via candidateNames() during Ensure.
-	r, err := s.client.Resource(KindNetwork, "incusbr0", &NetworkConfig{External: true})
-	s.Require().NoError(err)
+func TestNetworkExternal_Incusbr0Resolves(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "network-ext-")
+
+	r, err := c.Resource(KindNetwork, "incusbr0", &NetworkConfig{External: true})
+	require.NoError(t, err)
+
+	require.NoError(t, RunAction(ctx, r, ActionEnsure))
+	require.True(t, r.IsEnsured())
 
 	network, ok := r.(*Network)
-	s.Require().True(ok)
-	s.Equal("incusbr0", network.IncusName())
+	require.True(t, ok)
+	require.Equal(t, "incusbr0", network.IncusName())
 }
 
-func (s *NetworkSuite) TestExternal_Incusbr0Resolves() {
-	// incusbr0 is the default Incus bridge present on all installations.
-	// It must be found via the raw compose-name candidate.
-	r, err := s.client.Resource(KindNetwork, "incusbr0", &NetworkConfig{External: true})
-	s.Require().NoError(err)
+func TestNetworkExternal_EnsureFailsIfNotExists(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "network-ext-")
 
-	s.Require().NoError(RunAction(s.ctx, r, ActionEnsure))
-	s.True(r.IsEnsured())
+	r, err := c.Resource(KindNetwork, "non-existent-external", &NetworkConfig{External: true})
+	require.NoError(t, err)
+
+	err = RunAction(ctx, r, ActionEnsure, OptionCreate())
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNotFound)
+	require.False(t, r.IsEnsured())
+}
+
+func TestNetworkExternal_DeleteIsNoOp(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "network-extdel-")
+
+	r, err := c.Resource(KindNetwork, "test-ext-del", &NetworkConfig{})
+	require.NoError(t, err)
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.True(t, r.IsEnsured())
 
 	network, ok := r.(*Network)
-	s.Require().True(ok)
-	s.Equal("incusbr0", network.IncusName())
-}
-
-func (s *NetworkSuite) TestExternal_EnsureFailsIfNotExists() {
-	r, err := s.client.Resource(KindNetwork, "non-existent-external", &NetworkConfig{External: true})
-	s.Require().NoError(err)
-
-	// External network ensure should fail if network doesn't exist
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().Error(err)
-	s.ErrorIs(err, ErrNotFound)
-	s.False(r.IsEnsured())
-}
-
-func (s *NetworkSuite) TestExternal_DeleteIsNoOp() {
-	// First create a real network to test with
-	r, err := s.client.Resource(KindNetwork, "test-ext-del", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
-
-	network, ok := r.(*Network)
-	s.Require().True(ok)
+	require.True(t, ok)
 	incusName := network.IncusName()
 
-	// Now create an external reference to it with a new client.
-	newDeleteClient, err := s.globalClient.getProject(s.client.Project())
-	s.Require().NoError(err)
+	newDeleteClient, err := c.globalClient.getProject(c.project)
+	require.NoError(t, err)
 
 	extR, err := newDeleteClient.Resource(KindNetwork, incusName, &NetworkConfig{External: true})
-	s.Require().NoError(err)
+	require.NoError(t, err)
+	require.NoError(t, RunAction(ctx, extR, ActionEnsure))
+	require.True(t, extR.IsEnsured())
 
-	err = RunAction(s.ctx, extR, ActionEnsure)
-	s.Require().NoError(err)
-	s.True(extR.IsEnsured())
+	require.NoError(t, RunAction(ctx, extR, ActionDelete))
 
-	// Delete the external reference - should be no-op
-	err = RunAction(s.ctx, extR, ActionDelete)
-	s.Require().NoError(err)
-
-	// Network should still exist (verify with original resource)
-	newClient, err := s.globalClient.getProject(s.client.Project())
-	s.Require().NoError(err)
+	newClient, err := c.globalClient.getProject(c.project)
+	require.NoError(t, err)
 
 	checkR, err := newClient.Resource(KindNetwork, "test-ext-del", &NetworkConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, checkR, ActionEnsure)
-	s.Require().NoError(err)
-	s.True(checkR.IsEnsured())
+	require.NoError(t, err)
+	require.NoError(t, RunAction(ctx, checkR, ActionEnsure))
+	require.True(t, checkR.IsEnsured())
 }
 
 // ----------------------------------------------------------------------------
-// Run the suite
+// DHCP Range Tests
 // ----------------------------------------------------------------------------
-
-func TestNetworkSuite(t *testing.T) {
-	suite.Run(t, new(NetworkSuite))
-}
 
 func TestCalcIPv4DHCPRange(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		cidr    string
@@ -682,7 +719,6 @@ func TestCalcIPv4DHCPRange(t *testing.T) {
 		{
 			name: "/24 bridge address",
 			cidr: "10.100.0.1/24",
-			// hostBits=8, staticEnd=1<<6=64, lastUsable=254
 			want: "10.100.0.64-10.100.0.254",
 		},
 		{
@@ -693,13 +729,11 @@ func TestCalcIPv4DHCPRange(t *testing.T) {
 		{
 			name: "/16",
 			cidr: "172.16.0.1/16",
-			// hostBits=16, staticEnd=1<<14=16384=0x4000 → .64.0, lastUsable=65534
 			want: "172.16.64.0-172.16.255.254",
 		},
 		{
 			name: "/28 (small subnet)",
 			cidr: "192.168.1.1/28",
-			// hostBits=4, staticEnd=1<<2=4, lastUsable=14
 			want: "192.168.1.4-192.168.1.14",
 		},
 		{
@@ -721,18 +755,21 @@ func TestCalcIPv4DHCPRange(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := calcIPv4DHCPRange(tt.cidr)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
 
 func TestCalcIPv6DHCPRange(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		cidr    string
@@ -742,7 +779,6 @@ func TestCalcIPv6DHCPRange(t *testing.T) {
 		{
 			name: "/64 bridge address",
 			cidr: "fd42:abc::1/64",
-			// static: ::0-::ff, DHCP: ::100-::ffff
 			want: "fd42:abc::100-fd42:abc::ffff",
 		},
 		{
@@ -764,13 +800,14 @@ func TestCalcIPv6DHCPRange(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := calcIPv6DHCPRange(tt.cidr)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }

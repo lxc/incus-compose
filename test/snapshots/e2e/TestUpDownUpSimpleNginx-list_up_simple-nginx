@@ -1,4 +1,4 @@
-KIND      NAME     INCUSNAME      IMAGE  STATUS   ADDRESSES
-network   default  ic-sufmndewuo         Unknown  
-instance  web-1    web-1                 Unknown  
+KIND      NAME     INCUSNAME      IMAGE                           STATUS   ADDRESSES
+network   default  ic-sufmndewuo                                  Exists   
+instance  web      web-1          docker.io/library/nginx:alpine  Running  
 

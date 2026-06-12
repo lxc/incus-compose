@@ -3,34 +3,30 @@ package client
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/require"
 )
 
-// InstanceSecretSuite tests InstanceSecret configuration and defaults.
-type InstanceSecretSuite struct {
-	suite.Suite
-}
+// ----------------------------------------------------------------------------
+// InstanceSecret Tests
+// ----------------------------------------------------------------------------
 
-func TestInstanceSecretSuite(t *testing.T) {
-	suite.Run(t, new(InstanceSecretSuite))
-}
-
-func (s *InstanceSecretSuite) TestInstanceSecret_Defaults() {
+func TestInstanceSecret_Defaults(t *testing.T) {
+	t.Parallel()
 	secret := InstanceSecret{
 		Source:  "db_password",
 		Content: []byte("secret-value"),
 	}
 
-	s.Equal("db_password", secret.Source)
-	s.Equal([]byte("secret-value"), secret.Content)
-	s.Empty(secret.Target, "Target should default to empty (handled in PushSecrets)")
-	s.Zero(secret.UID)
-	s.Zero(secret.GID)
-	s.Zero(secret.Mode, "Mode should default to zero (handled in PushSecrets)")
+	require.Equal(t, "db_password", secret.Source)
+	require.Equal(t, []byte("secret-value"), secret.Content)
+	require.Empty(t, secret.Target, "Target should default to empty (handled in PushSecrets)")
+	require.Zero(t, secret.UID)
+	require.Zero(t, secret.GID)
+	require.Zero(t, secret.Mode, "Mode should default to zero (handled in PushSecrets)")
 }
 
-func (s *InstanceSecretSuite) TestInstanceSecret_CustomTarget() {
+func TestInstanceSecret_CustomTarget(t *testing.T) {
+	t.Parallel()
 	secret := InstanceSecret{
 		Source:  "api_key",
 		Target:  "/app/secrets/api.key",
@@ -40,15 +36,16 @@ func (s *InstanceSecretSuite) TestInstanceSecret_CustomTarget() {
 		Mode:    0o440,
 	}
 
-	s.Equal("api_key", secret.Source)
-	s.Equal("/app/secrets/api.key", secret.Target)
-	s.Equal([]byte("my-api-key"), secret.Content)
-	s.Equal(int64(1000), secret.UID)
-	s.Equal(int64(1000), secret.GID)
-	s.Equal(0o440, secret.Mode)
+	require.Equal(t, "api_key", secret.Source)
+	require.Equal(t, "/app/secrets/api.key", secret.Target)
+	require.Equal(t, []byte("my-api-key"), secret.Content)
+	require.Equal(t, int64(1000), secret.UID)
+	require.Equal(t, int64(1000), secret.GID)
+	require.Equal(t, 0o440, secret.Mode)
 }
 
-func (s *InstanceSecretSuite) TestInstanceConfig_WithSecrets() {
+func TestInstanceConfig_WithSecrets(t *testing.T) {
+	t.Parallel()
 	secrets := []InstanceSecret{
 		{Source: "db_password", Content: []byte("pass1")},
 		{Source: "api_key", Target: "/custom/path", Content: []byte("key1"), Mode: 0o440},
@@ -59,13 +56,19 @@ func (s *InstanceSecretSuite) TestInstanceConfig_WithSecrets() {
 		Secrets: secrets,
 	}
 
-	s.Len(config.Secrets, 2)
-	s.Equal("db_password", config.Secrets[0].Source)
-	s.Equal("api_key", config.Secrets[1].Source)
-	s.Equal("/custom/path", config.Secrets[1].Target)
+	require.Len(t, config.Secrets, 2)
+	require.Equal(t, "db_password", config.Secrets[0].Source)
+	require.Equal(t, "api_key", config.Secrets[1].Source)
+	require.Equal(t, "/custom/path", config.Secrets[1].Target)
 }
 
+// ----------------------------------------------------------------------------
+// SanitizeInstanceName Tests
+// ----------------------------------------------------------------------------
+
 func TestSanitizeInstanceName(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name              string
 		input             string
@@ -101,16 +104,16 @@ func TestSanitizeInstanceName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := SanitizeIncusName(tt.input, -1)
 
 			if tt.checkHashFallback {
-				// Verify it's a valid 32-char hex string
-				assert.Len(t, result, 32)
-				assert.Regexp(t, "^[0-9a-f]{32}$", result)
+				require.Len(t, result, 32)
+				require.Regexp(t, "^[0-9a-f]{32}$", result)
 			} else {
-				assert.Equal(t, tt.expected, result)
+				require.Equal(t, tt.expected, result)
 			}
-			assert.LessOrEqual(t, len(result), MaxIncusNameLen)
+			require.LessOrEqual(t, len(result), MaxIncusNameLen)
 		})
 	}
 }

@@ -4,378 +4,420 @@ import (
 	"context"
 	"testing"
 
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/require"
 )
 
-// StorageVolumeSuite tests StorageVolume operations against a real Incus instance.
-type StorageVolumeSuite struct {
-	suite.Suite
-	ctx          context.Context
-	globalClient *GlobalClient
-	client       *Client
-	projectName  string
+// ----------------------------------------------------------------------------
+// Local-only Tests (no Incus required)
+// ----------------------------------------------------------------------------
+
+func TestStorageVolumeResource_ReturnsSameInstance(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "volume-test")
+
+	r1, err := c.Resource(KindStorageVolume, "test-same", &StorageVolumeConfig{})
+	require.NoError(t, err)
+
+	r2, err := c.Resource(KindStorageVolume, "test-same", &StorageVolumeConfig{})
+	require.NoError(t, err)
+
+	require.Same(t, r1, r2)
 }
 
-// SetupSuite runs once before all tests.
-func (s *StorageVolumeSuite) SetupSuite() {
-	s.ctx = context.Background()
-	s.projectName = "volume-test"
+func TestStorageVolumeResource_DifferentNamesAreDifferent(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "volume-test")
 
-	gc, err := NewTestClient(s.ctx)
-	if err != nil {
-		s.T().Skipf("Skipping tests: %v", err)
-		return
-	}
-	s.globalClient = gc
+	r1, err := c.Resource(KindStorageVolume, "volume-a", &StorageVolumeConfig{})
+	require.NoError(t, err)
+
+	r2, err := c.Resource(KindStorageVolume, "volume-b", &StorageVolumeConfig{})
+	require.NoError(t, err)
+
+	require.NotSame(t, r1, r2)
 }
 
-// SetupTest runs before each test - creates fresh project.
-func (s *StorageVolumeSuite) SetupTest() {
-	client, err := createProjectClient(s.globalClient, s.projectName)
-	if err != nil {
-		s.T().Fatalf("Failed to create test project: %v", err)
-	}
-	s.client = client
+func TestStorageVolumeIncusName_PrefixedWithProject(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "volume-test")
+
+	r, err := c.Resource(KindStorageVolume, "mydata", &StorageVolumeConfig{})
+	require.NoError(t, err)
+
+	vol, ok := r.(*StorageVolume)
+	require.True(t, ok)
+	require.Equal(t, "mydata", vol.Name())
+	require.Equal(t, "vol-mydata", vol.IncusName())
 }
 
-// TearDownTest runs after each test - cleans up project.
-func (s *StorageVolumeSuite) TearDownTest() {
-	_ = s.globalClient.DeleteProject(s.projectName, true)
+func TestStorageVolumeConfig_DefaultPool(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "volume-test")
+
+	r, err := c.Resource(KindStorageVolume, "default-pool", &StorageVolumeConfig{})
+	require.NoError(t, err)
+
+	vol, ok := r.(*StorageVolume)
+	require.True(t, ok)
+	require.Equal(t, c.Config().DefaultStoragePool, vol.Config.Pool)
+}
+
+func TestStorageVolumeConfig_CustomPool(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "volume-test")
+
+	r, err := c.Resource(KindStorageVolume, "custom-pool", &StorageVolumeConfig{Pool: "mypool"})
+	require.NoError(t, err)
+
+	vol, ok := r.(*StorageVolume)
+	require.True(t, ok)
+	require.Equal(t, "mypool", vol.Config.Pool)
 }
 
 // ----------------------------------------------------------------------------
 // Ensure Tests
 // ----------------------------------------------------------------------------
 
-func (s *StorageVolumeSuite) TestEnsure_WithCreate() {
-	r, err := s.client.Resource(KindStorageVolume, "test-vol", &StorageVolumeConfig{})
-	s.Require().NoError(err)
+func TestStorageVolumeEnsure(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	tests := []struct {
+		name     string
+		volume   string
+		config   *StorageVolumeConfig
+		opts     []Option
+		wantErr  bool
+		validate func(*testing.T, Resource)
+	}{
+		{
+			name:   "with create",
+			volume: "test-vol",
+			config: &StorageVolumeConfig{},
+			opts:   []Option{OptionCreate()},
+		},
+		{
+			name:    "without create fails",
+			volume:  "non-existent",
+			config:  &StorageVolumeConfig{},
+			wantErr: true,
+			validate: func(t *testing.T, r Resource) {
+				t.Helper()
+				require.False(t, r.IsEnsured())
+			},
+		},
+		{
+			name:   "shifted volume",
+			volume: "test-shifted",
+			config: &StorageVolumeConfig{Shifted: true, UID: 1000, GID: 1000},
+			opts:   []Option{OptionCreate()},
+			validate: func(t *testing.T, r Resource) {
+				t.Helper()
+				vol, ok := r.(*StorageVolume)
+				require.True(t, ok)
+				require.NotNil(t, vol.IncusVolume)
+				require.Equal(t, "true", vol.IncusVolume.Config["security.shifted"])
+				require.Equal(t, "1000", vol.IncusVolume.Config["initial.uid"])
+				require.Equal(t, "1000", vol.IncusVolume.Config["initial.gid"])
+			},
+		},
+		{
+			name:   "extra config",
+			volume: "test-extra",
+			config: &StorageVolumeConfig{ExtraConfig: map[string]string{"size": "5GiB"}},
+			opts:   []Option{OptionCreate()},
+			validate: func(t *testing.T, r Resource) {
+				t.Helper()
+				vol, ok := r.(*StorageVolume)
+				require.True(t, ok)
+				require.Equal(t, "5GiB", vol.IncusVolume.Config["size"])
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := newRandomTestClient(t, ctx, "volume-ensure-")
+
+			r, err := c.Resource(KindStorageVolume, tt.volume, tt.config)
+			require.NoError(t, err)
+
+			err = RunAction(ctx, r, ActionEnsure, tt.opts...)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.ErrorIs(t, err, ErrNotFound)
+			} else {
+				require.NoError(t, err)
+				require.True(t, r.IsEnsured())
+			}
+			if tt.validate != nil {
+				tt.validate(t, r)
+			}
+		})
+	}
 }
 
-func (s *StorageVolumeSuite) TestEnsure_WithoutCreate_Fails() {
-	r, err := s.client.Resource(KindStorageVolume, "non-existent", &StorageVolumeConfig{})
-	s.Require().NoError(err)
+func TestStorageVolumeEnsure_Idempotent(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "volume-idempotent-")
 
-	err = RunAction(s.ctx, r, ActionEnsure)
-	s.Require().Error(err)
-	s.False(r.IsEnsured())
-	s.ErrorIs(err, ErrNotFound)
+	r, err := c.Resource(KindStorageVolume, "test-idempotent", &StorageVolumeConfig{})
+	require.NoError(t, err)
+
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.True(t, r.IsEnsured())
+
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.True(t, r.IsEnsured())
 }
 
-func (s *StorageVolumeSuite) TestEnsure_Idempotent() {
-	r, err := s.client.Resource(KindStorageVolume, "test-idempotent", &StorageVolumeConfig{})
-	s.Require().NoError(err)
+func TestStorageVolumeEnsure_WithoutCreate_ThenWithCreate(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "volume-retry-")
 
-	// First ensure
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	r, err := c.Resource(KindStorageVolume, "test-retry", &StorageVolumeConfig{})
+	require.NoError(t, err)
 
-	// Second ensure - should return immediately
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	err = RunAction(ctx, r, ActionEnsure)
+	require.Error(t, err)
+	require.False(t, r.IsEnsured())
+
+	err = RunAction(ctx, r, ActionEnsure, OptionCreate())
+	require.NoError(t, err)
+	require.True(t, r.IsEnsured())
 }
 
-func (s *StorageVolumeSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
-	r, err := s.client.Resource(KindStorageVolume, "test-retry", &StorageVolumeConfig{})
-	s.Require().NoError(err)
+func TestStorageVolumeEnsure_ShiftedVolume_Start(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "volume-shifted-")
 
-	// First attempt without create - fails
-	err = RunAction(s.ctx, r, ActionEnsure)
-	s.Require().Error(err)
-	s.False(r.IsEnsured())
-
-	// Second attempt with create - succeeds
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
-}
-
-func (s *StorageVolumeSuite) TestEnsure_ShiftedVolume() {
-	r, err := s.client.Resource(KindStorageVolume, "test-shifted", &StorageVolumeConfig{
+	r, err := c.Resource(KindStorageVolume, "test-shifted", &StorageVolumeConfig{
 		Shifted: true,
 		UID:     1000,
 		GID:     1000,
 	})
-	s.Require().NoError(err)
+	require.NoError(t, err)
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	vol, ok := r.(*StorageVolume)
-	s.Require().True(ok)
-	s.NotNil(vol.IncusVolume)
-	s.Equal("true", vol.IncusVolume.Config["security.shifted"])
-	s.Equal("1000", vol.IncusVolume.Config["initial.uid"])
-	s.Equal("1000", vol.IncusVolume.Config["initial.gid"])
-
-	// Does the same as the hardcoded values above
-	err = RunAction(s.ctx, r, ActionStart)
-	s.Require().NoError(err)
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.NoError(t, RunAction(ctx, r, ActionStart))
 }
 
-func (s *StorageVolumeSuite) TestEnsure_HealthdShiftedVolume() {
-	ir, err := s.client.Resource(KindImage, "registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest", &ImageConfig{})
-	s.Require().NoError(err)
+func TestStorageVolumeEnsure_HealthdShiftedVolume(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "volume-healthd-")
 
-	// Create the image
-	s.Require().NoError(RunAction(s.ctx, ir, ActionEnsure, OptionCreate()))
+	ir, err := c.Resource(KindImage, "registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest", &ImageConfig{})
+	require.NoError(t, err)
+	require.NoError(t, RunAction(ctx, ir, ActionEnsure, OptionCreate()))
 
-	r, err := s.client.Resource(KindStorageVolume, "test-healthd-shifted", &StorageVolumeConfig{
+	r, err := c.Resource(KindStorageVolume, "test-healthd-shifted", &StorageVolumeConfig{
 		Shifted:       true,
 		ImageResource: ir,
 	})
-	s.Require().NoError(err)
+	require.NoError(t, err)
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	vol, ok := r.(*StorageVolume)
-	s.Require().True(ok)
-	s.NotNil(vol.IncusVolume)
-	s.Equal("true", vol.IncusVolume.Config["security.shifted"])
-	s.Equal("65534", vol.IncusVolume.Config["initial.uid"])
-	s.Equal("65534", vol.IncusVolume.Config["initial.gid"])
-}
-
-func (s *StorageVolumeSuite) TestEnsure_ExtraConfig() {
-	r, err := s.client.Resource(KindStorageVolume, "test-extra", &StorageVolumeConfig{
-		ExtraConfig: map[string]string{
-			"size": "5GiB",
-		},
-	})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
 
 	vol, ok := r.(*StorageVolume)
-	s.Require().True(ok)
-	s.Equal("5GiB", vol.IncusVolume.Config["size"])
+	require.True(t, ok)
+	require.NotNil(t, vol.IncusVolume)
+	require.Equal(t, "true", vol.IncusVolume.Config["security.shifted"])
+	require.Equal(t, "65534", vol.IncusVolume.Config["initial.uid"])
+	require.Equal(t, "65534", vol.IncusVolume.Config["initial.gid"])
 }
 
-// ----------------------------------------------------------------------------
-// ResourceStore Tests
-// ----------------------------------------------------------------------------
+func TestStorageVolumeEnsure_ExistsOnNewClient(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "volume-persist-")
 
-func (s *StorageVolumeSuite) TestResource_ReturnsSameInstance() {
-	r1, err := s.client.Resource(KindStorageVolume, "test-same", &StorageVolumeConfig{})
-	s.Require().NoError(err)
+	r, err := c.Resource(KindStorageVolume, "test-persist", &StorageVolumeConfig{})
+	require.NoError(t, err)
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
 
-	r2, err := s.client.Resource(KindStorageVolume, "test-same", &StorageVolumeConfig{})
-	s.Require().NoError(err)
+	newClient, err := c.globalClient.getProject(c.project)
+	require.NoError(t, err)
 
-	s.Same(r1, r2)
-}
+	r2, err := newClient.Resource(KindStorageVolume, "test-persist", &StorageVolumeConfig{})
+	require.NoError(t, err)
 
-func (s *StorageVolumeSuite) TestResource_DifferentNamesAreDifferent() {
-	r1, err := s.client.Resource(KindStorageVolume, "volume-a", &StorageVolumeConfig{})
-	s.Require().NoError(err)
-
-	r2, err := s.client.Resource(KindStorageVolume, "volume-b", &StorageVolumeConfig{})
-	s.Require().NoError(err)
-
-	s.NotSame(r1, r2)
+	require.NoError(t, RunAction(ctx, r2, ActionEnsure))
+	require.True(t, r2.IsEnsured())
 }
 
 // ----------------------------------------------------------------------------
 // Delete Tests
 // ----------------------------------------------------------------------------
 
-func (s *StorageVolumeSuite) TestDelete_AfterEnsure() {
-	r, err := s.client.Resource(KindStorageVolume, "test-delete", &StorageVolumeConfig{})
-	s.Require().NoError(err)
+func TestStorageVolumeDelete(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	tests := []struct {
+		name   string
+		ensure bool
+	}{
+		{
+			name:   "after ensure",
+			ensure: true,
+		},
+		{
+			name: "not ensured no error",
+		},
+	}
 
-	err = RunAction(s.ctx, r, ActionDelete, OptionForce())
-	s.Require().NoError(err)
-	s.False(r.IsEnsured())
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := newRandomTestClient(t, ctx, "volume-delete-")
 
-func (s *StorageVolumeSuite) TestDelete_NotEnsured_NoError() {
-	r, err := s.client.Resource(KindStorageVolume, "never-created", &StorageVolumeConfig{})
-	s.Require().NoError(err)
+			r, err := c.Resource(KindStorageVolume, "test-delete", &StorageVolumeConfig{})
+			require.NoError(t, err)
 
-	// Delete without ensure should not error
-	err = RunAction(s.ctx, r, ActionDelete)
-	s.Require().NoError(err)
+			if tt.ensure {
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.True(t, r.IsEnsured())
+			}
+
+			require.NoError(t, RunAction(ctx, r, ActionDelete, OptionForce()))
+			require.False(t, r.IsEnsured())
+		})
+	}
 }
 
 // ----------------------------------------------------------------------------
 // Hook Tests
 // ----------------------------------------------------------------------------
 
-func (s *StorageVolumeSuite) TestHook_BeforeIsCalled() {
-	called := false
-	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if action == ActionEnsure && r.Kind() == KindStorageVolume {
-			called = true
-		}
-		return err
-	})
+func TestStorageVolumeHooks(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
 
-	r, err := s.client.Resource(KindStorageVolume, "test-before-hook", &StorageVolumeConfig{})
-	s.Require().NoError(err)
+	tests := []struct {
+		name string
+		run  func(*testing.T, *Client)
+	}{
+		{
+			name: "before is called",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				called := false
+				c.AddHookBefore(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+					if action == ActionEnsure && r.Kind() == KindStorageVolume {
+						called = true
+					}
+					return err
+				})
+				r, err := c.Resource(KindStorageVolume, "test-before-hook", &StorageVolumeConfig{})
+				require.NoError(t, err)
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.True(t, called, "before hook should have been called")
+			},
+		},
+		{
+			name: "after is called",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				called := false
+				c.AddHookAfter(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+					if action == ActionEnsure && r.Kind() == KindStorageVolume {
+						called = true
+					}
+					return err
+				})
+				r, err := c.Resource(KindStorageVolume, "test-after-hook", &StorageVolumeConfig{})
+				require.NoError(t, err)
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.True(t, called, "after hook should have been called")
+			},
+		},
+		{
+			name: "after receives error",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				var receivedErr error
+				c.AddHookAfter(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+					if action == ActionEnsure && r.Kind() == KindStorageVolume {
+						receivedErr = err
+					}
+					return err
+				})
+				r, err := c.Resource(KindStorageVolume, "non-existent", &StorageVolumeConfig{})
+				require.NoError(t, err)
+				_ = RunAction(ctx, r, ActionEnsure)
+				require.NotNil(t, receivedErr, "after hook should receive the error")
+			},
+		},
+		{
+			name: "before can abort",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				c.AddHookBefore(func(_ context.Context, _ Action, r Resource, _ Options, err error) error {
+					if r.Name() == "abort-me" {
+						return ErrAborted
+					}
+					return err
+				})
+				r, err := c.Resource(KindStorageVolume, "abort-me", &StorageVolumeConfig{})
+				require.NoError(t, err)
+				err = RunAction(ctx, r, ActionEnsure, OptionCreate())
+				require.ErrorIs(t, err, ErrAborted)
+				require.False(t, r.IsEnsured())
+			},
+		},
+		{
+			name: "after can modify error",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				c.AddHookAfter(func(_ context.Context, _ Action, _ Resource, _ Options, err error) error {
+					if err != nil {
+						return ErrAborted
+					}
+					return nil
+				})
+				r, err := c.Resource(KindStorageVolume, "non-existent", &StorageVolumeConfig{})
+				require.NoError(t, err)
+				err = RunAction(ctx, r, ActionEnsure)
+				require.ErrorIs(t, err, ErrAborted)
+			},
+		},
+		{
+			name: "delete action",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				var lastAction Action
+				c.AddHookBefore(func(_ context.Context, a Action, _ Resource, _ Options, err error) error {
+					lastAction = a
+					return err
+				})
+				r, err := c.Resource(KindStorageVolume, "test-delete-hook", &StorageVolumeConfig{})
+				require.NoError(t, err)
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.Equal(t, ActionEnsure, lastAction)
+				require.NoError(t, RunAction(ctx, r, ActionDelete))
+				require.Equal(t, ActionDelete, lastAction)
+			},
+		},
+	}
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(called, "before hook should have been called")
-}
-
-func (s *StorageVolumeSuite) TestHook_AfterIsCalled() {
-	called := false
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if action == ActionEnsure && r.Kind() == KindStorageVolume {
-			called = true
-		}
-		return err
-	})
-
-	r, err := s.client.Resource(KindStorageVolume, "test-after-hook", &StorageVolumeConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(called, "after hook should have been called")
-}
-
-func (s *StorageVolumeSuite) TestHook_AfterReceivesError() {
-	var receivedErr error
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if action == ActionEnsure && r.Kind() == KindStorageVolume {
-			receivedErr = err
-		}
-		return err
-	})
-
-	r, err := s.client.Resource(KindStorageVolume, "non-existent", &StorageVolumeConfig{})
-	s.Require().NoError(err)
-
-	_ = RunAction(s.ctx, r, ActionEnsure) // without create, will fail
-	s.NotNil(receivedErr, "after hook should receive the error")
-}
-
-func (s *StorageVolumeSuite) TestHook_BeforeCanAbort() {
-	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if r.Name() == "abort-me" {
-			return ErrAborted
-		}
-		return err
-	})
-
-	r, err := s.client.Resource(KindStorageVolume, "abort-me", &StorageVolumeConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.ErrorIs(err, ErrAborted)
-	s.False(r.IsEnsured())
-}
-
-func (s *StorageVolumeSuite) TestHook_AfterCanModifyError() {
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if err != nil {
-			return ErrAborted // replace error
-		}
-		return nil
-	})
-
-	r, err := s.client.Resource(KindStorageVolume, "non-existent", &StorageVolumeConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure) // will fail, hook replaces error
-	s.ErrorIs(err, ErrAborted)
-}
-
-func (s *StorageVolumeSuite) TestHook_DeleteAction() {
-	var action Action
-	s.client.AddHookBefore(func(_ context.Context, a Action, r Resource, args Options, err error) error {
-		action = a
-		return err
-	})
-
-	r, err := s.client.Resource(KindStorageVolume, "test-delete-hook", &StorageVolumeConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.Equal(ActionEnsure, action)
-
-	err = RunAction(s.ctx, r, ActionDelete)
-	s.Require().NoError(err)
-	s.Equal(ActionDelete, action)
-}
-
-// ----------------------------------------------------------------------------
-// New Client Tests (persistence)
-// ----------------------------------------------------------------------------
-
-func (s *StorageVolumeSuite) TestEnsure_ExistsOnNewClient() {
-	// Create volume
-	r, err := s.client.Resource(KindStorageVolume, "test-persist", &StorageVolumeConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	// Get new client for same project
-	newClient, err := s.globalClient.getProject(s.projectName)
-	s.Require().NoError(err)
-
-	// Ensure without create should find it
-	r2, err := newClient.Resource(KindStorageVolume, "test-persist", &StorageVolumeConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r2, ActionEnsure) // no create
-	s.Require().NoError(err)
-	s.True(r2.IsEnsured())
-}
-
-// ----------------------------------------------------------------------------
-// IncusName Tests
-// ----------------------------------------------------------------------------
-
-func (s *StorageVolumeSuite) TestIncusName_PrefixedWithProject() {
-	r, err := s.client.Resource(KindStorageVolume, "mydata", &StorageVolumeConfig{})
-	s.Require().NoError(err)
-
-	vol, ok := r.(*StorageVolume)
-	s.Require().True(ok)
-	s.Equal("mydata", vol.Name())
-	s.Equal("vol-mydata", vol.IncusName())
-}
-
-func (s *StorageVolumeSuite) TestConfig_DefaultPool() {
-	r, err := s.client.Resource(KindStorageVolume, "default-pool", &StorageVolumeConfig{})
-	s.Require().NoError(err)
-
-	vol, ok := r.(*StorageVolume)
-	s.Require().True(ok)
-	s.Equal(s.client.Config().DefaultStoragePool, vol.Config.Pool)
-}
-
-func (s *StorageVolumeSuite) TestConfig_CustomPool() {
-	r, err := s.client.Resource(KindStorageVolume, "custom-pool", &StorageVolumeConfig{
-		Pool: "mypool",
-	})
-	s.Require().NoError(err)
-
-	vol, ok := r.(*StorageVolume)
-	s.Require().True(ok)
-	s.Equal("mypool", vol.Config.Pool)
-}
-
-// ----------------------------------------------------------------------------
-// Run the suite
-// ----------------------------------------------------------------------------
-
-func TestStorageVolumeSuite(t *testing.T) {
-	suite.Run(t, new(StorageVolumeSuite))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := newRandomTestClient(t, ctx, "volume-hook-")
+			tt.run(t, c)
+		})
+	}
 }

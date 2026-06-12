@@ -1,0 +1,21 @@
+name: with-build
+services:
+  app:
+    build:
+      context: $FIXTURE_PATH
+      dockerfile: Dockerfile
+      target: runtime
+    networks:
+      default: null
+  app2:
+    build:
+      context: $FIXTURE_PATH
+      dockerfile_inline: |
+        FROM docker.io/alpine:latest
+        RUN echo "built inline by incus-compose"
+    image: localhost/app2:latest
+    networks:
+      default: null
+networks:
+  default:
+    name: with-build_default

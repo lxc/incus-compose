@@ -1,0 +1,23 @@
+name: nginx-scale
+services:
+  web:
+    deploy:
+      replicas: 2
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+    image: docker.io/nginx:alpine
+    networks:
+      default: null
+    x-incus:
+      limits.cpu: 1
+  web2:
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+    image: docker.io/nginx:alpine
+    networks:
+      default: null
+    x-incus:
+      limits.cpu: 1
+networks:
+  default:
+    name: nginx-scale_default

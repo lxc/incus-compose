@@ -77,8 +77,7 @@ func newDownCommand() *cli.Command {
 			var errs error
 
 			if err := stack.Run(ctx, client.ActionEnsure); err != nil {
-				c.LogError("Getting resources", "error", err)
-				errs = errors.Join(errs, err)
+				c.LogWarn("Getting resources", "error", err)
 			}
 
 			if cmd.Bool("project") {
@@ -86,7 +85,7 @@ func newDownCommand() *cli.Command {
 				err := globalClient.DeleteProject(c.Project(), true)
 				if err != nil {
 					c.LogError("Deleting the project", "error", err)
-					return errLogged
+					return errLogged.Wrap(err)
 				}
 
 				return nil

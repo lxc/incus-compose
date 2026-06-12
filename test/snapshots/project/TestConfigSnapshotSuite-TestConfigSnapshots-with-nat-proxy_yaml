@@ -1,0 +1,22 @@
+name: with-nat-proxy
+services:
+  web:
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+    image: docker.io/nginx:alpine
+    networks:
+      frontend:
+        ipv4_address: 10.139.38.17
+    x-incus:
+      limits.cpu: 1
+    x-incus-compose:
+      nat-proxy:
+        - connect: 80
+          port: 2856
+        - connect: 443
+          port: 2456
+networks:
+  frontend:
+    name: with-nat-proxy_frontend
+    x-incus:
+      ipv4.address: 10.139.38.1/24

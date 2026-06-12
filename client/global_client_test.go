@@ -3,18 +3,12 @@ package client
 import (
 	"testing"
 
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/require"
 )
 
-type ParsePercentSuite struct {
-	suite.Suite
-}
+func TestParsePercent(t *testing.T) {
+	t.Parallel()
 
-func TestParsePercentSuite(t *testing.T) {
-	suite.Run(t, new(ParsePercentSuite))
-}
-
-func (s *ParsePercentSuite) TestParsePercent() {
 	tests := []struct {
 		name string
 		in   string
@@ -30,8 +24,10 @@ func (s *ParsePercentSuite) TestParsePercent() {
 	}
 
 	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			s.Equal(tt.want, parsePercent(tt.in))
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tt.want, parsePercent(tt.in))
 		})
 	}
 }

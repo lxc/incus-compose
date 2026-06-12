@@ -4,22 +4,19 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lxc/incus/v7/shared/cliconfig"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
 )
 
 // ----------------------------------------------------------------------------
-// Unit Tests for Image Reference Parsing
+// Local-only Tests (no Incus required)
 // ----------------------------------------------------------------------------
 
 func TestImageParsing(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name              string
 		imageName         string
-		configRemote      string
-		configImage       string
 		expectedRemote    string
 		expectedImage     string
 		expectedIncusName string
@@ -78,18 +75,13 @@ func TestImageParsing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a minimal client for parsing test
+			t.Parallel()
 			c := NewOfflineClient(context.Background(), "test")
-
-			config := &ImageConfig{}
-
-			img, err := newImage(c, tt.imageName, config)
-
+			img, err := newImage(c, tt.imageName, &ImageConfig{})
 			if tt.wantErr {
 				require.Error(t, err)
 				return
 			}
-
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedRemote, img.Remote())
 			require.Equal(t, tt.expectedImage, img.image)
@@ -98,483 +90,418 @@ func TestImageParsing(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------------------
-// Unit Tests for Resource deduplication
-// ----------------------------------------------------------------------------
-
-// TestResource_SameIncusNameReturnsSameObject reproduces the bug where
-// up.go calls Resource with CliConfig set and serviceToInstance calls it
-// without CliConfig. Both resolve to the same IncusName but previously
-// returned different objects, causing the stack to hold duplicates and
-// parallel Ensure to race with "Alias already exists".
-func TestResource_SameIncusNameReturnsSameObject(t *testing.T) {
+func TestImageResource_SameIncusNameReturnsSameObject(t *testing.T) {
+	t.Parallel()
 	c := NewOfflineClient(context.Background(), "test")
 
-	// First call: with CliConfig (as up.go does)
 	r1, err := c.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	// Second call: empty config (as serviceToInstance does)
 	r2, err := c.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	assert.Same(t, r1, r2, "same image name must return the same object")
+	require.Same(t, r1, r2, "same image name must return the same object")
 }
 
-// TestResource_NormalizedFormReturnsSameObject checks that a short reference
-// ("docker.io/nginx:alpine") and its canonical form ("docker.io/library/nginx:alpine")
-// resolve to the same object because they share the same IncusName.
-func TestResource_NormalizedFormReturnsSameObject(t *testing.T) {
+func TestImageResource_NormalizedFormReturnsSameObject(t *testing.T) {
+	t.Parallel()
 	c := NewOfflineClient(context.Background(), "test")
 
 	r1, err := c.Resource(KindImage, "docker.io/nginx:alpine", &ImageConfig{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	r2, err := c.Resource(KindImage, "docker.io/library/nginx:alpine", &ImageConfig{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	assert.Same(t, r1, r2, "short and canonical form must return the same object")
+	require.Same(t, r1, r2, "short and canonical form must return the same object")
 }
 
-// ----------------------------------------------------------------------------
-// Integration Tests
-// ----------------------------------------------------------------------------
+func TestImageResource_ReturnsSameInstance(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "test")
 
-// ImageSuite tests Image operations against a real Incus instance.
-type ImageSuite struct {
-	suite.Suite
-	ctx          context.Context
-	globalClient *GlobalClient
-	client       *Client
-	projectName  string
-	cliConfig    *cliconfig.Config
-	cleanup      []Resource
+	r1, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	require.NoError(t, err)
+
+	r2, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	require.NoError(t, err)
+
+	require.Same(t, r1, r2)
 }
 
-// SetupSuite runs once before all tests.
-func (s *ImageSuite) SetupSuite() {
-	s.ctx = context.Background()
-	s.projectName = "image-test"
+func TestImageResource_DifferentNamesAreDifferent(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "test")
 
-	gc, err := NewTestClient(s.ctx)
-	if err != nil {
-		s.T().Skipf("Skipping tests: %v", err)
-		return
-	}
-	s.globalClient = gc
+	r1, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	require.NoError(t, err)
 
-	// Use CLI config from global client
-	s.cliConfig = gc.CliConfig()
-	if s.cliConfig == nil {
-		s.T().Skipf("Skipping tests: failed to load Incus config")
-		return
-	}
+	r2, err := c.Resource(KindImage, "docker.io/library/busybox:1.37", &ImageConfig{})
+	require.NoError(t, err)
 
-	// Check docker.io is configured
-	if _, err := s.cliConfig.GetImageServer("docker.io"); err != nil {
-		s.T().Skipf("Skipping tests: docker.io not configured: %v", err)
-		return
-	}
+	require.NotSame(t, r1, r2)
 }
 
-// SetupTest runs before each test - creates fresh project.
-func (s *ImageSuite) SetupTest() {
-	client, err := createProjectClient(s.globalClient, s.projectName)
-	if err != nil {
-		s.T().Fatalf("Failed to create test project: %v", err)
-	}
-	s.client = client
+func TestImageIncusName_MatchesInput(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "test")
 
-	s.cleanup = []Resource{}
+	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	require.NoError(t, err)
+
+	image, ok := r.(*Image)
+	require.True(t, ok)
+	require.Equal(t, "docker.io/library/busybox:latest", image.Name())
+	require.Equal(t, "docker.io/library/busybox:latest", image.IncusName())
 }
 
-// TearDownTest runs after each test - cleans up project.
-func (s *ImageSuite) TearDownTest() {
-	for _, r := range s.cleanup {
-		if SupportsAction(r, ActionDelete) {
-			_ = RunAction(s.ctx, r, ActionDelete, OptionForce())
-		}
-	}
+func TestImageConfig_RemoteAndImageParsed(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "test")
 
-	_ = s.globalClient.DeleteProject(s.projectName, true)
+	r, err := c.Resource(KindImage, "docker.io/library/alpine:3.18", &ImageConfig{})
+	require.NoError(t, err)
+
+	image, ok := r.(*Image)
+	require.True(t, ok)
+	require.Equal(t, "docker.io", image.Remote())
+	require.Equal(t, "library/alpine:3.18", image.image)
 }
 
 // ----------------------------------------------------------------------------
 // Ensure Tests
-// ----------------------------------------------------------------------------.
-func (s *ImageSuite) TestEnsure_WithCreate_Github() {
-	r, err := s.client.Resource(KindImage, "ghcr.io/linuxcontainers/alpine:latest", &ImageConfig{})
-	s.Require().NoError(err)
+// ----------------------------------------------------------------------------
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+func TestImageEnsure(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
 
-	s.cleanup = append(s.cleanup, r)
+	tests := []struct {
+		name    string
+		image   string
+		opts    []Option
+		wantErr bool
+	}{
+		{
+			name:  "with create busybox",
+			image: "docker.io/library/busybox:latest",
+			opts:  []Option{OptionCreate()},
+		},
+		{
+			name:  "with create github",
+			image: "ghcr.io/linuxcontainers/alpine:latest",
+			opts:  []Option{OptionCreate()},
+		},
+		{
+			name:    "without create fails",
+			image:   "docker.io/library/nonexistent-image-xyz123:latest",
+			wantErr: true,
+		},
+	}
 
-	image, ok := r.(*Image)
-	s.Require().True(ok)
-	s.NotNil(image.IncusAlias)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := newRandomTestClient(t, ctx, "image-ensure-")
+
+			r, err := c.Resource(KindImage, tt.image, &ImageConfig{})
+			require.NoError(t, err)
+
+			err = RunAction(ctx, r, ActionEnsure, tt.opts...)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.ErrorIs(t, err, ErrNotFound)
+				require.False(t, r.IsEnsured())
+			} else {
+				require.NoError(t, err)
+				require.True(t, r.IsEnsured())
+
+				image, ok := r.(*Image)
+				require.True(t, ok)
+				require.NotNil(t, image.IncusAlias)
+			}
+		})
+	}
 }
 
-func (s *ImageSuite) TestEnsure_WithCreate() {
-	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
+func TestImageEnsure_Idempotent(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "image-idempotent-")
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	require.NoError(t, err)
 
-	s.cleanup = append(s.cleanup, r)
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.True(t, r.IsEnsured())
 
-	image, ok := r.(*Image)
-	s.Require().True(ok)
-	s.NotNil(image.IncusAlias)
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.True(t, r.IsEnsured())
 }
 
-func (s *ImageSuite) TestEnsure_WithoutCreate_Fails() {
-	r, err := s.client.Resource(KindImage, "docker.io/library/nonexistent-image-xyz123:latest", &ImageConfig{})
-	s.Require().NoError(err)
+func TestImageEnsure_WithoutCreate_ThenWithCreate(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "image-retry-")
 
-	err = RunAction(s.ctx, r, ActionEnsure)
-	s.Require().Error(err)
-	s.False(r.IsEnsured())
-	s.ErrorIs(err, ErrNotFound)
+	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	require.NoError(t, err)
+
+	err = RunAction(ctx, r, ActionEnsure)
+	require.Error(t, err)
+	require.False(t, r.IsEnsured())
+
+	err = RunAction(ctx, r, ActionEnsure, OptionCreate())
+	require.NoError(t, err)
+	require.True(t, r.IsEnsured())
 }
 
-func (s *ImageSuite) TestEnsure_Idempotent() {
-	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
+func TestImageEnsure_ExistingImage_NewResource(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "image-existing-")
 
-	// First ensure - puts image in cache (or finds existing)
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
-	// Note: Created() may be false if image was already in cache
+	r1, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	require.NoError(t, err)
+	require.NoError(t, RunAction(ctx, r1, ActionEnsure, OptionCreate()))
+	require.True(t, r1.IsEnsured())
 
-	// Second ensure - should return immediately
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	newClient, err := c.globalClient.getProject(c.project)
+	require.NoError(t, err)
 
-	s.cleanup = append(s.cleanup, r)
-}
-
-func (s *ImageSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
-	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
-
-	// First attempt without create - fails (not in project cache)
-	err = RunAction(s.ctx, r, ActionEnsure)
-	s.Require().Error(err)
-	s.False(r.IsEnsured())
-
-	// Second attempt with create - succeeds (downloads it)
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
-
-	s.cleanup = append(s.cleanup, r)
-}
-
-func (s *ImageSuite) TestEnsure_ExistingImage_NewResource() {
-	// First, ensure image is in cache
-	r1, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r1, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r1.IsEnsured())
-	// Note: Created() may be false if image was already in cache from previous test
-
-	s.cleanup = append(s.cleanup, r1)
-
-	// Get a new client for the same project
-	newClient, err := s.globalClient.getProject(s.projectName)
-	s.Require().NoError(err)
-
-	// Create a new resource for the same image - should find existing in cache
 	r2, err := newClient.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
+	require.NoError(t, err)
 
-	// Ensure without create should find existing image in cache
-	err = RunAction(s.ctx, r2, ActionEnsure)
-	s.Require().NoError(err)
-	s.True(r2.IsEnsured())
-	s.False(r2.Created(), "fetched resource should have Created() false")
+	require.NoError(t, RunAction(ctx, r2, ActionEnsure))
+	require.True(t, r2.IsEnsured())
+	require.False(t, r2.Created(), "fetched resource should have Created() false")
 }
 
-// ----------------------------------------------------------------------------
-// ResourceStore Tests
-// ----------------------------------------------------------------------------
+func TestImageEnsure_ExistsOnNewClient(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "image-persist-")
 
-func (s *ImageSuite) TestResource_ReturnsSameInstance() {
-	r1, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
+	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	require.NoError(t, err)
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
 
-	r2, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
+	newClient, err := c.globalClient.getProject(c.project)
+	require.NoError(t, err)
 
-	s.Same(r1, r2)
-}
+	r2, err := newClient.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	require.NoError(t, err)
 
-func (s *ImageSuite) TestResource_DifferentNamesAreDifferent() {
-	r1, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
-
-	r2, err := s.client.Resource(KindImage, "docker.io/library/busybox:1.37", &ImageConfig{})
-	s.Require().NoError(err)
-
-	s.NotSame(r1, r2)
+	require.NoError(t, RunAction(ctx, r2, ActionEnsure))
+	require.True(t, r2.IsEnsured())
 }
 
 // ----------------------------------------------------------------------------
 // Delete Tests
 // ----------------------------------------------------------------------------
 
-func (s *ImageSuite) TestDelete_ImageExists_Removed() {
-	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
+func TestImageDelete(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	tests := []struct {
+		name   string
+		ensure bool
+	}{
+		{
+			name:   "image exists removed",
+			ensure: true,
+		},
+		{
+			name: "no image is noop",
+		},
+	}
 
-	err = RunAction(s.ctx, r, ActionDelete, OptionForce())
-	s.Require().NoError(err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := newRandomTestClient(t, ctx, "image-delete-")
 
-	alias, _, _ := s.client.Connection().GetImageAlias(r.(*Image).IncusName())
-	s.Nil(alias, "image should be gone after Delete")
+			r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+			require.NoError(t, err)
+
+			if tt.ensure {
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.True(t, r.IsEnsured())
+			}
+
+			require.NoError(t, RunAction(ctx, r, ActionDelete, OptionForce()))
+
+			if tt.ensure {
+				alias, _, _ := c.incus.GetImageAlias(r.(*Image).IncusName())
+				require.Nil(t, alias, "image should be gone after Delete")
+			}
+		})
+	}
 }
 
-func (s *ImageSuite) TestDelete_NoImage_IsNoop() {
-	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
+func TestImageDelete_NotEnsured_NoError(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "image-delne-")
 
-	// Delete without prior Ensure — no image in project, must not error.
-	err = RunAction(s.ctx, r, ActionDelete, OptionForce())
-	s.Require().NoError(err)
+	r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+	require.NoError(t, err)
+
+	require.NoError(t, RunAction(ctx, r, ActionDelete))
 }
 
-func (s *ImageSuite) TestEnsure_Pull_SkipsWhenFingerprintUnchanged() {
-	s.T().Skip("skopeo fingerprint may differ between runs on CI — needs investigation")
-	// Seed the cache with a pinned (immutable) image.
-	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:1.37", &ImageConfig{})
-	s.Require().NoError(err)
+// ----------------------------------------------------------------------------
+// Properties Test
+// ----------------------------------------------------------------------------
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
+func TestImageProperties(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "image-props-")
 
-	// Use a fresh client so the resource store is empty and Ensure doesn't
-	// short-circuit on the already-ensured resource.
-	freshClient, err := s.globalClient.getProject(s.projectName)
-	s.Require().NoError(err)
+	r, err := c.Resource(KindImage, "registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest", &ImageConfig{})
+	require.NoError(t, err)
 
-	r2, err := freshClient.Resource(KindImage, "docker.io/library/busybox:1.37", &ImageConfig{})
-	s.Require().NoError(err)
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
 
-	// Pull with unchanged remote fingerprint: refresh is skipped.
-	err = RunAction(s.ctx, r2, ActionEnsure, OptionCreate(), OptionPull())
-	s.Require().NoError(err)
-	s.True(r2.IsEnsured())
-
-	image2, ok := r2.(*Image)
-	s.Require().True(ok)
-	s.False(image2.Created(), "image should not be re-created when remote fingerprint matches cache")
-	s.cleanup = append(s.cleanup, r2)
-}
-
-func (s *ImageSuite) TestDelete_NotEnsured_NoError() {
-	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
-
-	// Delete without ensure should not error
-	err = RunAction(s.ctx, r, ActionDelete)
-	s.Require().NoError(err)
+	image, ok := r.(*Image)
+	require.True(t, ok)
+	require.Equal(t, "registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest", image.Name())
+	require.Equal(t, "/", image.Cwd)
+	require.Equal(t, 65534, int(image.UID))
+	require.Equal(t, 65534, int(image.GID))
 }
 
 // ----------------------------------------------------------------------------
 // Hook Tests
 // ----------------------------------------------------------------------------
 
-func (s *ImageSuite) TestHook_BeforeIsCalled() {
-	called := false
-	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if action == ActionEnsure && r.Kind() == KindImage {
-			called = true
-		}
-		return err
-	})
+func TestImageHooks(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
 
-	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
+	tests := []struct {
+		name string
+		run  func(*testing.T, *Client)
+	}{
+		{
+			name: "before is called",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				called := false
+				c.AddHookBefore(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+					if action == ActionEnsure && r.Kind() == KindImage {
+						called = true
+					}
+					return err
+				})
+				r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+				require.NoError(t, err)
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.True(t, called, "before hook should have been called")
+			},
+		},
+		{
+			name: "after is called",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				called := false
+				c.AddHookAfter(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+					if action == ActionEnsure && r.Kind() == KindImage {
+						called = true
+					}
+					return err
+				})
+				r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+				require.NoError(t, err)
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.True(t, called, "after hook should have been called")
+			},
+		},
+		{
+			name: "after receives error",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				var receivedErr error
+				c.AddHookAfter(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+					if action == ActionEnsure && r.Kind() == KindImage {
+						receivedErr = err
+					}
+					return err
+				})
+				r, err := c.Resource(KindImage, "docker.io/library/nonexistent:latest", &ImageConfig{})
+				require.NoError(t, err)
+				_ = RunAction(ctx, r, ActionEnsure)
+				require.NotNil(t, receivedErr, "after hook should receive the error")
+			},
+		},
+		{
+			name: "before can abort",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				c.AddHookBefore(func(_ context.Context, _ Action, r Resource, _ Options, err error) error {
+					if r.Name() == "docker.io/library/abort-me:latest" {
+						return ErrAborted
+					}
+					return err
+				})
+				r, err := c.Resource(KindImage, "docker.io/library/abort-me:latest", &ImageConfig{})
+				require.NoError(t, err)
+				err = RunAction(ctx, r, ActionEnsure, OptionCreate())
+				require.ErrorIs(t, err, ErrAborted)
+				require.False(t, r.IsEnsured())
+			},
+		},
+		{
+			name: "after can modify error",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				c.AddHookAfter(func(_ context.Context, _ Action, _ Resource, _ Options, err error) error {
+					if err != nil {
+						return ErrAborted
+					}
+					return nil
+				})
+				r, err := c.Resource(KindImage, "docker.io/library/nonexistent:latest", &ImageConfig{})
+				require.NoError(t, err)
+				err = RunAction(ctx, r, ActionEnsure)
+				require.ErrorIs(t, err, ErrAborted)
+			},
+		},
+		{
+			name: "delete action",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				var lastAction Action
+				c.AddHookBefore(func(_ context.Context, a Action, _ Resource, _ Options, err error) error {
+					lastAction = a
+					return err
+				})
+				r, err := c.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
+				require.NoError(t, err)
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.Equal(t, ActionEnsure, lastAction)
+				require.NoError(t, RunAction(ctx, r, ActionDelete))
+				require.Equal(t, ActionDelete, lastAction)
+			},
+		},
+	}
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(called, "before hook should have been called")
-}
-
-func (s *ImageSuite) TestHook_AfterIsCalled() {
-	called := false
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if action == ActionEnsure && r.Kind() == KindImage {
-			called = true
-		}
-		return err
-	})
-
-	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(called, "after hook should have been called")
-}
-
-func (s *ImageSuite) TestHook_AfterReceivesError() {
-	var receivedErr error
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if action == ActionEnsure && r.Kind() == KindImage {
-			receivedErr = err
-		}
-		return err
-	})
-
-	r, err := s.client.Resource(KindImage, "docker.io/library/nonexistent:latest", &ImageConfig{})
-	s.Require().NoError(err)
-
-	_ = RunAction(s.ctx, r, ActionEnsure) // without create, will fail
-	s.NotNil(receivedErr, "after hook should receive the error")
-}
-
-func (s *ImageSuite) TestHook_BeforeCanAbort() {
-	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if r.Name() == "docker.io/library/abort-me:latest" {
-			return ErrAborted
-		}
-		return err
-	})
-
-	r, err := s.client.Resource(KindImage, "docker.io/library/abort-me:latest", &ImageConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.ErrorIs(err, ErrAborted)
-	s.False(r.IsEnsured())
-}
-
-func (s *ImageSuite) TestHook_AfterCanModifyError() {
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if err != nil {
-			return ErrAborted // replace error
-		}
-		return nil
-	})
-
-	r, err := s.client.Resource(KindImage, "docker.io/library/nonexistent:latest", &ImageConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure) // will fail, hook replaces error
-	s.ErrorIs(err, ErrAborted)
-}
-
-func (s *ImageSuite) TestHook_DeleteAction() {
-	var action Action
-	s.client.AddHookBefore(func(_ context.Context, a Action, r Resource, args Options, err error) error {
-		action = a
-		return err
-	})
-
-	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.Equal(ActionEnsure, action)
-
-	// Delete fires the before hook (it removes any per-project copy).
-	err = RunAction(s.ctx, r, ActionDelete)
-	s.Require().NoError(err)
-	s.Equal(ActionDelete, action)
-}
-
-// ----------------------------------------------------------------------------
-// New Client Tests (persistence)
-// ----------------------------------------------------------------------------
-
-func (s *ImageSuite) TestEnsure_ExistsOnNewClient() {
-	// Create image
-	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	s.cleanup = append(s.cleanup, r)
-
-	// Get new client for same project
-	newClient, err := s.globalClient.getProject(s.projectName)
-	s.Require().NoError(err)
-
-	// Ensure without create should find it
-	r2, err := newClient.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r2, ActionEnsure) // no create
-	s.Require().NoError(err)
-	s.True(r2.IsEnsured())
-}
-
-// ----------------------------------------------------------------------------
-// IncusName Tests
-// ----------------------------------------------------------------------------
-
-func (s *ImageSuite) TestIncusName_MatchesInput() {
-	r, err := s.client.Resource(KindImage, "docker.io/library/busybox:latest", &ImageConfig{})
-	s.Require().NoError(err)
-
-	image, ok := r.(*Image)
-	s.Require().True(ok)
-	s.Equal("docker.io/library/busybox:latest", image.Name())
-	s.Equal("docker.io/library/busybox:latest", image.IncusName())
-}
-
-func (s *ImageSuite) TestConfig_RemoteAndImageParsed() {
-	r, err := s.client.Resource(KindImage, "docker.io/library/alpine:3.18", &ImageConfig{})
-	s.Require().NoError(err)
-
-	image, ok := r.(*Image)
-	s.Require().True(ok)
-	s.Equal("docker.io", image.Remote())
-	s.Equal("library/alpine:3.18", image.image)
-}
-
-// ----------------------------------------------------------------------------
-// Properties test
-// ----------------------------------------------------------------------------
-
-func (s *ImageSuite) TestProperties() {
-	r, err := s.client.Resource(KindImage, "registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest", &ImageConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	s.cleanup = append(s.cleanup, r)
-
-	image, ok := r.(*Image)
-	s.Require().True(ok)
-	s.Equal("registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest", image.Name())
-
-	s.Equal("/", image.Cwd)
-	s.Equal(65534, int(image.UID))
-	s.Equal(65534, int(image.GID))
-}
-
-// ----------------------------------------------------------------------------
-// Run the suite
-// ----------------------------------------------------------------------------
-
-func TestImageSuite(t *testing.T) {
-	suite.Run(t, new(ImageSuite))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := newRandomTestClient(t, ctx, "image-hook-")
+			tt.run(t, c)
+		})
+	}
 }

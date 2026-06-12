@@ -1,0 +1,23 @@
+name: with-resources
+services:
+  limited:
+    deploy:
+      resources:
+        limits:
+          cpus: 0.5
+          memory: "536870912"
+    image: docker.io/library/alpine:latest
+    networks:
+      default: null
+  pinned:
+    deploy:
+      resources:
+        limits:
+          cpus: 2
+          memory: "1073741824"
+    image: docker.io/library/alpine:latest
+    networks:
+      default: null
+networks:
+  default:
+    name: with-resources_default

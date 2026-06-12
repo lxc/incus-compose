@@ -1,0 +1,25 @@
+name: with-network-ranges
+services:
+  web:
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+    image: docker.io/nginx:alpine
+    networks:
+      backend:
+        ipv4_address: 10.200.0.17
+        ipv6_address: fd42:1::1/64
+      frontend:
+        ipv4_address: 10.100.0.17
+    x-incus:
+      limits.cpu: 1
+networks:
+  backend:
+    name: with-network-ranges_backend
+    x-incus:
+      ipv4.address: 10.200.0.1/24
+      ipv4.dhcp.ranges: 10.200.0.100-10.200.0.200
+      ipv6.address: fd42:1::1/64
+  frontend:
+    name: with-network-ranges_frontend
+    x-incus:
+      ipv4.address: 10.100.0.1/24

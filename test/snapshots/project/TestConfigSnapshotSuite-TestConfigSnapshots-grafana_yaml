@@ -1,0 +1,18 @@
+name: grafana
+services:
+  grafana:
+    image: grafana/grafana
+    networks:
+      default: null
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: storage
+        target: /var/lib/grafana
+        volume: {}
+networks:
+  default:
+    name: grafana_default
+volumes:
+  storage:
+    name: grafana_storage

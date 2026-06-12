@@ -4,365 +4,379 @@ import (
 	"context"
 	"testing"
 
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/require"
 )
 
-// ProfileSuite tests Profile operations against a real Incus instance.
-type ProfileSuite struct {
-	suite.Suite
-	ctx          context.Context
-	globalClient *GlobalClient
-	client       *Client
-	projectName  string
+// ----------------------------------------------------------------------------
+// Local-only Tests (no Incus required)
+// ----------------------------------------------------------------------------
+
+func TestProfileResource_ReturnsSameInstance(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "profile-test")
+
+	r1, err := c.Resource(KindProfile, "test-same", &ProfileConfig{})
+	require.NoError(t, err)
+
+	r2, err := c.Resource(KindProfile, "test-same", &ProfileConfig{})
+	require.NoError(t, err)
+
+	require.Same(t, r1, r2)
 }
 
-// SetupSuite runs once before all tests.
-func (s *ProfileSuite) SetupSuite() {
-	s.ctx = context.Background()
-	s.projectName = "profile-test"
+func TestProfileResource_DifferentNamesAreDifferent(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "profile-test")
 
-	gc, err := NewTestClient(s.ctx)
-	if err != nil {
-		s.T().Skipf("Skipping tests: %v", err)
-		return
-	}
-	s.globalClient = gc
+	r1, err := c.Resource(KindProfile, "profile-a", &ProfileConfig{})
+	require.NoError(t, err)
+
+	r2, err := c.Resource(KindProfile, "profile-b", &ProfileConfig{})
+	require.NoError(t, err)
+
+	require.NotSame(t, r1, r2)
 }
 
-// SetupTest runs before each test - creates fresh project.
-func (s *ProfileSuite) SetupTest() {
-	client, err := createProjectClient(s.globalClient, s.projectName)
-	if err != nil {
-		s.T().Fatalf("Failed to create test project: %v", err)
-	}
-	s.client = client
-}
+func TestProfileIncusName_Sanitized(t *testing.T) {
+	t.Parallel()
+	c := NewOfflineClient(context.Background(), "profile-test")
 
-// TearDownTest runs after each test - cleans up project.
-func (s *ProfileSuite) TearDownTest() {
-	_ = s.globalClient.DeleteProject(s.projectName, true)
+	r, err := c.Resource(KindProfile, "Test_Profile", &ProfileConfig{})
+	require.NoError(t, err)
+
+	profile, ok := r.(*Profile)
+	require.True(t, ok)
+	require.Equal(t, "Test_Profile", profile.Name())
+	require.Equal(t, "test-profile", profile.IncusName())
 }
 
 // ----------------------------------------------------------------------------
 // Ensure Tests
 // ----------------------------------------------------------------------------
 
-func (s *ProfileSuite) TestEnsure_WithCreate() {
-	r, err := s.client.Resource(KindProfile, "test-profile", &ProfileConfig{})
-	s.Require().NoError(err)
+func TestProfileEnsure(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	tests := []struct {
+		name     string
+		profile  string
+		config   *ProfileConfig
+		opts     []Option
+		wantErr  bool
+		validate func(*testing.T, Resource)
+	}{
+		{
+			name:    "with create",
+			profile: "test-profile",
+			config:  &ProfileConfig{},
+			opts:    []Option{OptionCreate()},
+		},
+		{
+			name:    "without create fails",
+			profile: "non-existent",
+			config:  &ProfileConfig{},
+			wantErr: true,
+			validate: func(t *testing.T, r Resource) {
+				t.Helper()
+				require.False(t, r.IsEnsured())
+			},
+		},
+		{
+			name:    "long name",
+			profile: "this-is-a-very-long-profile-name-that-exceeds-normal-limits",
+			config:  &ProfileConfig{},
+			opts:    []Option{OptionCreate()},
+		},
+		{
+			name:    "copies from default profile",
+			profile: "test-default-copy",
+			config:  &ProfileConfig{SourceProject: "default", SourceProfile: "default"},
+			opts:    []Option{OptionCreate()},
+			validate: func(t *testing.T, r Resource) {
+				t.Helper()
+				profile, ok := r.(*Profile)
+				require.True(t, ok)
+				require.NotNil(t, profile.IncusProfile)
+				require.NotEmpty(t, profile.IncusProfile.Devices)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := newRandomTestClient(t, ctx, "profile-ensure-")
+
+			r, err := c.Resource(KindProfile, tt.profile, tt.config)
+			require.NoError(t, err)
+
+			err = RunAction(ctx, r, ActionEnsure, tt.opts...)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.ErrorIs(t, err, ErrNotFound)
+			} else {
+				require.NoError(t, err)
+				require.True(t, r.IsEnsured())
+			}
+			if tt.validate != nil {
+				tt.validate(t, r)
+			}
+		})
+	}
 }
 
-func (s *ProfileSuite) TestEnsure_WithoutCreate_Fails() {
-	r, err := s.client.Resource(KindProfile, "non-existent", &ProfileConfig{})
-	s.Require().NoError(err)
+func TestProfileEnsure_Idempotent(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "profile-idempotent-")
 
-	err = RunAction(s.ctx, r, ActionEnsure)
-	s.Require().Error(err)
-	s.False(r.IsEnsured())
-	s.ErrorIs(err, ErrNotFound)
+	r, err := c.Resource(KindProfile, "test-idempotent", &ProfileConfig{})
+	require.NoError(t, err)
+
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.True(t, r.IsEnsured())
+
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.True(t, r.IsEnsured())
 }
 
-func (s *ProfileSuite) TestEnsure_Idempotent() {
-	r, err := s.client.Resource(KindProfile, "test-idempotent", &ProfileConfig{})
-	s.Require().NoError(err)
+func TestProfileEnsure_WithoutCreate_ThenWithCreate(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "profile-retry-")
 
-	// First ensure
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	r, err := c.Resource(KindProfile, "test-retry", &ProfileConfig{})
+	require.NoError(t, err)
 
-	// Second ensure - should return immediately
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	err = RunAction(ctx, r, ActionEnsure)
+	require.Error(t, err)
+	require.False(t, r.IsEnsured())
+
+	err = RunAction(ctx, r, ActionEnsure, OptionCreate())
+	require.NoError(t, err)
+	require.True(t, r.IsEnsured())
 }
 
-func (s *ProfileSuite) TestEnsure_WithoutCreate_ThenWithCreate() {
-	r, err := s.client.Resource(KindProfile, "test-retry", &ProfileConfig{})
-	s.Require().NoError(err)
+func TestProfileEnsure_ExistsOnNewClient(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	c := newRandomTestClient(t, ctx, "profile-persist-")
 
-	// First attempt without create - fails
-	err = RunAction(s.ctx, r, ActionEnsure)
-	s.Require().Error(err)
-	s.False(r.IsEnsured())
+	r, err := c.Resource(KindProfile, "test-persist", &ProfileConfig{})
+	require.NoError(t, err)
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
 
-	// Second attempt with create - succeeds
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
-}
+	newClient, err := c.globalClient.getProject(c.project)
+	require.NoError(t, err)
 
-func (s *ProfileSuite) TestEnsure_LongName() {
-	longName := "this-is-a-very-long-profile-name-that-exceeds-normal-limits"
-	r, err := s.client.Resource(KindProfile, longName, &ProfileConfig{})
-	s.Require().NoError(err)
+	r2, err := newClient.Resource(KindProfile, "test-persist", &ProfileConfig{})
+	require.NoError(t, err)
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
-}
-
-func (s *ProfileSuite) TestEnsure_CopiesFromDefaultProfile() {
-	r, err := s.client.Resource(KindProfile, "test-default-copy", &ProfileConfig{SourceProject: "default", SourceProfile: "default"})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	profile, ok := r.(*Profile)
-	s.Require().True(ok)
-	s.NotNil(profile.IncusProfile)
-	// Default profile should have devices copied
-	s.NotEmpty(profile.IncusProfile.Devices)
-}
-
-// ----------------------------------------------------------------------------
-// ResourceStore Tests
-// ----------------------------------------------------------------------------
-
-func (s *ProfileSuite) TestResource_ReturnsSameInstance() {
-	r1, err := s.client.Resource(KindProfile, "test-same", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	r2, err := s.client.Resource(KindProfile, "test-same", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	s.Same(r1, r2)
-}
-
-func (s *ProfileSuite) TestResource_DifferentNamesAreDifferent() {
-	r1, err := s.client.Resource(KindProfile, "profile-a", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	r2, err := s.client.Resource(KindProfile, "profile-b", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	s.NotSame(r1, r2)
+	require.NoError(t, RunAction(ctx, r2, ActionEnsure))
+	require.True(t, r2.IsEnsured())
 }
 
 // ----------------------------------------------------------------------------
 // Delete Tests
 // ----------------------------------------------------------------------------
 
-func (s *ProfileSuite) TestDelete_AfterEnsure() {
-	r, err := s.client.Resource(KindProfile, "test-delete", &ProfileConfig{})
-	s.Require().NoError(err)
+func TestProfileDelete(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(r.IsEnsured())
+	tests := []struct {
+		name   string
+		ensure bool
+	}{
+		{
+			name:   "after ensure",
+			ensure: true,
+		},
+		{
+			name: "not ensured no error",
+		},
+	}
 
-	err = RunAction(s.ctx, r, ActionDelete, OptionForce())
-	s.Require().NoError(err)
-	s.False(r.IsEnsured())
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := newRandomTestClient(t, ctx, "profile-delete-")
 
-func (s *ProfileSuite) TestDelete_NotEnsured_NoError() {
-	r, err := s.client.Resource(KindProfile, "never-created", &ProfileConfig{})
-	s.Require().NoError(err)
+			r, err := c.Resource(KindProfile, "test-delete", &ProfileConfig{})
+			require.NoError(t, err)
 
-	// Delete without ensure should not error
-	err = RunAction(s.ctx, r, ActionDelete)
-	s.Require().NoError(err)
+			if tt.ensure {
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.True(t, r.IsEnsured())
+			}
+
+			require.NoError(t, RunAction(ctx, r, ActionDelete, OptionForce()))
+			require.False(t, r.IsEnsured())
+		})
+	}
 }
 
 // ----------------------------------------------------------------------------
 // Hook Tests
 // ----------------------------------------------------------------------------
 
-func (s *ProfileSuite) TestHook_BeforeIsCalled() {
-	called := false
-	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if action == ActionEnsure && r.Kind() == KindProfile {
-			called = true
-		}
-		return err
-	})
+func TestProfileHooks(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
 
-	r, err := s.client.Resource(KindProfile, "test-before-hook", &ProfileConfig{})
-	s.Require().NoError(err)
+	tests := []struct {
+		name string
+		run  func(*testing.T, *Client)
+	}{
+		{
+			name: "before is called",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				called := false
+				c.AddHookBefore(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+					if action == ActionEnsure && r.Kind() == KindProfile {
+						called = true
+					}
+					return err
+				})
+				r, err := c.Resource(KindProfile, "test-before-hook", &ProfileConfig{})
+				require.NoError(t, err)
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.True(t, called, "before hook should have been called")
+			},
+		},
+		{
+			name: "after is called",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				called := false
+				c.AddHookAfter(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+					if action == ActionEnsure && r.Kind() == KindProfile {
+						called = true
+					}
+					return err
+				})
+				r, err := c.Resource(KindProfile, "test-after-hook", &ProfileConfig{})
+				require.NoError(t, err)
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.True(t, called, "after hook should have been called")
+			},
+		},
+		{
+			name: "after receives error",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				var receivedErr error
+				c.AddHookAfter(func(_ context.Context, action Action, r Resource, _ Options, err error) error {
+					if action == ActionEnsure && r.Kind() == KindProfile {
+						receivedErr = err
+					}
+					return err
+				})
+				r, err := c.Resource(KindProfile, "non-existent", &ProfileConfig{})
+				require.NoError(t, err)
+				_ = RunAction(ctx, r, ActionEnsure)
+				require.NotNil(t, receivedErr, "after hook should receive the error")
+			},
+		},
+		{
+			name: "before can abort",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				c.AddHookBefore(func(_ context.Context, _ Action, r Resource, _ Options, err error) error {
+					if r.Name() == "abort-me" {
+						return ErrAborted
+					}
+					return err
+				})
+				r, err := c.Resource(KindProfile, "abort-me", &ProfileConfig{})
+				require.NoError(t, err)
+				err = RunAction(ctx, r, ActionEnsure, OptionCreate())
+				require.ErrorIs(t, err, ErrAborted)
+				require.False(t, r.IsEnsured())
+			},
+		},
+		{
+			name: "after can modify error",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				c.AddHookAfter(func(_ context.Context, _ Action, _ Resource, _ Options, err error) error {
+					if err != nil {
+						return ErrAborted
+					}
+					return nil
+				})
+				r, err := c.Resource(KindProfile, "non-existent", &ProfileConfig{})
+				require.NoError(t, err)
+				err = RunAction(ctx, r, ActionEnsure)
+				require.ErrorIs(t, err, ErrAborted)
+			},
+		},
+		{
+			name: "before FIFO",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				var order []int
+				for _, n := range []int{1, 2, 3} {
+					c.AddHookBefore(func(_ context.Context, _ Action, _ Resource, _ Options, err error) error {
+						order = append(order, n)
+						return err
+					})
+				}
+				r, err := c.Resource(KindProfile, "test-fifo", &ProfileConfig{})
+				require.NoError(t, err)
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.Equal(t, []int{1, 2, 3}, order, "before hooks should run FIFO")
+			},
+		},
+		{
+			name: "after LIFO",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				var order []int
+				for _, n := range []int{1, 2, 3} {
+					c.AddHookAfter(func(_ context.Context, _ Action, _ Resource, _ Options, err error) error {
+						order = append(order, n)
+						return err
+					})
+				}
+				r, err := c.Resource(KindProfile, "test-lifo", &ProfileConfig{})
+				require.NoError(t, err)
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.Equal(t, []int{3, 2, 1}, order, "after hooks should run LIFO")
+			},
+		},
+		{
+			name: "delete action",
+			run: func(t *testing.T, c *Client) {
+				t.Helper()
+				var lastAction Action
+				c.AddHookBefore(func(_ context.Context, a Action, _ Resource, _ Options, err error) error {
+					lastAction = a
+					return err
+				})
+				r, err := c.Resource(KindProfile, "test-delete-hook", &ProfileConfig{})
+				require.NoError(t, err)
+				require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+				require.Equal(t, ActionEnsure, lastAction)
+				require.NoError(t, RunAction(ctx, r, ActionDelete))
+				require.Equal(t, ActionDelete, lastAction)
+			},
+		},
+	}
 
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(called, "before hook should have been called")
-}
-
-func (s *ProfileSuite) TestHook_AfterIsCalled() {
-	called := false
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if action == ActionEnsure && r.Kind() == KindProfile {
-			called = true
-		}
-		return err
-	})
-
-	r, err := s.client.Resource(KindProfile, "test-after-hook", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.True(called, "after hook should have been called")
-}
-
-func (s *ProfileSuite) TestHook_AfterReceivesError() {
-	var receivedErr error
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if action == ActionEnsure && r.Kind() == KindProfile {
-			receivedErr = err
-		}
-		return err
-	})
-
-	r, err := s.client.Resource(KindProfile, "non-existent", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	_ = RunAction(s.ctx, r, ActionEnsure) // without create, will fail
-	s.NotNil(receivedErr, "after hook should receive the error")
-}
-
-func (s *ProfileSuite) TestHook_BeforeCanAbort() {
-	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if r.Name() == "abort-me" {
-			return ErrAborted
-		}
-		return err
-	})
-
-	r, err := s.client.Resource(KindProfile, "abort-me", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.ErrorIs(err, ErrAborted)
-	s.False(r.IsEnsured())
-}
-
-func (s *ProfileSuite) TestHook_AfterCanModifyError() {
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		if err != nil {
-			return ErrAborted // replace error
-		}
-		return nil
-	})
-
-	r, err := s.client.Resource(KindProfile, "non-existent", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure) // will fail, hook replaces error
-	s.ErrorIs(err, ErrAborted)
-}
-
-func (s *ProfileSuite) TestHook_BeforeFIFO() {
-	var order []int
-	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		order = append(order, 1)
-		return err
-	})
-	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		order = append(order, 2)
-		return err
-	})
-	s.client.AddHookBefore(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		order = append(order, 3)
-		return err
-	})
-
-	r, err := s.client.Resource(KindProfile, "test-fifo", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.Equal([]int{1, 2, 3}, order, "before hooks should run FIFO")
-}
-
-func (s *ProfileSuite) TestHook_AfterLIFO() {
-	var order []int
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		order = append(order, 1)
-		return err
-	})
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		order = append(order, 2)
-		return err
-	})
-	s.client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Options, err error) error {
-		order = append(order, 3)
-		return err
-	})
-
-	r, err := s.client.Resource(KindProfile, "test-lifo", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.Equal([]int{3, 2, 1}, order, "after hooks should run LIFO")
-}
-
-func (s *ProfileSuite) TestHook_DeleteAction() {
-	var action Action
-	s.client.AddHookBefore(func(_ context.Context, a Action, r Resource, args Options, err error) error {
-		action = a
-		return err
-	})
-
-	r, err := s.client.Resource(KindProfile, "test-delete-hook", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-	s.Equal(ActionEnsure, action)
-
-	err = RunAction(s.ctx, r, ActionDelete)
-	s.Require().NoError(err)
-	s.Equal(ActionDelete, action)
-}
-
-// ----------------------------------------------------------------------------
-// New Client Tests (persistence)
-// ----------------------------------------------------------------------------
-
-func (s *ProfileSuite) TestEnsure_ExistsOnNewClient() {
-	// Create profile
-	r, err := s.client.Resource(KindProfile, "test-persist", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r, ActionEnsure, OptionCreate())
-	s.Require().NoError(err)
-
-	// Get new client for same project
-	newClient, err := s.globalClient.getProject(s.projectName)
-	s.Require().NoError(err)
-
-	// Ensure without create should find it
-	r2, err := newClient.Resource(KindProfile, "test-persist", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	err = RunAction(s.ctx, r2, ActionEnsure) // no create
-	s.Require().NoError(err)
-	s.True(r2.IsEnsured())
-}
-
-// ----------------------------------------------------------------------------
-// IncusName Tests
-// ----------------------------------------------------------------------------
-
-func (s *ProfileSuite) TestIncusName_Sanitized() {
-	r, err := s.client.Resource(KindProfile, "Test_Profile", &ProfileConfig{})
-	s.Require().NoError(err)
-
-	profile, ok := r.(*Profile)
-	s.Require().True(ok)
-	s.Equal("Test_Profile", profile.Name())
-	s.Equal("test-profile", profile.IncusName())
-}
-
-// ----------------------------------------------------------------------------
-// Run the suite
-// ----------------------------------------------------------------------------
-
-func TestProfileSuite(t *testing.T) {
-	suite.Run(t, new(ProfileSuite))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := newRandomTestClient(t, ctx, "profile-hook-")
+			tt.run(t, c)
+		})
+	}
 }

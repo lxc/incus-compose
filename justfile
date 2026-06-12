@@ -19,11 +19,40 @@ default:
     @just --list
 
 # Run local unit-tests, incus-facing tests are skipped.
+[env("INCUS_COMPOSE_TEST_LOCAL", "1")]
+[env("NO_COLOR", "1")]
 test-local folder="./..." *args:
-    LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-test-local.log; \
-        INCUS_COMPOSE_TEST_LOCAL=1 time go test {{ folder }} -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} 2>&1 | tee ${LOGFILE} || EXIT_CODE=$?; \
-        echo "Log: ${LOGFILE}"; \
-        exit ${EXIT_CODE:-0}
+    @just log-run "test/logs/`date +%Y%m%d-%H%M%S`-test-local.log" "go test {{ folder }} -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}"
+
+# Run tests against nested Incus, includes direct incus tests.
+[env("NO_COLOR", "1")]
+test folder="./..." *args:
+    @just log-run "test/logs/`date +%Y%m%d-%H%M%S`-test.log" "go test {{ folder }} -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}"
+
+# Run all tests against nested Incus, includes direct incus as well as slow tests.
+[env("INCUS_COMPOSE_TEST_SLOW", "1")]
+[env("NO_COLOR", "1")]
+test-slow folder="./..." *args:
+    @just log-run "test/logs/`date +%Y%m%d-%H%M%S`-test-slow.log" "go test {{ folder }} -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}"
+
+# Update snapshots for long running tests.
+[env("INCUS_COMPOSE_TEST_SLOW", "1")]
+[env("NO_COLOR", "1")]
+[env("UPDATE_SNAPSHOTS", "1")]
+update-slow-snapshots folder="./..." *args:
+    @just log-run "test/logs/`date +%Y%m%d-%H%M%S`-update-slow.log" "go test {{ folder }} -count=1 -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}"
+
+# Update snapshot test files that require a remote
+[env("NO_COLOR", "1")]
+[env("UPDATE_SNAPSHOTS", "1")]
+update-snapshots folder="./..." *args:
+    @just log-run "test/logs/`date +%Y%m%d-%H%M%S`-update-slow.log" "go test {{ folder }} -count=1 -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}"
+
+[private]
+log-run logfile="" cmd="":
+    @(time {{ cmd }}) 2>&1 | tee -a {{ logfile }} || EXIT_CODE=$?; \
+    echo -e "\n\nCMD: {{ cmd }}\nLog: {{ logfile }}" | tee -a {{ logfile }}; \
+    exit ${EXIT_CODE:-0}
 
 # Lint all files.
 lint folder="./...":
@@ -32,20 +61,6 @@ lint folder="./...":
 # Lint and fix all files.
 fix folder="./...":
     golangci-lint run --fix {{ folder }}
-
-# Update local snapshot test files
-update-local-snapshots folder="./..." *args:
-    go clean -testcache
-    LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-update-local-snapshots.log; \
-        NO_COLOR=1 INCUS_COMPOSE_TEST_LOCAL=1 UPDATE_SNAPSHOTS=true time go test {{ folder }} -parallel {{ v_test_procs }} -v {{ args }} 2>&1 | tee ${LOGFILE} || true; \
-        echo "Log: ${LOGFILE}"
-
-# Update snapshot test files that require a remote
-update-snapshots folder="./..." *args:
-    go clean -testcache
-    LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-update-snapshots.log; \
-        NO_COLOR=1 UPDATE_SNAPSHOTS=true time go test {{ folder }} -parallel {{ v_test_procs }} -v {{ args }} 2>&1 | tee ${LOGFILE} || true; \
-        echo "Log: ${LOGFILE}"
 
 # Dev install creates your dev environment: `just dev-install [container] [listen] [project] [image]`
 dev-install container_name="local:ict" listen='127.0.0.1:1443' project='default' image='images:debian/trixie' storagepool='default':
@@ -124,20 +139,6 @@ run *args:
 # Usage: just run-debug -f test/fixtures/simple-nginx/compose.yaml config
 run-debug *args:
     @go run ./cmd/incus-compose --debug {{ args }}
-
-# Run tests against nested Incus, includes direct incus tests.
-test folder="./..." *args:
-    LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-test.log; \
-        NO_COLOR=1 time go test {{ folder }} -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} 2>&1 | tee -a ${LOGFILE} || EXIT_CODE=$?; \
-        echo "Log: ${LOGFILE}"; \
-        exit ${EXIT_CODE:-0}
-
-# Run all tests against nested Incus, includes direct incus as well as slow tests.
-test-slow folder="./..." *args:
-    LOGFILE=test/logs/`date +%Y%m%d-%H%M%S`-test-slow.log; \
-        NO_COLOR=1 INCUS_COMPOSE_TEST_SLOW=1 time go test {{ folder }} -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }} 2>&1 | tee -a ${LOGFILE} || EXIT_CODE=$?; \
-        echo "Log: ${LOGFILE}"; \
-        exit ${EXIT_CODE:-0}
 
 # Purge all dangling networks (managed and 0 users) from the configured remote
 purge-networks:

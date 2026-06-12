@@ -54,6 +54,11 @@ func newUpCommand() *cli.Command {
 				Usage: "Build images before starting containers",
 			},
 			&cli.BoolFlag{
+				Name:    "builder",
+				Usage:   "Preferred builder, binary name or absolute path. Empty for auto-detect.",
+				Sources: cli.EnvVars("INCUS_COMPOSE_BUILDER"),
+			},
+			&cli.BoolFlag{
 				Name:  "no-build",
 				Usage: "Do not build images even if missing",
 			},
@@ -154,19 +159,22 @@ func newUpCommand() *cli.Command {
 				}
 			}
 
-			build := client.BuildAuto
+			buildMode := client.BuildAuto
 			if cmd.Bool("build") {
-				build = client.BuildForce
+				buildMode = client.BuildForce
 			} else if cmd.Bool("no-build") {
-				build = client.BuildNever
+				buildMode = client.BuildNever
 			}
 			params := upParams{
-				reCreate:          cmd.Bool("recreate"),
-				start:             !cmd.Bool("no-start"),
-				healthd:           usesHealthd,
-				services:          cmd.Args().Slice(),
-				pull:              cmd.String("pull"),
-				build:             build,
+				reCreate: cmd.Bool("recreate"),
+				start:    !cmd.Bool("no-start"),
+				healthd:  usesHealthd,
+				services: cmd.Args().Slice(),
+				pull:     cmd.String("pull"),
+				build: client.BuildInfo{
+					Mode:             buildMode,
+					PreferredBuilder: cmd.String("builder"),
+				},
 				timeout:           cmd.Duration("timeout"),
 				dependencyTimeout: cmd.Duration("dependency-timeout"),
 				scale:             parseScale(cmd.StringSlice("scale")),
@@ -206,7 +214,7 @@ type upParams struct {
 	healthd           bool
 	reCreate          bool
 	pull              string
-	build             client.BuildMode
+	build             client.BuildInfo
 	timeout           time.Duration
 	dependencyTimeout time.Duration
 	scale             map[string]int
@@ -250,10 +258,7 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 	if params.reCreate {
 		stack := client.NewStack(c)
 		toStackOpts := []project.ToStackOption{}
-		toStackOpts = append(toStackOpts, project.ToStackNoImages(), project.ToStackReverse())
-		if len(params.services) > 0 {
-			toStackOpts = append(toStackOpts, project.ToStackOnlyServices(params.services))
-		}
+		toStackOpts = append(toStackOpts, project.ToStackNoImages(), project.ToStackReverse(), project.ToStackOnlyServices(params.services))
 		if len(params.scale) > 0 {
 			toStackOpts = append(toStackOpts, project.ToStackScale(params.scale))
 		}
@@ -292,10 +297,7 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 
 	stack := client.NewStack(c)
 	toStackOpts := []project.ToStackOption{}
-	toStackOpts = append(toStackOpts, project.ToStackStorageVolumes())
-	if len(params.services) > 0 {
-		toStackOpts = append(toStackOpts, project.ToStackOnlyServices(params.services))
-	}
+	toStackOpts = append(toStackOpts, project.ToStackStorageVolumes(), project.ToStackOnlyServices(params.services))
 	if len(params.scale) > 0 {
 		toStackOpts = append(toStackOpts, project.ToStackScale(params.scale))
 	}
@@ -313,7 +315,7 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 	if params.pull == "always" {
 		startOptions = append(startOptions, client.OptionPull())
 	}
-	if params.build != client.BuildAuto {
+	if params.build.Mode != client.BuildAuto || params.build.PreferredBuilder != "" {
 		startOptions = append(startOptions, client.OptionBuild(params.build))
 	}
 	if params.dependencyTimeout > 0 {

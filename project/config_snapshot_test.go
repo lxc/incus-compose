@@ -36,7 +36,7 @@ type ConfigTestCase struct {
 
 func (s *ConfigSnapshotSuite) SetupSuite() {
 	s.fixturesDir = filepath.Join("..", "test", "fixtures")
-	s.snapshotter = cupaloy.New(cupaloy.SnapshotSubdirectory(filepath.Join("..", "test", "snapshots")))
+	s.snapshotter = cupaloy.New(cupaloy.SnapshotSubdirectory(filepath.Join("..", "test", "snapshots", "project")))
 }
 
 func (s *ConfigSnapshotSuite) SetupTest() {

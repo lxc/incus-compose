@@ -27,7 +27,7 @@ func skipIfNoBuilder(t *testing.T) {
 	t.Skip("Skipping: podman or docker not found")
 }
 
-func writeCompose(t *testing.T, files map[string]string) string {
+func writeTempFiles(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
 	for name, content := range files {
@@ -35,7 +35,7 @@ func writeCompose(t *testing.T, files map[string]string) string {
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
 		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 	}
-	return filepath.Join(dir, "compose.yaml")
+	return dir
 }
 
 func TestBuildCommandWithBuildFixture(t *testing.T) {
@@ -54,8 +54,8 @@ func TestBuildCommandWithBuildFixture(t *testing.T) {
 
 	stdout, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
 	require.NoError(t, err)
-	require.Contains(t, stdout, "Built image for service \"app\": localhost/with-build-app")
-	require.Contains(t, stdout, "Built image for service \"app2\": localhost/app2:latest")
+	require.Contains(t, stdout.String(), "Built image for service \"app\": localhost/with-build-app")
+	require.Contains(t, stdout.String(), "Built image for service \"app2\": localhost/app2:latest")
 }
 
 func TestBuildCommandWithServiceFilter(t *testing.T) {
@@ -74,12 +74,11 @@ func TestBuildCommandWithServiceFilter(t *testing.T) {
 
 	stdout, _, err := runCommand(t, ctx, pn, "-f", fixture, "build", "app")
 	require.NoError(t, err)
-	require.Contains(t, stdout, "Built image for service \"app\": localhost/with-build-app")
-	require.NotContains(t, stdout, "Built image for service \"app2\"")
+	require.Contains(t, stdout.String(), "Built image for service \"app\": localhost/with-build-app")
+	require.NotContains(t, stdout.String(), "Built image for service \"app2\"")
 }
 
 func TestBuildCommandWithNoBuildServices(t *testing.T) {
-	skipSlow(t)
 	skipLocal(t)
 	t.Parallel()
 
@@ -93,11 +92,10 @@ func TestBuildCommandWithNoBuildServices(t *testing.T) {
 
 	stdout, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
 	require.NoError(t, err)
-	require.Contains(t, stdout, "No services have a build: configuration.")
+	require.Contains(t, stdout.String(), "No services have a build: configuration.")
 }
 
 func TestBuildCommandWithNoMatchingBuildServices(t *testing.T) {
-	skipSlow(t)
 	skipLocal(t)
 	t.Parallel()
 
@@ -111,17 +109,16 @@ func TestBuildCommandWithNoMatchingBuildServices(t *testing.T) {
 
 	stdout, _, err := runCommand(t, ctx, pn, "-f", fixture, "build", "missing")
 	require.NoError(t, err)
-	require.Contains(t, stdout, "No build-configured services matched the filter.")
+	require.Contains(t, stdout.String(), "No build-configured services matched the filter.")
 }
 
 func TestBuildCommandWithNonBuildServiceFilter(t *testing.T) {
-	skipSlow(t)
 	skipLocal(t)
 	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
-	fixture := writeCompose(t, map[string]string{
+	dir := writeTempFiles(t, map[string]string{
 		"compose.yaml": `services:
   app:
     build: .
@@ -132,22 +129,21 @@ func TestBuildCommandWithNonBuildServiceFilter(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+		_, _, _ = runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
 	})
 
-	stdout, _, err := runCommand(t, ctx, pn, "-f", fixture, "build", "sidecar")
+	stdout, _, err := runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "build", "sidecar")
 	require.NoError(t, err)
-	require.Contains(t, stdout, "No build-configured services matched the filter.")
+	require.Contains(t, stdout.String(), "No build-configured services matched the filter.")
 }
 
 func TestBuildCommandRejectsMultiplePlatforms(t *testing.T) {
-	skipSlow(t)
 	skipLocal(t)
 	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
-	fixture := writeCompose(t, map[string]string{
+	dir := writeTempFiles(t, map[string]string{
 		"compose.yaml": `services:
   app:
     build:
@@ -160,22 +156,21 @@ func TestBuildCommandRejectsMultiplePlatforms(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+		_, _, _ = runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
+	_, _, err := runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "build")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "build.platforms with multiple platforms is not supported")
 }
 
 func TestBuildCommandRejectsUnsupportedPlatform(t *testing.T) {
-	skipSlow(t)
 	skipLocal(t)
 	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
-	fixture := writeCompose(t, map[string]string{
+	dir := writeTempFiles(t, map[string]string{
 		"compose.yaml": `services:
   app:
     build:
@@ -187,22 +182,20 @@ func TestBuildCommandRejectsUnsupportedPlatform(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+		_, _, _ = runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
+	_, _, err := runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "build")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unsupported build platform linux/unsupported")
 }
 
 func TestBuildCommandReportsMissingBuilder(t *testing.T) {
-	skipSlow(t)
 	skipLocal(t)
-	t.Setenv("INCUS_COMPOSE_BUILDER", "this-builder-does-not-exist-incus-compose-test")
 
 	ctx := context.Background()
 	pn := t.Name()
-	fixture := writeCompose(t, map[string]string{
+	dir := writeTempFiles(t, map[string]string{
 		"compose.yaml": `services:
   app:
     build: .
@@ -211,10 +204,15 @@ func TestBuildCommandReportsMissingBuilder(t *testing.T) {
 	})
 
 	t.Cleanup(func() {
-		_, _, _ = runCommand(t, ctx, pn, "-f", fixture, "down", "--project")
+		_, _, _ = runCommand(t, ctx, pn, "-f", filepath.Join(dir, "compose.yaml"), "down", "--project")
 	})
 
-	_, _, err := runCommand(t, ctx, pn, "-f", fixture, "build")
+	_, _, err := runCommand(
+		t,
+		ctx,
+		pn,
+		"-f", filepath.Join(dir, "compose.yaml"), "build", "--builder", "ic-unknown-builder",
+	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no container builder")
 }

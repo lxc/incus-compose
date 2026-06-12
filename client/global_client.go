@@ -213,12 +213,7 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 }
 
 // NewTestClient creates a new GlobalClient for testing.
-// Returns error if INCUS_COMPOSE_URL is not set.
 func NewTestClient(ctx context.Context) (*GlobalClient, error) {
-	if _, ok := os.LookupEnv("INCUS_COMPOSE_TEST_LOCAL"); ok {
-		return nil, ErrTestLocal
-	}
-
 	var logger *slog.Logger
 
 	logFormat, ok := os.LookupEnv("LOG_FORMAT")

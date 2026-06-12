@@ -3,35 +3,75 @@ package client
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/require"
 )
+
+func skipLocal(t *testing.T) {
+	t.Helper()
+	if os.Getenv("INCUS_COMPOSE_TEST_LOCAL") != "" {
+		t.Skip("Skipping: env INCUS_COMPOSE_TEST_LOCAL is set, run `just test` for this test")
+	}
+}
+
+// newRandomTestClient creates a GlobalClient, a fresh project-scoped Client,
+// and registers t.Cleanup to delete the project on teardown.
+func newRandomTestClient(t *testing.T, ctx context.Context, prefix string) *Client {
+	t.Helper()
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
+	name := prefix + strings.ToLower(RandString(12))
+	c, err := createProjectClient(gc, name)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gc.DeleteProject(name, true) })
+	return c
+}
+
+// createProjectClient creates a project-scoped client with logging hooks.
+func createProjectClient(gc *GlobalClient, name string) (*Client, error) {
+	if name == "" {
+		name = "test-" + strings.ToLower(RandString(12))
+	}
+
+	_ = gc.DeleteProject(name, true)
+
+	c, err := gc.createProject(name, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
 
 // ----------------------------------------------------------------------------
 // Unit Tests
 // ----------------------------------------------------------------------------
 
 func TestClientDescriptionFormat(t *testing.T) {
+	t.Parallel()
 	client := NewOfflineClient(context.Background(), "my_project")
 
-	assert.Equal(t, "incus-compose: %s", client.globalClient.Config.DescriptionFormat)
-	assert.Equal(t, "incus-compose: my_project:%s", client.Config().DescriptionFormat)
-	assert.Equal(t, "incus-compose: my_project:web", fmt.Sprintf(client.Config().DescriptionFormat, "web"))
+	require.Equal(t, "incus-compose: %s", client.globalClient.Config.DescriptionFormat)
+	require.Equal(t, "incus-compose: my_project:%s", client.Config().DescriptionFormat)
+	require.Equal(t, "incus-compose: my_project:web", fmt.Sprintf(client.Config().DescriptionFormat, "web"))
 }
 
 func TestClientCustomDescriptionFormat(t *testing.T) {
+	t.Parallel()
 	gc := New(context.Background(), ClientDescriptionFormat("managed-by-test: %s"))
 
 	config := gc.Config
 	config.DescriptionFormat = fmt.Sprintf(config.DescriptionFormat, "demo") + ":%s"
 
-	assert.Equal(t, "managed-by-test: demo:web", fmt.Sprintf(config.DescriptionFormat, "web"))
+	require.Equal(t, "managed-by-test: demo:web", fmt.Sprintf(config.DescriptionFormat, "web"))
 }
 
 func TestSanitizeProjectName(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		input    string
@@ -71,152 +111,152 @@ func TestSanitizeProjectName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := sanitizeProjectName(tt.input)
-			assert.Equal(t, tt.expected, result)
+			t.Parallel()
+			require.Equal(t, tt.expected, sanitizeProjectName(tt.input))
 		})
 	}
-}
-
-// ----------------------------------------------------------------------------
-// Test Helpers
-// ----------------------------------------------------------------------------
-
-// createProjectClient creates a project-scoped client with logging hooks.
-func createProjectClient(gc *GlobalClient, name string) (*Client, error) {
-	if name == "" {
-		name = "test-" + strings.ToLower(RandString(12))
-	}
-
-	_ = gc.DeleteProject(name, true)
-
-	c, err := gc.createProject(name, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return c, nil
 }
 
 // ----------------------------------------------------------------------------
 // Integration Tests
 // ----------------------------------------------------------------------------
 
-// ClientSuite tests GlobalClient operations against a real Incus instance.
-type ClientSuite struct {
-	suite.Suite
-	ctx          context.Context
-	globalClient *GlobalClient
-	projectName  string
+func TestClientConnection_IsConnected(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
+	require.True(t, gc.IsConnected())
 }
 
-// SetupSuite runs once before all tests.
-func (s *ClientSuite) SetupSuite() {
-	s.ctx = context.Background()
-	s.projectName = "client-test"
+func TestClientProject_GlobalClientKeepsDefaultProfile(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
 
-	gc, err := NewTestClient(s.ctx)
-	if err != nil {
-		s.T().Skipf("Skipping tests: %v", err)
-		return
-	}
-	s.globalClient = gc
-}
+	gInfo, err := gc.incus.GetConnectionInfo()
+	require.NoError(t, err)
+	require.Equal(t, "default", gInfo.Project)
 
-// TearDownTest runs after each test - cleans up project.
-func (s *ClientSuite) TearDownTest() {
-	_ = s.globalClient.DeleteProject(s.projectName, true)
-}
+	name := "client-gcdef-" + strings.ToLower(RandString(8))
+	t.Cleanup(func() { _ = gc.DeleteProject(name, true) })
 
-// ----------------------------------------------------------------------------
-// Connection Tests
-// ----------------------------------------------------------------------------
-
-func (s *ClientSuite) TestConnection_IsConnected() {
-	s.True(s.globalClient.IsConnected())
-}
-
-// ----------------------------------------------------------------------------
-// Project Tests
-// ----------------------------------------------------------------------------
-
-func (s *ClientSuite) TestProject_GlobalClientKeepsDefaultProfile() {
-	gInfo, err := s.globalClient.incus.GetConnectionInfo()
-	s.Require().NoError(err)
-	s.Require().Equal("default", gInfo.Project)
-
-	project, err := s.globalClient.EnsureProject(s.projectName, EnsureProjectWithCreate())
-	s.Require().NoError(err)
-	s.NotNil(project)
+	project, err := gc.EnsureProject(name, EnsureProjectWithCreate())
+	require.NoError(t, err)
+	require.NotNil(t, project)
 
 	gInfo, err = project.GlobalConnection().GetConnectionInfo()
-	s.Require().NoError(err)
-	s.Require().Equal("default", gInfo.Project)
+	require.NoError(t, err)
+	require.Equal(t, "default", gInfo.Project)
 }
 
-func (s *ClientSuite) TestProject_ImageCacheIsInCacheProfile() {
-	gInfo, err := s.globalClient.imageCache.GetConnectionInfo()
-	s.Require().NoError(err)
-	s.Require().Equal("incus-compose-tests-cache", gInfo.Project)
+func TestClientProject_ImageCacheIsInCacheProfile(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
+
+	gInfo, err := gc.imageCache.GetConnectionInfo()
+	require.NoError(t, err)
+	require.Equal(t, "incus-compose-tests-cache", gInfo.Project)
 }
 
-func (s *ClientSuite) TestProject_EnsureWithCreate() {
-	project, err := s.globalClient.EnsureProject(s.projectName, EnsureProjectWithCreate())
-	s.Require().NoError(err)
-	s.NotNil(project)
+func TestClientProject_EnsureWithCreate(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
+	name := "client-ensure-" + strings.ToLower(RandString(8))
+	t.Cleanup(func() { _ = gc.DeleteProject(name, true) })
+
+	project, err := gc.EnsureProject(name, EnsureProjectWithCreate())
+	require.NoError(t, err)
+	require.NotNil(t, project)
 }
 
-func (s *ClientSuite) TestProject_EnsureWithoutCreate_Fails() {
-	_, err := s.globalClient.EnsureProject("surely-does-not-exist-12345")
-	s.Require().Error(err)
-	s.ErrorIs(err, ErrNotFound)
+func TestClientProject_EnsureWithoutCreate_Fails(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
+
+	_, err = gc.EnsureProject("surely-does-not-exist-12345")
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNotFound)
 }
 
-func (s *ClientSuite) TestProject_NameIsPreserved() {
-	project, err := s.globalClient.EnsureProject(s.projectName, EnsureProjectWithCreate())
-	s.Require().NoError(err)
-	s.Equal(s.projectName, project.Project())
+func TestClientProject_NameIsPreserved(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
+	name := "client-name-" + strings.ToLower(RandString(8))
+	t.Cleanup(func() { _ = gc.DeleteProject(name, true) })
+
+	project, err := gc.EnsureProject(name, EnsureProjectWithCreate())
+	require.NoError(t, err)
+	require.Equal(t, name, project.Project())
 }
 
-func (s *ClientSuite) TestProject_NameIsSanitized() {
+func TestClientProject_NameIsSanitized(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
+
 	name := "Test Project_123"
-	project, err := s.globalClient.EnsureProject(name, EnsureProjectWithCreate())
-	s.Require().NoError(err)
+	project, err := gc.EnsureProject(name, EnsureProjectWithCreate())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gc.DeleteProject(name, true) })
 
-	s.Equal(name, project.Project())
-	s.Equal("test-project-123", project.IncusProject())
-
-	_ = s.globalClient.DeleteProject(name, true)
+	require.Equal(t, name, project.Project())
+	require.Equal(t, "test-project-123", project.IncusProject())
 }
 
-func (s *ClientSuite) TestProject_EnsureIdempotent() {
-	project1, err := s.globalClient.EnsureProject(s.projectName, EnsureProjectWithCreate())
-	s.Require().NoError(err)
+func TestClientProject_EnsureIdempotent(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
+	name := "client-idem-" + strings.ToLower(RandString(8))
+	t.Cleanup(func() { _ = gc.DeleteProject(name, true) })
 
-	project2, err := s.globalClient.EnsureProject(s.projectName, EnsureProjectWithCreate())
-	s.Require().NoError(err)
-
-	s.Same(project1, project2)
+	project1, err := gc.EnsureProject(name, EnsureProjectWithCreate())
+	require.NoError(t, err)
+	project2, err := gc.EnsureProject(name, EnsureProjectWithCreate())
+	require.NoError(t, err)
+	require.Same(t, project1, project2)
 }
 
-func (s *ClientSuite) TestProject_DeleteSucceeds() {
-	_, err := s.globalClient.EnsureProject(s.projectName, EnsureProjectWithCreate())
-	s.Require().NoError(err)
+func TestClientProject_DeleteSucceeds(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
+	name := "client-del-" + strings.ToLower(RandString(8))
 
-	err = s.globalClient.DeleteProject(s.projectName, true)
-	s.Require().NoError(err)
+	_, err = gc.EnsureProject(name, EnsureProjectWithCreate())
+	require.NoError(t, err)
+
+	require.NoError(t, gc.DeleteProject(name, true))
 }
 
-func (s *ClientSuite) TestProject_DeleteNonExistent_NoError() {
-	err := s.globalClient.DeleteProject("never-existed", true)
-	// DeleteProject should handle non-existent gracefully or return error
-	// Either behavior is acceptable, just document it
-	_ = err
-}
+func TestClientProject_DeleteNonExistent_NoError(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := context.Background()
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
 
-// ----------------------------------------------------------------------------
-// Run the suite
-// ----------------------------------------------------------------------------
-
-func TestClientSuite(t *testing.T) {
-	suite.Run(t, new(ClientSuite))
+	_ = gc.DeleteProject("never-existed-xyz987", true)
 }

@@ -46,7 +46,7 @@ type Options struct {
 	Pull bool
 
 	// Build controls rebuild behaviour for build-configured images (for ActionEnsure).
-	Build BuildMode
+	Build BuildInfo
 
 	// Healthd indicates that we use healthd features.
 	Healthd bool
@@ -109,10 +109,10 @@ func OptionPull() Option {
 	}
 }
 
-// OptionBuild sets the rebuild mode for build-configured images (for ActionEnsure).
-func OptionBuild(m BuildMode) Option {
+// OptionBuild sets the build info for build-configured images (for ActionEnsure).
+func OptionBuild(info BuildInfo) Option {
 	return func(o *Options) {
-		o.Build = m
+		o.Build = info
 	}
 }
 

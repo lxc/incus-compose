@@ -166,6 +166,11 @@ func (c *Client) IsConnected() bool {
 	return c != nil && c.incus != nil
 }
 
+// Resources returns a pointer the internal resource store, use with care.
+func (c *Client) Resources() *ResourceStore {
+	return &c.resources
+}
+
 // Resource returns an existing resource or creates a new one.
 // Deduplication uses IncusName so differently-formatted inputs that resolve
 // to the same Incus resource (e.g. "nginx:alpine" vs "docker.io/library/nginx:alpine") return the same object.

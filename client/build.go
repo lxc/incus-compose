@@ -38,6 +38,16 @@ const (
 	BuildNever
 )
 
+// BuildInfo carries the rebuild mode and optional builder selection for ActionEnsure.
+type BuildInfo struct {
+	// Mode controls rebuild behaviour.
+	Mode BuildMode
+
+	// PreferredBuilder is the container builder binary name or absolute path.
+	// Empty means auto-detect (tries podman, then docker).
+	PreferredBuilder string
+}
+
 // BuildConfig holds the parameters read from a compose service's build: block.
 type BuildConfig struct {
 	// Context is the build context directory (absolute path).
@@ -66,13 +76,14 @@ type BuildConfig struct {
 	Pull bool
 }
 
-// buildDetectBuilder returns the path to the first available container builder.
-// The INCUS_COMPOSE_BUILDER env var overrides auto-detection.
-func buildDetectBuilder() (string, error) {
-	if override := os.Getenv("INCUS_COMPOSE_BUILDER"); override != "" {
-		p, err := exec.LookPath(override)
+// buildDetectBuilder returns the path to the container builder.
+// If preferredBuilder is non-empty it is resolved via exec.LookPath (works for
+// both bare names and absolute paths). Otherwise podman and docker are tried in order.
+func buildDetectBuilder(preferredBuilder string) (string, error) {
+	if preferredBuilder != "" {
+		p, err := exec.LookPath(preferredBuilder)
 		if err != nil {
-			return "", fmt.Errorf("INCUS_COMPOSE_BUILDER=%q not found: %w", override, err)
+			return "", fmt.Errorf("builder %q not found: %w", preferredBuilder, err)
 		}
 		return p, nil
 	}
@@ -81,13 +92,21 @@ func buildDetectBuilder() (string, error) {
 			return p, nil
 		}
 	}
-	return "", fmt.Errorf("no container builder found; install podman or docker, or set INCUS_COMPOSE_BUILDER")
+	return "", fmt.Errorf("no container builder found; install podman or docker, or set a preferred builder")
+}
+
+// sniffBuilder runs "<builder> version" and returns true when the output
+// identifies it as Podman ("Podman Engine"). Anything else is treated as docker.
+func sniffBuilder(ctx context.Context, builder string) bool {
+	out, _ := exec.CommandContext(ctx, builder, "version").CombinedOutput()
+	return strings.Contains(string(out), "Podman Engine")
 }
 
 // buildRootfs runs the container builder and returns both the rootfs tar and
 // the OCI runtime config.json bytes. The rootfs is a ReadCloser that deletes
 // its temp file on Close. stderr is forwarded to logW.
 func buildRootfs(ctx context.Context, builder string, cfg *BuildConfig, logW io.Writer) (io.ReadCloser, []byte, error) {
+	isPodman := sniffBuilder(ctx, builder)
 	tmpTag := fmt.Sprintf("ic-compose-build-%x", time.Now().UnixNano())
 
 	rootfsTmp, err := os.CreateTemp("", "incus-compose-rootfs-*.tar")
@@ -104,7 +123,7 @@ func buildRootfs(ctx context.Context, builder string, cfg *BuildConfig, logW io.
 	}
 	defer cleanup()
 
-	args := buildArgs(builder, buildCfg, tmpTag, rootfsPath)
+	args := buildArgs(isPodman, buildCfg, tmpTag, rootfsPath)
 	cmd := exec.CommandContext(ctx, builder, args...)
 	cmd.Stderr = logW
 	if err := cmd.Run(); err != nil {
@@ -112,9 +131,9 @@ func buildRootfs(ctx context.Context, builder string, cfg *BuildConfig, logW io.
 		return nil, nil, fmt.Errorf("building container image: %w", err)
 	}
 
-	// Generate config.json from the stored image (podman only).
+	// Generate config.json from the stored image (podman only; docker/BuildKit embeds it differently).
 	var configJSON []byte
-	if !strings.HasSuffix(builder, "docker") {
+	if isPodman {
 		configJSON, err = buildConfigJSON(ctx, builder, tmpTag, logW)
 		if err != nil {
 			_ = os.Remove(rootfsPath)
@@ -214,9 +233,9 @@ func buildConfigWithInlineDockerfile(cfg *BuildConfig) (*BuildConfig, func(), er
 	return &buildCfg, func() { _ = os.Remove(path) }, nil
 }
 
-func buildArgs(builder string, cfg *BuildConfig, tmpTag, dest string) []string {
+func buildArgs(isPodman bool, cfg *BuildConfig, tmpTag, dest string) []string {
 	args := []string{}
-	if strings.HasSuffix(builder, "docker") {
+	if !isPodman {
 		args = append(args, "buildx")
 	}
 	args = append(args, "build", "-t", tmpTag, cfg.Context)

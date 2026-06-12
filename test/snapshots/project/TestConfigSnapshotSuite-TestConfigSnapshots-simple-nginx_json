@@ -1,0 +1,22 @@
+{
+  "name": "simple-nginx",
+  "services": {
+    "web": {
+      "command": null,
+      "entrypoint": null,
+      "environment": {
+        "NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE": "1"
+      },
+      "image": "docker.io/nginx:alpine",
+      "networks": {
+        "default": null
+      }
+    }
+  },
+  "networks": {
+    "default": {
+      "name": "simple-nginx_default",
+      "ipam": {}
+    }
+  }
+}

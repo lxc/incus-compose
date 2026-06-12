@@ -6,14 +6,10 @@ import (
 	"testing"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/require"
 )
 
-// DeviceSnapshotSuite tests device output against saved snapshots.
-type DeviceSnapshotSuite struct {
-	suite.Suite
-	snapshotter *cupaloy.Config
-}
+var deviceSnapshotter = cupaloy.New(cupaloy.SnapshotSubdirectory(filepath.Join("..", "test", "snapshots", "client")))
 
 // DeviceTestCase represents a single device test case.
 type DeviceTestCase struct {
@@ -21,14 +17,12 @@ type DeviceTestCase struct {
 	Device InstanceDevice
 }
 
-func (s *DeviceSnapshotSuite) SetupSuite() {
-	s.snapshotter = cupaloy.New(cupaloy.SnapshotSubdirectory(filepath.Join("..", "test", "snapshots")))
-}
-
-func (s *DeviceSnapshotSuite) runDeviceTest(tc DeviceTestCase) {
-	s.Run(tc.Name, func() {
+func runDeviceTest(t *testing.T, tc DeviceTestCase) {
+	t.Helper()
+	t.Run(tc.Name, func(t *testing.T) {
+		t.Parallel()
 		name, config, err := tc.Device.ToIncusDevice()
-		s.Require().Nil(err)
+		require.Nil(t, err)
 
 		result := map[string]any{
 			"name":   name,
@@ -36,13 +30,15 @@ func (s *DeviceSnapshotSuite) runDeviceTest(tc DeviceTestCase) {
 		}
 
 		output, jsonErr := json.MarshalIndent(result, "", "  ")
-		s.Require().NoError(jsonErr)
+		require.NoError(t, jsonErr)
 
-		s.snapshotter.SnapshotT(s.T(), string(output))
+		deviceSnapshotter.SnapshotT(t, string(output))
 	})
 }
 
-func (s *DeviceSnapshotSuite) TestProxyDevices() {
+func TestProxyDevices(t *testing.T) {
+	t.Parallel()
+
 	testCases := []DeviceTestCase{
 		{
 			Name: "proxy_basic_tcp",
@@ -168,11 +164,13 @@ func (s *DeviceSnapshotSuite) TestProxyDevices() {
 	}
 
 	for _, tc := range testCases {
-		s.runDeviceTest(tc)
+		runDeviceTest(t, tc)
 	}
 }
 
-func (s *DeviceSnapshotSuite) TestDiskDevices() {
+func TestDiskDevices(t *testing.T) {
+	t.Parallel()
+
 	testCases := []DeviceTestCase{
 		{
 			Name: "disk_volume",
@@ -219,11 +217,13 @@ func (s *DeviceSnapshotSuite) TestDiskDevices() {
 	}
 
 	for _, tc := range testCases {
-		s.runDeviceTest(tc)
+		runDeviceTest(t, tc)
 	}
 }
 
-func (s *DeviceSnapshotSuite) TestNicDevices() {
+func TestNicDevices(t *testing.T) {
+	t.Parallel()
+
 	testCases := []DeviceTestCase{
 		{
 			Name: "nic_basic",
@@ -261,11 +261,13 @@ func (s *DeviceSnapshotSuite) TestNicDevices() {
 	}
 
 	for _, tc := range testCases {
-		s.runDeviceTest(tc)
+		runDeviceTest(t, tc)
 	}
 }
 
-func (s *DeviceSnapshotSuite) TestTmpfsDevices() {
+func TestTmpfsDevices(t *testing.T) {
+	t.Parallel()
+
 	testCases := []DeviceTestCase{
 		{
 			Name: "tmpfs_basic",
@@ -295,12 +297,15 @@ func (s *DeviceSnapshotSuite) TestTmpfsDevices() {
 	}
 
 	for _, tc := range testCases {
-		s.runDeviceTest(tc)
+		runDeviceTest(t, tc)
 	}
 }
 
-func (s *DeviceSnapshotSuite) TestDeviceErrors() {
-	s.Run("nic_no_network", func() {
+func TestDeviceErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nic_no_network", func(t *testing.T) {
+		t.Parallel()
 		device := InstanceDevice{
 			Name: "eth0",
 			Config: InstanceDeviceConfig{
@@ -308,10 +313,11 @@ func (s *DeviceSnapshotSuite) TestDeviceErrors() {
 			},
 		}
 		_, _, err := device.ToIncusDevice()
-		s.Error(err)
+		require.Error(t, err)
 	})
 
-	s.Run("unknown_no_extra", func() {
+	t.Run("unknown_no_extra", func(t *testing.T) {
+		t.Parallel()
 		device := InstanceDevice{
 			Name: "custom",
 			Config: InstanceDeviceConfig{
@@ -319,10 +325,6 @@ func (s *DeviceSnapshotSuite) TestDeviceErrors() {
 			},
 		}
 		_, _, err := device.ToIncusDevice()
-		s.Error(err)
+		require.Error(t, err)
 	})
-}
-
-func TestDeviceSnapshotSuite(t *testing.T) {
-	suite.Run(t, new(DeviceSnapshotSuite))
 }

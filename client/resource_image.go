@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/distribution/reference"
 	incusClient "github.com/lxc/incus/v7/client"
@@ -359,7 +360,7 @@ func (r *Image) create(ctx context.Context, args Options) error {
 			return ErrCreate.WithText("caching image").Wrap(err)
 		}
 
-		if err := extractAndStoreOCIConfig(r.cache, sourceAlias.Target, r.client.Config().DefaultStoragePool); err != nil {
+		if err := extractAndStoreOCIConfig(ctx, r.cache, sourceAlias.Target, r.client.Config().DefaultStoragePool); err != nil {
 			return ErrCreate.WithText("extracting OCI config from image").Wrap(err)
 		}
 
@@ -408,11 +409,40 @@ func (r *Image) create(ctx context.Context, args Options) error {
 	return r.get()
 }
 
+func waitInstance(ctx context.Context, server incusClient.InstanceServer, name string, inErr error) error {
+	var outErr error
+	if inErr != nil {
+		outErr = inErr
+	}
+
+	if _, _, err := server.GetInstance(name); err != nil {
+		return fmt.Errorf("getting the temp instance after create: %w", outErr)
+	}
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return errors.New("failed to wait for a temp instance")
+
+		case <-ticker.C:
+			// A concurrent process may be running the same extraction; check if the
+			// instance already exists and read from it below without deleting it.
+			if _, _, err := server.GetInstance(name); err != nil {
+				return nil
+			}
+		}
+	}
+}
+
 // extractAndStoreOCIConfig creates a temporary stopped container from this image,
 // reads oci.uid/oci.gid/oci.entrypoint/oci.cwd from its config, stores them as
 // image properties, then deletes the container.
+// If a concurrent process already created the temp instance, it reads from that
+// instance instead (and skips deletion).
 // Non-fatal: callers should log and continue on error.
-func extractAndStoreOCIConfig(server incusClient.InstanceServer, fingerprint string, pool string) error {
+func extractAndStoreOCIConfig(ctx context.Context, server incusClient.InstanceServer, fingerprint string, pool string) error {
 	tempName := SanitizeIncusName("ic-uid-"+fingerprint, MaxIncusNameLen-7)
 
 	req := incusApi.InstancesPost{
@@ -433,12 +463,27 @@ func extractAndStoreOCIConfig(server incusClient.InstanceServer, fingerprint str
 		},
 	}
 
-	createOp, err := server.CreateInstance(req)
+	op, err := server.CreateInstance(req)
 	if err != nil {
-		return fmt.Errorf("creating temp instance: %w", err)
+		waitCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+
+		err = waitInstance(waitCtx, server, tempName, err)
+		cancel()
+		return err
 	}
-	if err = createOp.Wait(); err != nil {
-		return fmt.Errorf("waiting for temp instance: %w", err)
+
+	err = op.WaitContext(ctx)
+	if err != nil {
+		waitCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+
+		err = waitInstance(waitCtx, server, tempName, err)
+		cancel()
+		return err
+	}
+
+	instance, _, err := server.GetInstance(tempName)
+	if err != nil {
+		return fmt.Errorf("getting the temp instance after create: %w", err)
 	}
 
 	defer func() {
@@ -446,11 +491,6 @@ func extractAndStoreOCIConfig(server incusClient.InstanceServer, fingerprint str
 			_ = deleteOp.Wait()
 		}
 	}()
-
-	instance, _, err := server.GetInstance(tempName)
-	if err != nil {
-		return fmt.Errorf("getting temp instance: %w", err)
-	}
 
 	uid, gid, err := extractUIDGID(instance)
 	if err != nil {
@@ -517,7 +557,7 @@ func (r *Image) ensureBuild(ctx context.Context, args Options) error {
 	err := r.get()
 	if err == nil {
 		// Image already present in the project.
-		if args.Build == BuildForce {
+		if args.Build.Mode == BuildForce {
 			// Delete the existing image so we can replace it.
 			if r.IncusAlias != nil {
 				op, delErr := r.client.incus.DeleteImage(r.IncusAlias.Target)
@@ -531,7 +571,7 @@ func (r *Image) ensureBuild(ctx context.Context, args Options) error {
 		}
 		// BuildAuto or BuildNever with an existing image: nothing to do.
 	} else {
-		if args.Build == BuildNever {
+		if args.Build.Mode == BuildNever {
 			err = fmt.Errorf("image %q is missing and --no-build was set", r.incusName)
 		} else if args.Create {
 			err = r.buildImage(ctx, args)
@@ -570,7 +610,7 @@ func (r *Image) buildImage(ctx context.Context, args Options) error {
 		buildCfg.Platform = platform
 	}
 
-	builder, err := buildDetectBuilder()
+	builder, err := buildDetectBuilder(args.Build.PreferredBuilder)
 	if err != nil {
 		return ErrCreate.WithText("no container builder").Wrap(err)
 	}
