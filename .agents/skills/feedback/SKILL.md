@@ -16,7 +16,7 @@ Write terse feedback for Rene to a new markdown file under `.feedback/`.
 3. Name yourself in the feedback.
 4. Keep it terse and practical.
 5. Create `.feedback/` if it does not exist.
-6. Write the feedback to `.feedback/$(date +%Y%m%d-%H%M%S)`, using the current local date and time for the filename.
+6. Write the feedback to `.feedback/$(date +%Y%m%d-%H%M%S).md`, using the current local date and time for the filename.
 
 ## Notes
 
