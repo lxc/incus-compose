@@ -10,10 +10,10 @@
 | `--profile`                 | Compose profiles (repeatable)                          |
 | `--env-file`                | Environment files (repeatable)                         |
 | `-E`, `--os-env`            | Include OS env vars                                    |
-| `--remote`                  | Incus remote (`INCUS_REMOTE`)                          |
-| `--ansi`                    | Color output: never/always/auto (`INCUS_COMPOSE_ANSI`) |
-| `INCUS_COMPOSE_IMAGE_CACHE` | Incus project for image cache (default: `default`)     |
-| `--debug`                   | Debug logging                                          |
+| `--remote`                  | Incus remote (`INCUS_REMOTE`)                                              |
+| `--ansi`                    | Color output: never/always/auto (`INCUS_COMPOSE_ANSI`)                     |
+| `--image-cache`             | Incus project used as image cache (`INCUS_COMPOSE_IMAGE_CACHE`, default: `default`) |
+| `--debug`                   | Debug logging                                                              |
 
 Supports [no-color.org](https://no-color.org/) via `NO_COLOR` env var.
 
@@ -70,12 +70,14 @@ the image cache are kept (use `--project` to remove everything, including volume
 incus-compose down [SERVICE...]
 ```
 
-| Option         | Description                        |
-| -------------- | ---------------------------------- |
-| `--project`    | Remove the project (and volumes)   |
-| `--timeout`    | Stop timeout seconds (default: 10) |
-| `--no-deps`    | Don't stop linked services (depends_on) |
-| `--no-healthd` | Don't stop/remove healthd sidecar  |
+| Option         | Description                                                                 |
+| -------------- | --------------------------------------------------------------------------- |
+| `--project`    | Remove the project (and volumes)                                            |
+| `--rmi`        | Remove images used by services: `local` or `all` (docker compose compat)   |
+| `--images`     | Remove known images from the project (equivalent to `--rmi local`)         |
+| `--timeout`    | Stop timeout seconds (default: 10)                                          |
+| `--no-deps`    | Don't stop linked services (depends_on)                                     |
+| `--no-healthd` | Don't stop/remove healthd sidecar                                           |
 
 ## start
 
