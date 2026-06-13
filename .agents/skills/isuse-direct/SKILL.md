@@ -16,10 +16,10 @@ The skill name intentionally matches the existing Claude command filename `isuse
 3. Execute the issue directly without entering a separate planning-only phase.
 4. Still inspect relevant existing patterns before editing code.
 5. Make focused changes only for the requested issue.
-6. Validate with appropriate `just` commands from `docs/testing.md`.
+6. Validate with appropriate `just` commands from `docs/architecture/testing.md`.
 
 ## Constraints
 
 - Use `just` commands instead of raw `go` commands.
-- Follow `CONTRIBUTING.md`, `docs/architecture.md`, and `docs/testing.md`.
+- Follow `CONTRIBUTING.md`, `docs/architecture.md`, and `docs/architecture/testing.md`.
 - Do not commit changes unless the user explicitly requests it.

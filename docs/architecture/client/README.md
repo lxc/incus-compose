@@ -60,7 +60,6 @@ func main() {
 
 ## Documentation
 
-- [API](api.md) - Detailed API reference
 - [Errors](errors.md) - Sentinel errors and automatic context enrichment
 - [Hooks](hooks.md) - Hook system details
 - [Image](image.md) - Image resource

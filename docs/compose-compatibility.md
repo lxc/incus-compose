@@ -291,33 +291,9 @@ Then update `x-incus-compose.pool` in your compose file and run `incus-compose u
 - Project isolation (Incus projects)
 - Profiles - Compose profiles
 
-## Not Supported (Yet)
-
 ### Build
 
-Docker-style builds are not supported:
-
-```yaml
-# Not supported
-services:
-  app:
-    build: .
-```
-
-**Workaround:** Build images separately and push to a registry:
-
-```bash
-docker build -t ghcr.io/myorg/myapp:latest .
-docker push ghcr.io/myorg/myapp:latest
-```
-
-Then reference in compose:
-
-```yaml
-services:
-  app:
-    image: ghcr.io/myorg/myapp:latest
-```
+See [Builds](build.md) for supported options, builder selection, and platform handling.
 
 ### Health Checks
 
@@ -327,35 +303,23 @@ including config keys, defaults, security model, and `healthd` management comman
 The healthcheck status (`starting`, `healthy`, `unhealthy`) is reported in the `Status` column of
 `incus-compose list` and `incus-compose ps` when healthchecks are configured.
 
-Not yet supported:
-
-- `start_period` - Grace period before checks start
-- `start_interval` - Interval during start period
-- `HEALTHCHECK` from Dockerfiles — see [healthd.md](healthd.md#dockerfile-healthcheck-not-supported)
-
 ### Resource Limits
 
+`deploy.resources` is not mapped. Use `x-incus` to set Incus instance limits directly:
+
 ```yaml
-# Not implemented
 services:
   app:
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 512M
+    x-incus:
+      limits.cpu: "1"
+      limits.memory: 512MB
 ```
 
-**Workaround:** Set Incus instance limits directly:
-
-```bash
-incus config set myapp-app limits.cpu 1
-incus config set myapp-app limits.memory 512MiB
-```
+Any Incus instance config key is accepted. See [architecture.md](architecture.md#x-incus-raw-incus-options) for full details.
 
 ### Restart Policies
 
-Restart policies are supported and map to Incus boot configuration:
+Restart policies map to Incus boot configuration:
 
 | Compose `restart` | Incus Config                                   |
 | ----------------- | ---------------------------------------------- |
@@ -371,6 +335,9 @@ services:
     restart: always
 ```
 
+Restart enforcement is handled by the ic-healthd sidecar, including
+`restart` without a healthcheck — see [Health Checking](healthd.md#restart-without-a-test).
+
 ### Secrets
 
 - `secrets` - File-based secrets pushed into container at `/run/secrets/{name}`
@@ -380,9 +347,7 @@ services:
 - Service `secrets[].uid` / `secrets[].gid` - File ownership
 - Service `secrets[].mode` - File permissions (default: 0400)
 
-Not supported:
-
-- External secrets
+## Not Supported (Yet)
 
 ### Configs
 
@@ -394,6 +359,16 @@ configs:
 ```
 
 **Workaround:** Use bind mounts or secrets.
+
+### External Secrets
+
+`secrets[].external` is not supported; only file- and environment-based secrets work.
+
+### Dockerfile HEALTHCHECK
+
+The `HEALTHCHECK` instruction embedded in Docker images is not read — declare
+`healthcheck.test` explicitly in the compose file.
+See [healthd.md](healthd.md#dockerfile-healthcheck-not-supported) for the background.
 
 ### Extended Features
 

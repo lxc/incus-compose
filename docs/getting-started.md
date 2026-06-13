@@ -6,6 +6,52 @@ incus-compose lets you run your existing `compose.yaml` files directly on Incus 
 
 - Incus 6.3+ installed and running
 - Access to an Incus server (local or remote)
+- `skopeo` on the client for image downloads
+- `podman` or `docker` for image building (see [Builds](build.md))
+
+### HTTPS Remote
+
+Switch to a https remote (required for healthchecking).
+
+incus-compose auto-detects the bridge healthd should use (incusbr0, then the default profile's eth0).
+Use `--healthd-network` or `x-incus-compose.healthd-network` if your setup differs — see [Network Configuration](healthd.md#network-configuration).
+
+1.) Get the IP address of your main bridge (incusbr0 or the one in the default profile).
+
+```bash
+incus network list
+```
+
+2.) Either set that IP as `$IP:8443` or listen on all interfaces with `:8443`
+
+```bash
+incus config set core.https_address=<ip>:8443
+```
+
+3.) Generate a cert and add it to the trust store as admin cert.
+
+```bash
+# Generate and trust a certificate
+incus remote generate-certificate
+incus config trust add-certificate ~/.config/incus/client.crt
+
+incus remote add local-https <ip>
+# or
+incus remote add local-https 127.0.0.1
+
+# Switch to local-https as default remote
+incus remote switch local-https
+```
+
+### OCI Image Remotes
+
+Add OCI image remotes to Incus, read [OCI Registry Cache](../oci-registry-cache/README.md) first as you wish.
+
+```bash
+incus remote add --protocol oci docker.io https://docker.io
+incus remote add --protocol oci ghcr.io https://ghcr.io
+incus remote add --protocol oci registry.gitlab.com https://registry.gitlab.com
+```
 
 ## Installation
 
@@ -88,12 +134,44 @@ incus-compose logs web app
 # Stop and remove containers
 incus-compose down
 
-# Also remove volumes
-incus-compose down --volumes
+# Also remove images used by the services
+incus-compose down --images
 
-# Also remove networks
-incus-compose down --volumes --networks
+# Remove the whole project, including volumes and images (--volumes is an alias)
+incus-compose down --project
 ```
+
+## compose.incus.yaml Override
+
+`compose.incus.yaml` is loaded automatically when it exists next to the selected `compose.yaml`. This lets you keep an upstream or Docker-focused Compose file unchanged while adding Incus-specific settings in a separate file.
+
+Typical uses:
+
+- Remove Docker-only port publishing with `ports: !reset []`
+- Add explicit health checks for `ic-healthd`
+- Set static service IPs on Incus networks
+- Pass raw Incus network or instance options via `x-incus`
+
+Example `compose.incus.yaml`:
+
+```yaml
+services:
+  web:
+    ports: !reset []
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost"]
+    networks:
+      default:
+        ipv4_address: 10.131.32.17
+
+networks:
+  default:
+    x-incus:
+      ipv4.nat: "true"
+      ipv4.address: 10.131.32.1/24
+```
+
+The file follows normal [Compose merge rules](https://docs.docker.com/reference/compose-file/merge). For example, `!reset []` clears a list from the base file. See [Compose Compatibility](compose-compatibility.md#incus-override-file) for details.
 
 ## Common Workflows
 
@@ -252,5 +330,7 @@ The cache project is created automatically on first use.
 - [CLI Reference](cli.md)
 - [Builds](build.md)
 - [Compose Compatibility](compose-compatibility.md) - What features are supported
+- [Health Checking](healthd.md) - Healthchecks and restart policies
 - [Environment Variables](environment-variables.md) - How env vars work
 - [Why Incus?](why-incus.md) - Benefits over Docker
+- [Docs Index](README.md) - All user and contributor docs

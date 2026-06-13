@@ -253,14 +253,11 @@ services:
 
 ## Documentation
 
-- [Getting Started](getting-started.md) - Install and run your first project
-- [CLI Reference](cli.md) - All commands and options
-- [Compose Compatibility](compose-compatibility.md) - Supported features and differences
-- [Environment Variables](environment-variables.md) - How env vars work
-- [Why Incus?](why-incus.md) - Benefits over Docker
-- [Testing](testing.md) - Testing patterns and fixtures
+See the [docs index](README.md) for all user and contributor docs. Closely related:
+
 - [Client Package](architecture/client/README.md) - Resources, Stack, WorkerPool
-- [Health Checking](architecture/healthchecking.md) - ic-healthd sidecar
+- [Testing](architecture/testing.md) - Testing patterns and fixtures
+- [Health Checking](healthd.md) - ic-healthd sidecar
 
 ## Need Help?
 

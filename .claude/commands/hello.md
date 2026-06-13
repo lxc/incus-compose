@@ -16,7 +16,7 @@ Load these files in parallel as your working context.
 Preload these — CONTRIBUTING.md cites them as authoritative:
 
 - `docs/architecture.md`
-- `docs/testing.md`
+- `docs/architecture/testing.md`
 
 ## Lazy-load on demand
 

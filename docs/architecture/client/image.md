@@ -7,7 +7,7 @@ The Image resource handles OCI image pulling and caching in Incus.
 Images go through two stages:
 
 1. **Remote** - OCI registry (docker.io, ghcr.io)
-2. **Cache** - Local image store (`incus-compose-images` project)
+2. **Cache** - Local image store (the `default` project unless overridden via `--image-cache`)
 
 Projects are created with `features.images=true`, so each project keeps its own
 image store. Creating an instance copies the image from the cache into the
@@ -58,8 +58,9 @@ type ImageConfig struct {
 ### Cache Configuration
 
 - **CacheServer**: For library users who manage their own cache
-- **CacheProject**: For CLI users, specifies project name (auto-created)
-- **Default**: Uses `incus-compose-images` project
+- **CacheProject**: For CLI users, specifies project name (auto-created); the CLI
+  sets this from `--image-cache` / `INCUS_COMPOSE_IMAGE_CACHE`
+- **Default**: Uses the `default` project
 
 ```go
 // Library usage - provide your own cache server

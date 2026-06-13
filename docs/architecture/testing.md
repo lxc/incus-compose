@@ -84,7 +84,7 @@ just test
 
 ### Image Cache
 
-Tests use a dedicated cache project separate from the CLI's `incus-compose-images` project. This keeps test images isolated and avoids polluting the user's cache.
+Tests use a dedicated cache project (`incus-compose-tests-cache`) separate from the CLI's image cache (the `default` project unless `--image-cache` is set). This keeps test images isolated and avoids polluting the user's cache.
 
 The test cache is configured via `ClientProvideConnection` in test setup, pointing to a test-specific project.
 
@@ -345,3 +345,9 @@ op := client.NewOperation(ctx, handler)
 err := op.Handle()
 s.ErrorIs(err, context.DeadlineExceeded)
 ```
+
+## See Also
+
+- [Contributing](../../CONTRIBUTING.md) - coding, style, and workflow rules
+- [Architecture](../architecture.md) - the design these tests exercise
+- [Client Package](client/README.md) - Stack and resource internals

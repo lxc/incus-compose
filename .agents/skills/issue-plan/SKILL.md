@@ -27,5 +27,5 @@ Include:
 ## Constraints
 
 - Use `just` commands instead of raw `go` commands.
-- Follow `CONTRIBUTING.md`, `docs/architecture.md`, and `docs/testing.md`.
+- Follow `CONTRIBUTING.md`, `docs/architecture.md`, and `docs/architecture/testing.md`.
 - Keep the plan practical and direct.

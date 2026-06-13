@@ -177,3 +177,9 @@ The following Compose build options are currently not implemented:
 - `ulimits`
 
 `tags` are intentionally ignored for now. incus-compose imports the built artifact into Incus and uses the Incus image alias needed by the project; extra Docker-style tags do not affect runtime behavior.
+
+## See Also
+
+- [CLI Reference](cli.md#build) - `build` command flags and `up` build behavior
+- [Compose Compatibility](compose-compatibility.md) - overall feature support
+- [Getting Started](getting-started.md) - first project walkthrough

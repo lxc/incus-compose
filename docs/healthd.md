@@ -198,3 +198,9 @@ incus-compose healthd up --recreate
 
 `start` never creates or starts the sidecar; only `up` does. Use
 `incus-compose healthd up` to start it independently.
+
+## See Also
+
+- [CLI Reference](cli.md#healthd) - healthd management commands
+- [Compose Compatibility](compose-compatibility.md) - healthcheck and restart policy support
+- [Architecture](architecture.md) - how the sidecar fits the resource model

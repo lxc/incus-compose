@@ -92,3 +92,8 @@ Run OCI images directly on Incus with `incus-compose`:
 
 - You're targeting Kubernetes deployment
 - You need the absolute broadest ecosystem compatibility
+
+## See Also
+
+- [Getting Started](getting-started.md) - install and run your first project
+- [Compose Compatibility](compose-compatibility.md) - what works and what does not

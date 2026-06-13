@@ -77,7 +77,7 @@ incus-compose/
 
 ## Build and Test Commands
 
-See [docs/testing.md](docs/testing.md) for the complete command reference and testing patterns.
+See [docs/architecture/testing.md](docs/architecture/testing.md) for the complete command reference and testing patterns.
 
 Quick start:
 
@@ -177,7 +177,7 @@ chore(client): rename Resource interface method
 
 ## Testing
 
-For comprehensive testing documentation including patterns, fixtures, and best practices, see [docs/testing.md](docs/testing.md).
+For comprehensive testing documentation including patterns, fixtures, and best practices, see [docs/architecture/testing.md](docs/architecture/testing.md).
 
 Tests are categorized as unit tests (using mocks) or integration tests (using real Incus instances).
 

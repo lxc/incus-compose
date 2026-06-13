@@ -104,4 +104,7 @@ export INCUS_REMOTE=myserver
 incus-compose up
 ```
 
-See [CLI Reference](cli.md) for command options and flags.
+## See Also
+
+- [CLI Reference](cli.md) - command options and flags
+- [Compose Compatibility](compose-compatibility.md) - interpolation and env_file support
