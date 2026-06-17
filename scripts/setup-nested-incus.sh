@@ -16,6 +16,7 @@ IMAGE="images:debian/trixie"
 INCUS_REPO="stable" # stable, lts-6.0, lts-7.0, daily
 FORCE="false"
 STORAGE_POOL="default"
+BRIDGE="incusbr0"
 LISTEN=""
 
 # Track whether we created the container so we can cleanup on failure if desired
@@ -48,6 +49,7 @@ OPTIONS:
 -r REPO         Incus repository: stable, lts-6.0, lts-7.0, daily (default: ${INCUS_REPO})
 -l ADDRESS      Add port proxy (example: 127.0.0.1:2443) (default: "")
 -p POOL         Storage pool to create (default: ${STORAGE_POOL})
+-b BRIDGE       Bridge to create (default: ${BRIDGE})
 -f              Force delete any existing container (default: false)
 -h              Show this help message
 
@@ -66,7 +68,7 @@ EOF
 }
 
 # Parse arguments
-while getopts "c:n:i:r:l:p:fh" opt; do
+while getopts "c:n:i:r:l:p:b:fh" opt; do
     case ${opt} in
     c)
         CLIENT_CERT="${OPTARG}"
@@ -85,6 +87,9 @@ while getopts "c:n:i:r:l:p:fh" opt; do
         ;;
     p)
         STORAGE_POOL="${OPTARG}"
+        ;;
+    b)
+        BRIDGE="${OPTARG}"
         ;;
     f)
         FORCE="true"
@@ -251,7 +256,7 @@ cat <<PRESEED_EOF | incus admin init --preseed
 config:
   core.https_address: "[::]:8443"
 networks:
-- name: incusbr0
+- name: __BRIDGE__
   type: bridge
   config:
     ipv4.address: auto
@@ -268,14 +273,14 @@ profiles:
       type: disk
     eth0:
       name: eth0
-      network: incusbr0
+      network: __BRIDGE__
       type: nic
 PRESEED_EOF
 
 EOF
 )
 
-CONFIGURE_SCRIPT="$(echo "${CONFIGURE_SCRIPT}" | sed -e 's/__STORAGE_POOL__/'${STORAGE_POOL}'/')"
+CONFIGURE_SCRIPT="$(echo "${CONFIGURE_SCRIPT}" | sed -e 's/__STORAGE_POOL__/'${STORAGE_POOL}'/g' -e 's/__BRIDGE__/'${BRIDGE}'/g')"
 
 # Stream the configure script as well (no temp files)
 echo "${CONFIGURE_SCRIPT}" | incus exec "${CONTAINER_NAME}" -- bash -s
