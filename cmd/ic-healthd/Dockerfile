@@ -1,6 +1,6 @@
 ARG VERSION
 
-FROM docker.io/library/golang:1.26.3-alpine3.23 AS build
+FROM docker.io/library/golang:1.26.4-alpine3.23 AS build
 ARG VERSION
 WORKDIR /app
 COPY go.mod go.sum ./

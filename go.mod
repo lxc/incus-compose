@@ -1,6 +1,6 @@
 module github.com/lxc/incus-compose
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
