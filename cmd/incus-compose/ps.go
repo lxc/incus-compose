@@ -12,8 +12,8 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"gitlab.com/r3j0/incus-compose/client"
-	"gitlab.com/r3j0/incus-compose/project"
+	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/project"
 )
 
 // newPsCommand implements `incus-compose ps`

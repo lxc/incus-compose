@@ -8,7 +8,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/stretchr/testify/suite"
 
-	"gitlab.com/r3j0/incus-compose/client"
+	"github.com/lxc/incus-compose/client"
 )
 
 type ProjectInternalSuite struct {

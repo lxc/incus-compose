@@ -18,9 +18,9 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v3"
 
-	"gitlab.com/r3j0/incus-compose/client"
-	"gitlab.com/r3j0/incus-compose/cmd/incus-compose/version"
-	"gitlab.com/r3j0/incus-compose/project"
+	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/cmd/incus-compose/version"
+	"github.com/lxc/incus-compose/project"
 )
 
 // errLogged is an internal sentinel error, return it to silence the error but exit 1.

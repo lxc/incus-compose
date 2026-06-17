@@ -98,7 +98,7 @@ clean:
 
 # Build a release binary
 build-release:
-    go build -ldflags="-w -s -X gitlab.com/r3j0/incus-compose/cmd/incus-compose/version.Version=`git describe --tags --always --long --dirty="-dirty"`" -o bin/incus-compose ./cmd/incus-compose
+    go build -ldflags="-w -s -X github.com/lxc/incus-compose/cmd/incus-compose/version.Version=`git describe --tags --always --long --dirty="-dirty"`" -o bin/incus-compose ./cmd/incus-compose
 
 # Build a dev binary
 build:
@@ -106,20 +106,20 @@ build:
 
 # Build ic-healthd binary
 build-healthd:
-    CGO_ENABLED=0 go build -tags=netgo -ldflags="-w -s -X gitlab.com/r3j0/incus-compose/cmd/ic-healthd/version.Version=`git describe --tags --always --long --dirty="-dirty"`" -trimpath -o bin/ic-healthd ./cmd/ic-healthd
+    CGO_ENABLED=0 go build -tags=netgo -ldflags="-w -s -X github.com/lxc/incus-compose/cmd/ic-healthd/version.Version=`git describe --tags --always --long --dirty="-dirty"`" -trimpath -o bin/ic-healthd ./cmd/ic-healthd
 
 # Build ic-healthd container image
-build-healthd-image tag="registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest":
+build-healthd-image tag="ghcr.io/lxc/incus-compose/ic-healthd:latest":
     VERSION=`git describe --tags --always --long --dirty="-dirty"`; \
         echo ${VERSION}; \
         podman build --build-arg VERSION=${VERSION} -t {{ tag }} -f cmd/ic-healthd/Dockerfile .
 
 # Build ic-healthd container image
-release-healthd-image tag="registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest": build-healthd-image
+release-healthd-image tag="ghcr.io/lxc/incus-compose/ic-healthd:latest": build-healthd-image
     podman push {{ tag }}
 
 # Release incus-compose
-release tag="0.0.1-dev0" healthd_image="registry.gitlab.com/r3j0/incus-compose/ic-healthd": build-healthd-image
+release tag="0.0.1-dev0" healthd_image="ghcr.io/lxc/incus-compose/ic-healthd": build-healthd-image
     git tag {{ tag }}
     podman push {{ healthd_image }}:latest
     podman tag {{ healthd_image }}:latest {{ healthd_image }}:{{ tag }}
@@ -188,7 +188,7 @@ pre-commit:
 
 push: pre-commit
     git push
-    git push github
+    git push gitlab
 
 [private]
 make-nested container='local:ict' image='images:debian/trixie' listen="127.0.0.1:1443" project="default" storagepool="default":

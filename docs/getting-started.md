@@ -57,18 +57,18 @@ incus remote add --protocol oci registry.gitlab.com https://registry.gitlab.com
 
 Binary:
 
-https://gitlab.com/r3j0/incus-compose/-/releases
+https://github.com/lxc/incus-compose/-/releases
 
 Source:
 
 ```bash
 # Build from source
-git clone https://gitlab.com/r3j0/incus-compose
+git clone https://github.com/lxc/incus-compose
 cd incus-compose
 just build
 
 # Or install directly
-go install gitlab.com/r3j0/incus-compose/cmd/incus-compose@latest
+go install github.com/lxc/incus-compose/cmd/incus-compose@latest
 ```
 
 ## Quick Start
@@ -77,21 +77,21 @@ go install gitlab.com/r3j0/incus-compose/cmd/incus-compose@latest
 
 ```yaml
 services:
-    web:
-        image: docker.io/nginx:alpine
-        ports:
-            - "8080:80"
-        volumes:
-            - ./html:/usr/share/nginx/html:ro
+  web:
+    image: docker.io/nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./html:/usr/share/nginx/html:ro
 
-    app:
-        image: docker.io/node:20-alpine
-        working_dir: /app
-        volumes:
-            - ./app:/app
-        command: node server.js
-        depends_on:
-            - web
+  app:
+    image: docker.io/node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./app:/app
+    command: node server.js
+    depends_on:
+      - web
 ```
 
 ### 2. Start your services
@@ -156,19 +156,19 @@ Example `compose.incus.yaml`:
 
 ```yaml
 services:
-    web:
-        ports: !reset []
-        healthcheck:
-            test: ["CMD", "wget", "-q", "--spider", "http://localhost"]
-        networks:
-            default:
-                ipv4_address: 10.131.32.17
+  web:
+    ports: !reset []
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost"]
+    networks:
+      default:
+        ipv4_address: 10.131.32.17
 
 networks:
-    default:
-        x-incus:
-            ipv4.nat: "true"
-            ipv4.address: 10.131.32.1/24
+  default:
+    x-incus:
+      ipv4.nat: "true"
+      ipv4.address: 10.131.32.1/24
 ```
 
 The file follows normal [Compose merge rules](https://docs.docker.com/reference/compose-file/merge). For example, `!reset []` clears a list from the base file. See [Compose Compatibility](compose-compatibility.md#incus-override-file) for details.
@@ -179,12 +179,12 @@ The file follows normal [Compose merge rules](https://docs.docker.com/reference/
 
 ```yaml
 services:
-    app:
-        image: docker.io/python:3.11
-        volumes:
-            - ./src:/app
-        working_dir: /app
-        command: python -m http.server 8000
+  app:
+    image: docker.io/python:3.11
+    volumes:
+      - ./src:/app
+    working_dir: /app
+    command: python -m http.server 8000
 ```
 
 Edits to `./src` are immediately visible inside the container.
@@ -193,29 +193,29 @@ Edits to `./src` are immediately visible inside the container.
 
 ```yaml
 services:
-    db:
-        image: docker.io/postgres:16-alpine
-        environment:
-            POSTGRES_PASSWORD: dev123
-        volumes:
-            - pgdata:/var/lib/postgresql/data
+  db:
+    image: docker.io/postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: dev123
+    volumes:
+      - pgdata:/var/lib/postgresql/data
 
-    api:
-        image: docker.io/myapp/api:latest
-        depends_on:
-            - db
-        environment:
-            DATABASE_URL: postgres://postgres:dev123@db/myapp
+  api:
+    image: docker.io/myapp/api:latest
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgres://postgres:dev123@db/myapp
 
-    web:
-        image: docker.io/myapp/frontend:latest
-        depends_on:
-            - api
-        ports:
-            - "3000:80"
+  web:
+    image: docker.io/myapp/frontend:latest
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
 
 volumes:
-    pgdata:
+  pgdata:
 ```
 
 Services start in order: db → api → web
@@ -230,10 +230,10 @@ API_PORT=3000
 
 ```yaml
 services:
-    web:
-        image: docker.io/nginx:alpine
-        ports:
-            - "8080:80"
+  web:
+    image: docker.io/nginx:alpine
+    ports:
+      - "8080:80"
 ```
 
 Only variables defined in `.env` are available (not your shell environment).
@@ -260,7 +260,7 @@ Published ports use Incus proxy devices (not iptables NAT):
 
 ```yaml
 ports:
-    - "8080:80" # Host 8080 → Container 80
+  - "8080:80" # Host 8080 → Container 80
 ```
 
 ### Volumes
@@ -281,8 +281,8 @@ Each network becomes an Incus bridge network with deterministic naming:
 
 ```yaml
 networks:
-    frontend:
-    backend:
+  frontend:
+  backend:
 ```
 
 Long network names are hashed to fit Linux interface limits (13 chars for dhclient compatibility).

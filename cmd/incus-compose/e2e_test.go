@@ -13,8 +13,8 @@ import (
 	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/r3j0/incus-compose/client"
-	"gitlab.com/r3j0/incus-compose/project"
+	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/project"
 )
 
 var snapshotter = cupaloy.New(cupaloy.SnapshotSubdirectory(filepath.Join("..", "..", "test", "snapshots", "e2e")))

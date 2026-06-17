@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"gitlab.com/r3j0/incus-compose/client"
-	"gitlab.com/r3j0/incus-compose/project"
+	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/project"
 )
 
 type LoadProjectTestSuite struct {

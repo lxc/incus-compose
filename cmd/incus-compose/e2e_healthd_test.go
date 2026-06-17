@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/r3j0/incus-compose/client"
+	"github.com/lxc/incus-compose/client"
 )
 
 func TestLifecycleHealthd(t *testing.T) {

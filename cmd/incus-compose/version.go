@@ -7,7 +7,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"gitlab.com/r3j0/incus-compose/cmd/incus-compose/version"
+	"github.com/lxc/incus-compose/cmd/incus-compose/version"
 )
 
 func newVersionCommand() *cli.Command {

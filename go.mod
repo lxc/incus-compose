@@ -1,4 +1,4 @@
-module gitlab.com/r3j0/incus-compose
+module github.com/lxc/incus-compose
 
 go 1.26.3
 

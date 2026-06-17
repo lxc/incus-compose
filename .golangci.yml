@@ -70,10 +70,10 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(gitlab.com/r3j0/incus-compose)
+        - prefix(github.com/lxc/incus-compose)
     goimports:
       local-prefixes:
-        - gitlab.com/r3j0/incus-compose
+        - github.com/lxc/incus-compose
   exclusions:
     generated: lax
     paths:

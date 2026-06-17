@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.yaml.in/yaml/v4"
 
-	"gitlab.com/r3j0/incus-compose/project"
+	"github.com/lxc/incus-compose/project"
 )
 
 // ConfigSnapshotSuite tests config output against saved snapshots.

@@ -18,12 +18,12 @@ import (
 	"github.com/mattn/go-colorable"
 	"github.com/urfave/cli/v3"
 
-	"gitlab.com/r3j0/incus-compose/client"
-	"gitlab.com/r3j0/incus-compose/project"
+	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/project"
 )
 
 const (
-	defaultHealthdImage       = "registry.gitlab.com/r3j0/incus-compose/ic-healthd:{version}"
+	defaultHealthdImage       = "ghcr.io/lxc/incus-compose/ic-healthd:{version}"
 	defaultHealthdCPULimit    = "1"
 	defaultHealthdMemoryLimit = "50MB"
 )

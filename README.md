@@ -51,7 +51,7 @@ See [Getting Started](docs/getting-started.md) for the full setup walkthrough.
 
 Install from the
 
-[Releases Page](https://gitlab.com/r3j0/incus-compose/-/releases)
+[Releases Page](https://github.com/lxc/incus-compose/releases)
 
 Then point it at your existing `compose.yaml`:
 

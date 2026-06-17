@@ -15,7 +15,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"gitlab.com/r3j0/incus-compose/cmd/ic-healthd/version"
+	"github.com/lxc/incus-compose/cmd/ic-healthd/version"
 )
 
 const (

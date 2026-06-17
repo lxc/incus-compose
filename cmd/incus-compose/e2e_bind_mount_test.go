@@ -12,7 +12,7 @@ import (
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/r3j0/incus-compose/client"
+	"github.com/lxc/incus-compose/client"
 )
 
 func TestBindMounts(t *testing.T) {

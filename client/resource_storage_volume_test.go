@@ -216,7 +216,7 @@ func TestStorageVolumeEnsure_HealthdShiftedVolume(t *testing.T) {
 	ctx := context.Background()
 	c := newRandomTestClient(t, ctx, "volume-healthd-")
 
-	ir, err := c.Resource(KindImage, "registry.gitlab.com/r3j0/incus-compose/ic-healthd:latest", &ImageConfig{})
+	ir, err := c.Resource(KindImage, "registry.github.com/lxc/incus-compose/ic-healthd:latest", &ImageConfig{})
 	require.NoError(t, err)
 	require.NoError(t, RunAction(ctx, ir, ActionEnsure, OptionCreate()))
 

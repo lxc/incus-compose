@@ -15,8 +15,8 @@ import (
 	"github.com/urfave/cli/v3"
 	"golang.org/x/term"
 
-	"gitlab.com/r3j0/incus-compose/client"
-	"gitlab.com/r3j0/incus-compose/project"
+	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/project"
 )
 
 // execCommand implements `incus-compose exec` similar to `docker compose exec` (MVP).

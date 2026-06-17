@@ -26,6 +26,5 @@ Include:
 
 ## Notes
 
-- Prefer GitLab CLI lookup with `glab` when the issue number is provided and issue details are needed.
 - Use `just` commands instead of raw `go` commands.
 - Follow existing patterns before creating new ones.

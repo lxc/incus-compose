@@ -11,7 +11,7 @@ import (
 	incus "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 
-	"gitlab.com/r3j0/incus-compose/client"
+	"github.com/lxc/incus-compose/client"
 )
 
 // Checker monitors a single instance and restarts it when unhealthy.

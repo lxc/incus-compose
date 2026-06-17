@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"gitlab.com/r3j0/incus-compose/client"
+	"github.com/lxc/incus-compose/client"
 )
 
 // fakeResource is a minimal client.Resource for renderer tests.

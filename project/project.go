@@ -28,7 +28,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/utils"
 	"github.com/dominikbraun/graph"
 
-	"gitlab.com/r3j0/incus-compose/client"
+	"github.com/lxc/incus-compose/client"
 )
 
 // LoadOptions holds configuration for Load and LoadModel.

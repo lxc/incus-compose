@@ -14,7 +14,7 @@ import (
 	"github.com/mattn/go-isatty"
 	"golang.org/x/term"
 
-	"gitlab.com/r3j0/incus-compose/client"
+	"github.com/lxc/incus-compose/client"
 )
 
 // ANSI control sequences. Color is gated on noColor; cursor movement is gated

@@ -4,5 +4,5 @@
 // a compose-spec friendly interface for managing instances, networks, volumes, and projects.
 //
 // For detailed documentation, see:
-// https://gitlab.com/r3j0/incus-compose/-/blob/main/docs/architecture/client/README.md
+// https://github.com/lxc/incus-compose/tree/main/docs/architecture/client
 package client

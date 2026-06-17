@@ -14,7 +14,7 @@ import (
     "context"
     "log/slog"
 
-    "gitlab.com/r3j0/incus-compose/client"
+    "github.com/lxc/incus-compose/client"
 )
 
 func main() {

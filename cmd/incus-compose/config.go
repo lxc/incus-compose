@@ -13,7 +13,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.yaml.in/yaml/v4"
 
-	"gitlab.com/r3j0/incus-compose/project"
+	"github.com/lxc/incus-compose/project"
 )
 
 func newConfigCommand() *cli.Command {

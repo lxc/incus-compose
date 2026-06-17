@@ -76,13 +76,13 @@ environments.
 
 ```yaml
 services:
-    db:
-        image: docker.io/postgres:16-alpine
-        healthcheck:
-            test: ["CMD", "pg_isready", "-U", "postgres"]
-            interval: 10s
-            timeout: 5s
-            retries: 5
+  db:
+    image: docker.io/postgres:16-alpine
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 ```
 
 ## Restart Without a Test
@@ -122,9 +122,9 @@ INCUS_COMPOSE_NETWORK_PROJECT=my-project INCUS_COMPOSE_NETWORK_PROFILE=my-profil
 
 ```yaml
 x-incus-compose:
-    network:
-        project: my-project
-        profile: my-profile
+  network:
+    project: my-project
+    profile: my-profile
 ```
 
 When set explicitly, the named network must exist - incus-compose errors out if not found.
@@ -178,7 +178,7 @@ itself.
 
 ## Sidecar Image
 
-Default image: `registry.gitlab.com/r3j0/incus-compose/ic-healthd:{version}`
+Default image: `registry.github.com/lxc/incus-compose/ic-healthd:{version}`
 
 Override with `--healthd-image` flag or `INCUS_COMPOSE_HEALTHD_IMAGE` env var.
 

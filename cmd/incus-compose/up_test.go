@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"github.com/urfave/cli/v3"
 
-	"gitlab.com/r3j0/incus-compose/cmd/incus-compose/version"
+	"github.com/lxc/incus-compose/cmd/incus-compose/version"
 )
 
 type UpCommandSuite struct {
@@ -30,8 +30,8 @@ func (s *UpCommandSuite) TestResolveHealthdImage() {
 	defer func() { version.Version = oldVersion }()
 
 	s.Equal(
-		"registry.gitlab.com/r3j0/incus-compose/ic-healthd:v1.2.3",
-		resolveHealthdImage("registry.gitlab.com/r3j0/incus-compose/ic-healthd:{version}"),
+		"registry.github.com/lxc/incus-compose/ic-healthd:v1.2.3",
+		resolveHealthdImage("registry.github.com/lxc/incus-compose/ic-healthd:{version}"),
 	)
 	s.Equal("custom:latest", resolveHealthdImage("custom:latest"))
 }

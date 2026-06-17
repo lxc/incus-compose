@@ -12,7 +12,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X gitlab.com/r3j0/incus-compose/cmd/incus-compose/version.Version={{ .Version }}
+      - -s -w -X github.com/lxc/incus-compose/cmd/incus-compose/version.Version={{ .Version }}
 
 changelog:
   sort: asc
@@ -24,7 +24,7 @@ changelog:
 nfpms:
   - maintainer: "Rene Jochum <rene@jochum.dev>"
     description: Bring the familiar Docker Compose workflow to Incus containers.
-    homepage: https://gitlab.com/r3j0/incus-compose
+    homepage: https://github.com/lxc/incus-compose
     license: APACHE-2.0
     # file_name_template: "{{ .ConventionalFileName }}" # optional, better file names
     formats:
