@@ -30,8 +30,8 @@ func (s *UpCommandSuite) TestResolveHealthdImage() {
 	defer func() { version.Version = oldVersion }()
 
 	s.Equal(
-		"registry.github.com/lxc/incus-compose/ic-healthd:v1.2.3",
-		resolveHealthdImage("registry.github.com/lxc/incus-compose/ic-healthd:{version}"),
+		"ghcr.io/lxc/incus-compose/ic-healthd:v1.2.3",
+		resolveHealthdImage("ghcr.io/lxc/incus-compose/ic-healthd:{version}"),
 	)
 	s.Equal("custom:latest", resolveHealthdImage("custom:latest"))
 }

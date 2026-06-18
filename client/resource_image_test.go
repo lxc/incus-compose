@@ -368,14 +368,14 @@ func TestImageProperties(t *testing.T) {
 	ctx := context.Background()
 	c := newRandomTestClient(t, ctx, "image-props-")
 
-	r, err := c.Resource(KindImage, "registry.github.com/lxc/incus-compose/ic-healthd:latest", &ImageConfig{})
+	r, err := c.Resource(KindImage, "ghcr.io/lxc/incus-compose/ic-healthd:latest", &ImageConfig{})
 	require.NoError(t, err)
 
 	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
 
 	image, ok := r.(*Image)
 	require.True(t, ok)
-	require.Equal(t, "registry.github.com/lxc/incus-compose/ic-healthd:latest", image.Name())
+	require.Equal(t, "ghcr.io/lxc/incus-compose/ic-healthd:latest", image.Name())
 	require.Equal(t, "/", image.Cwd)
 	require.Equal(t, 65534, int(image.UID))
 	require.Equal(t, 65534, int(image.GID))

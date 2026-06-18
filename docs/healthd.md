@@ -178,7 +178,7 @@ itself.
 
 ## Sidecar Image
 
-Default image: `registry.github.com/lxc/incus-compose/ic-healthd:{version}`
+Default image: `ghcr.io/lxc/incus-compose/ic-healthd:{version}`
 
 Override with `--healthd-image` flag or `INCUS_COMPOSE_HEALTHD_IMAGE` env var.
 
