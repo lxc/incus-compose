@@ -791,7 +791,11 @@ func (c *GlobalClient) DefaultNetwork() (string, error) {
 
 	network, ok := eth0["network"]
 	if !ok {
-		return "", ErrNotFound.WithText(fmt.Sprintf("no network in device eth0 of profile %s", "default"))
+		parent, ok := eth0["parent"]
+		if !ok {
+			return "", ErrNotFound.WithText(fmt.Sprintf("no parent or network in device eth0 of profile %s", "default"))
+		}
+		network = parent
 	}
 
 	c.defaultNetwork = network
