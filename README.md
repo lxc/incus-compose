@@ -77,6 +77,8 @@ Some components are adapted from [docker compose](https://github.com/docker/comp
 This project uses AI tools as development aids (drafting, iteration, reviews, tests, and documentation).
 Architecture, constraints, and final code decisions are owned by the human committers.
 
+Earlier development was on [Gitlab](https://gitlab.com/r3j0/incus-compose/).
+
 ## License
 
 [Apache 2.0](LICENSE)
