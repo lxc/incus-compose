@@ -15,6 +15,12 @@ import (
 	"github.com/lxc/incus/v7/shared/cliconfig"
 )
 
+// Client defaults.
+const (
+	DefaultNetworkProject = "default"
+	DefaultNetworkProfile = "default"
+)
+
 // ClientConfig holds configuration options for the Client.
 type ClientConfig struct {
 	// URL is the Incus server URL to connect to.
@@ -143,8 +149,8 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 		DefaultStoragePool: "detect",
 		NetworkPrefix:      "ic-",
 		DescriptionFormat:  "incus-compose: %s",
-		NetworkProject:     "default",
-		NetworkProfile:     "default",
+		NetworkProject:     DefaultNetworkProject,
+		NetworkProfile:     DefaultNetworkProfile,
 	}
 
 	for _, o := range opts {
@@ -804,4 +810,20 @@ func (c *GlobalClient) DefaultNetwork() (string, error) {
 	c.defaultNetwork = network
 
 	return network, nil
+}
+
+// NetworkProfile sets the NetworkProject and NetworkProfile in the config.
+func (c *GlobalClient) NetworkProfile(project, profile string) error {
+	if c.Config.NetworkProject != DefaultNetworkProject || c.Config.NetworkProfile != DefaultNetworkProfile {
+		return errors.New("networkProfile was already set")
+	}
+
+	c.Config.NetworkProject = project
+	c.Config.NetworkProfile = profile
+
+	if c.defaultNetwork != "" {
+		c.defaultNetwork = ""
+	}
+
+	return nil
 }

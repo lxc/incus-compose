@@ -168,6 +168,26 @@ func (s *ProjectInternalSuite) TestProjectConfigReturnsNilWithoutExtensions() {
 	s.Nil(proj.ProjectConfig())
 }
 
+func (s *ProjectInternalSuite) TestNetworkConfigExtractsXIncusCompose() {
+	proj, err := New().Load(s.ctx, LoadWorkingDir(s.fixturePath("with-network-config")))
+	s.Require().NoError(err)
+
+	project, profile, err := proj.NetworkConfig()
+	s.Require().NoError(err)
+	s.Equal("my-project", project)
+	s.Equal("my-profile", profile)
+}
+
+func (s *ProjectInternalSuite) TestNetworkConfigReturnsEmptyWithoutExtension() {
+	proj, err := New().Load(s.ctx, LoadWorkingDir(s.fixturePath("simple-nginx")))
+	s.Require().NoError(err)
+
+	project, profile, err := proj.NetworkConfig()
+	s.Require().NoError(err)
+	s.Empty(project)
+	s.Empty(profile)
+}
+
 func (s *ProjectInternalSuite) TestToStackKeepsNetworkResourcesWithoutNetworkProfile() {
 	proj, err := New().Load(s.ctx, LoadWorkingDir(s.fixturePath("simple-nginx")))
 	s.Require().NoError(err)

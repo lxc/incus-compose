@@ -1057,14 +1057,14 @@ func ToStackStorageVolumes() ToStackOption {
 	}
 }
 
-// ToStackInstancesOnly configures ToStack to only return instances.
+// ToStackInstancesOnly configures ToStack to only add instances to the stack.
 func ToStackInstancesOnly() ToStackOption {
 	return func(o *ToStackOptions) {
 		o.InstancesOnly = true
 	}
 }
 
-// ToStackImagesOnly configures ToStack to only return images.
+// ToStackImagesOnly configures ToStack to only add images to the the stack.
 func ToStackImagesOnly() ToStackOption {
 	return func(o *ToStackOptions) {
 		o.ImagesOnly = true
@@ -1094,6 +1094,32 @@ func (p *Project) HealthdNetworkConfig() (string, error) {
 		return "", fmt.Errorf("x-incus-compose.healthd-network must be a string")
 	}
 	return value, nil
+}
+
+// NetworkConfig reads the top-level x-incus-compose.network extension.
+// Returns empty strings when the key is absent.
+func (p *Project) NetworkConfig() (project, profile string, err error) {
+	extensions := projectXIncusComposeExtensions(p)
+	if extensions == nil {
+		return "", "", nil
+	}
+	raw, ok := extensions["network"]
+	if !ok {
+		return "", "", nil
+	}
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return "", "", fmt.Errorf("x-incus-compose.network must be a map")
+	}
+	proj, ok := m["project"].(string)
+	if !ok {
+		return "", "", fmt.Errorf("x-incus-compose.network.project must be a string")
+	}
+	prof, ok := m["profile"].(string)
+	if !ok {
+		return "", "", fmt.Errorf("x-incus-compose.network.profile must be a string")
+	}
+	return proj, prof, nil
 }
 
 // ProjectConfig reads `x-incus` extensions from the project and returns that.

@@ -1,0 +1,8 @@
+x-incus-compose:
+  network:
+    project: my-project
+    profile: my-profile
+
+services:
+  web:
+    image: docker.io/nginx:alpine

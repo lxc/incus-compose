@@ -156,9 +156,15 @@ func (c *Client) Connection() *incusClient.ProtocolIncus {
 	return c.incus
 }
 
-// Config returns the client config.
+// Config returns a copy of the clients config.
 func (c *Client) Config() ClientConfig {
 	return c.config
+}
+
+// NetworkProfile sets the NetworkProject and NetworkProfile in the config.
+func (c *Client) NetworkProfile(project, profile string) {
+	c.config.NetworkProject = project
+	c.config.NetworkProfile = profile
 }
 
 // IsConnected reports whether the project client can run Incus operations.
