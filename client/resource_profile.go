@@ -126,7 +126,7 @@ func (r *Profile) get() error {
 	if err != nil {
 		r.IncusProfile = nil
 		r.ETag = ""
-		return ErrNotFound.WithResource(r).Wrap(err)
+		return ErrNotFound.Wrap(err)
 	}
 
 	r.IncusProfile = profile

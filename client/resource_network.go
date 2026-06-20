@@ -206,7 +206,7 @@ func (r *Network) get() error {
 	if err != nil {
 		r.IncusNetwork = nil
 		r.ETag = ""
-		return ErrNotFound.WithResource(r).Wrap(err)
+		return ErrNotFound.Wrap(err)
 	}
 
 	r.IncusNetwork = network

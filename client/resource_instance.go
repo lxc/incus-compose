@@ -247,7 +247,7 @@ func (r *Instance) Ensure(ctx context.Context, opts ...Option) error {
 	}
 
 	if !options.Create {
-		err = ErrNotFound.WithResource(r).Wrap(err)
+		err = ErrNotFound.Wrap(err)
 		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 		return err
