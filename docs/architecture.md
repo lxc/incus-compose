@@ -182,7 +182,9 @@ Compose-specific transformations and conveniences handled by incus-compose:
 
 ```yaml
 x-incus-compose:
-  network-profile: default:default
+  network:
+    project: default
+    profile: default
 
 services:
   app:
