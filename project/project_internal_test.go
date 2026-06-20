@@ -178,14 +178,12 @@ func (s *ProjectInternalSuite) TestNetworkConfigExtractsXIncusCompose() {
 	s.Equal("my-profile", profile)
 }
 
-func (s *ProjectInternalSuite) TestNetworkConfigReturnsEmptyWithoutExtension() {
+func (s *ProjectInternalSuite) TestNetworkConfigReturnsErrorWithoutExtension() {
 	proj, err := New().Load(s.ctx, LoadWorkingDir(s.fixturePath("simple-nginx")))
 	s.Require().NoError(err)
 
-	project, profile, err := proj.NetworkConfig()
-	s.Require().NoError(err)
-	s.Empty(project)
-	s.Empty(profile)
+	_, _, err = proj.NetworkConfig()
+	s.Require().Error(err)
 }
 
 func (s *ProjectInternalSuite) TestToStackKeepsNetworkResourcesWithoutNetworkProfile() {

@@ -161,12 +161,6 @@ func (c *Client) Config() ClientConfig {
 	return c.config
 }
 
-// NetworkProfile sets the NetworkProject and NetworkProfile in the config.
-func (c *Client) NetworkProfile(project, profile string) {
-	c.config.NetworkProject = project
-	c.config.NetworkProfile = profile
-}
-
 // IsConnected reports whether the project client can run Incus operations.
 func (c *Client) IsConnected() bool {
 	return c != nil && c.incus != nil
