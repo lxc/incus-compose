@@ -39,13 +39,82 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	}
 
 	var errs error
-
-	config := make(map[string]string, len(service.Environment)+len(service.Labels))
-
 	resources := []client.Resource{}
-	devices := []client.InstanceDevice{}
-	postStartDevices := []client.InstanceDevice{}
-	files := map[string]client.InstanceFile{}
+
+	config, err := instanceConfig(service)
+	if err != nil {
+		errs = errors.Join(errs, err)
+	}
+
+	var image client.Resource
+	if !options.NoImages {
+		image, err = instanceImage(c, service)
+		if err != nil {
+			errs = errors.Join(errs, err)
+		}
+		if image == nil {
+			return nil, errs
+		}
+		resources = append(resources, image)
+	}
+
+	devices, networks, err := instanceNetworkDevices(c, p, service)
+	if err != nil {
+		errs = errors.Join(errs, err)
+	}
+	resources = append(resources, networks...)
+
+	proxies, postStartDevices, err := instanceProxyDevices(c, service, devices)
+	if err != nil {
+		errs = errors.Join(errs, err)
+	}
+	devices = append(devices, proxies...)
+
+	volumes, files, volumeResources, err := instanceVolumeDevices(c, p, service, image, options)
+	if err != nil {
+		errs = errors.Join(errs, err)
+	}
+	devices = append(devices, volumes...)
+	resources = append(resources, volumeResources...)
+
+	secrets, err := instanceSecrets(p, service)
+	if err != nil {
+		errs = errors.Join(errs, err)
+	}
+
+	if errs != nil {
+		return nil, errs
+	}
+
+	instCfg := &client.InstanceConfig{
+		ServiceName:      service.Name,
+		Full:             options.Full,
+		Resources:        slices.Clone(resources),
+		Config:           config,
+		Devices:          devices,
+		PostStartDevices: postStartDevices,
+		Secrets:          secrets,
+		Files:            files,
+		Dependencies:     instanceDependencyWaits(p, service, options),
+	}
+	if image != nil {
+		instCfg.Image = image.IncusName()
+	}
+
+	instance, err := c.Resource(client.KindInstance, instanceName(service, index, scale), instCfg)
+	if err != nil {
+		return nil, err
+	}
+	resources = append(resources, instance)
+
+	return resources, nil
+}
+
+// instanceConfig builds the Incus instance config map from a compose service.
+// Environment vars become environment.* keys, labels become user.* keys, and
+// restart/resource/healthcheck settings and raw x-incus options are merged in.
+func instanceConfig(service types.ServiceConfig) (map[string]string, error) {
+	config := make(map[string]string, len(service.Environment)+len(service.Labels))
 
 	// Environment variables
 	for key, val := range service.Environment {
@@ -66,58 +135,112 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 
 	// Restart policy
 	applyRestartPolicy(config, service.Restart)
+	if service.Restart != "" {
+		config["user.restart"] = service.Restart
+	}
 
-	var (
-		image client.Resource
-		err   error
-	)
-	if !options.NoImages {
-		if service.Build != nil {
-			imageName := service.Image
-			if imageName == "" {
-				imageName = "localhost/" + service.Name
-			}
-			platform, platformErr := buildPlatform(service)
-			if platformErr != nil {
-				errs = errors.Join(errs, platformErr)
-			}
-			buildCfg := &client.BuildConfig{
-				Context:          service.Build.Context,
-				Dockerfile:       service.Build.Dockerfile,
-				DockerfileInline: service.Build.DockerfileInline,
-				Target:           service.Build.Target,
-				Platform:         platform,
-				NoCache:          service.Build.NoCache,
-				Pull:             service.Build.Pull,
-				Args:             service.Build.Args.ToMapping(),
-			}
-			if len(service.Build.Args) > 0 {
-				buildCfg.Args = make(map[string]string, len(service.Build.Args))
-				for k, v := range service.Build.Args {
-					if v != nil {
-						buildCfg.Args[k] = *v
-					}
-				}
-			}
-			image, err = c.Resource(client.KindImage, imageName, &client.ImageConfig{Build: buildCfg})
-		} else {
-			image, err = c.Resource(client.KindImage, service.Image, &client.ImageConfig{})
+	// Resource limits
+	if service.Deploy != nil && service.Deploy.Resources.Limits != nil {
+		applyResourceLimits(config, service.Deploy.Resources.Limits)
+	}
+
+	// Healtcheck
+	if service.HealthCheck != nil {
+		config[client.HealthConfigKey] = client.HealthStatusStarting
+
+		testB, err := json.Marshal(service.HealthCheck.Test)
+		if err != nil {
+			return nil, fmt.Errorf("converting service %q healthcheck test: %w", service.Name, err)
 		}
+		config["user.healthcheck.test"] = string(testB)
+
+		if service.HealthCheck.StartPeriod != nil {
+			config["user.healthcheck.start_period"] = service.HealthCheck.StartPeriod.String()
+		}
+
+		if service.HealthCheck.StartInterval != nil {
+			config["user.healthcheck.start_interval"] = service.HealthCheck.StartInterval.String()
+		}
+
+		if service.HealthCheck.Interval != nil {
+			config["user.healthcheck.interval"] = service.HealthCheck.Interval.String()
+		}
+
+		if service.HealthCheck.Retries != nil {
+			config["user.healthcheck.retries"] = strconv.FormatUint(*service.HealthCheck.Retries, 10)
+		}
+
+		if service.HealthCheck.Timeout != nil {
+			config["user.healthcheck.timeout"] = service.HealthCheck.Timeout.String()
+		}
+	}
+
+	// Apply x-incus extensions (raw Incus options)
+	if xIncusOpts := serviceXIncusExtensions(service); len(xIncusOpts) > 0 {
+		for k, v := range xIncusOpts {
+			config[k] = v
+		}
+	}
+
+	return config, nil
+}
+
+// instanceImage resolves the image resource for a service, building from a
+// Dockerfile when service.Build is set, otherwise pulling service.Image.
+func instanceImage(c *client.Client, service types.ServiceConfig) (client.Resource, error) {
+	var errs error
+
+	imageName := service.Image
+	cfg := &client.ImageConfig{}
+	if service.Build != nil {
+		if imageName == "" {
+			imageName = "localhost/" + service.Name
+		}
+		platform, err := buildPlatform(service)
 		if err != nil {
 			errs = errors.Join(errs, err)
 		}
-
-		img, ok := image.(*client.Image)
-		if !ok {
-			return nil, errors.New("not an image")
+		buildCfg := &client.BuildConfig{
+			Context:          service.Build.Context,
+			Dockerfile:       service.Build.Dockerfile,
+			DockerfileInline: service.Build.DockerfileInline,
+			Target:           service.Build.Target,
+			Platform:         platform,
+			NoCache:          service.Build.NoCache,
+			Pull:             service.Build.Pull,
+			Args:             service.Build.Args.ToMapping(),
 		}
-
-		img.Config.Services = append(img.Config.Services, service.Name)
-
-		resources = append(resources, image)
+		if len(service.Build.Args) > 0 {
+			buildCfg.Args = make(map[string]string, len(service.Build.Args))
+			for k, v := range service.Build.Args {
+				if v != nil {
+					buildCfg.Args[k] = *v
+				}
+			}
+		}
+		cfg.Build = buildCfg
 	}
 
-	// Networks
+	image, err := c.Resource(client.KindImage, imageName, cfg)
+	if err != nil {
+		return nil, errors.Join(errs, err)
+	}
+
+	img, ok := image.(*client.Image)
+	if !ok {
+		return nil, errors.Join(errs, errors.New("not an image"))
+	}
+	img.Config.Services = append(img.Config.Services, service.Name)
+
+	return image, errs
+}
+
+// instanceNetworkDevices builds the NIC devices (eth0, eth1, ...) for a service's
+// networks along with the network resources they reference.
+func instanceNetworkDevices(c *client.Client, p *types.Project, service types.ServiceConfig) ([]client.InstanceDevice, []client.Resource, error) {
+	var errs error
+	devices := []client.InstanceDevice{}
+	resources := []client.Resource{}
 
 	ethIdx := 0
 	for name := range maps.Keys(service.Networks) {
@@ -152,6 +275,19 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 
 		resources = append(resources, network)
 	}
+
+	return devices, resources, errs
+}
+
+// instanceProxyDevices builds proxy devices for published ports and nat-proxy
+// entries. Userspace proxy devices are returned for immediate attachment;
+// NAT proxy devices are returned separately as post-start devices because their
+// connect address is resolved once the instance is running. nicDevices is used
+// to resolve bridge listen addresses and to verify a managed NIC exists.
+func instanceProxyDevices(c *client.Client, service types.ServiceConfig, nicDevices []client.InstanceDevice) ([]client.InstanceDevice, []client.InstanceDevice, error) {
+	var errs error
+	devices := []client.InstanceDevice{}
+	postStartDevices := []client.InstanceDevice{}
 
 	// natProxyEntries maps listen-port -> {listen IPs, connect port}.
 	type natProxyEntry struct {
@@ -210,7 +346,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 			continue
 		}
 		if bridgeAddrs == nil {
-			for _, dev := range devices {
+			for _, dev := range nicDevices {
 				if dev.Config.DeviceType != client.InstanceDeviceTypeNic || dev.Config.Network == nil {
 					continue
 				}
@@ -270,14 +406,13 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 
 	// Create NAT proxy devices -- one per listen IP per nat-proxy entry.
 	// connect.addr is left empty and resolved in attachPostStartDevices once the instance is running.
-	hasNic := func() bool {
-		for _, dev := range devices {
-			if dev.Config.DeviceType == client.InstanceDeviceTypeNic {
-				return true
-			}
+	hasNic := false
+	for _, dev := range nicDevices {
+		if dev.Config.DeviceType == client.InstanceDeviceTypeNic {
+			hasNic = true
+			break
 		}
-		return false
-	}()
+	}
 
 	for lPort, entry := range natProxyEntries {
 		if !hasNic {
@@ -302,6 +437,18 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 			})
 		}
 	}
+
+	return devices, postStartDevices, errs
+}
+
+// instanceVolumeDevices builds disk, bind, and tmpfs devices for a service's
+// volumes plus the shm_size tmpfs. It returns any storage volume resources
+// (when options.StorageVolumes is set) and the files map for single-file binds.
+func instanceVolumeDevices(c *client.Client, p *types.Project, service types.ServiceConfig, image client.Resource, options *ToStackOptions) ([]client.InstanceDevice, map[string]client.InstanceFile, []client.Resource, error) {
+	var errs error
+	devices := []client.InstanceDevice{}
+	resources := []client.Resource{}
+	files := map[string]client.InstanceFile{}
 
 	for _, cVol := range service.Volumes {
 		if cVol.Type == "" {
@@ -353,12 +500,12 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		case "bind":
 			info, err := os.Stat(cVol.Source)
 			if err != nil {
-				return nil, client.ErrUnknown.WithKindName(client.KindInstance, service.Name).Wrap(err)
+				return nil, nil, nil, client.ErrUnknown.WithKindName(client.KindInstance, service.Name).Wrap(err)
 			}
 
 			absSource, err := filepath.Abs(cVol.Source)
 			if err != nil {
-				return nil, client.ErrUnknown.WithKindName(client.KindInstance, service.Name).Wrap(err)
+				return nil, nil, nil, client.ErrUnknown.WithKindName(client.KindInstance, service.Name).Wrap(err)
 			}
 
 			devName := "bind-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-5)
@@ -435,50 +582,15 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		})
 	}
 
-	// Copy "restart"
-	if service.Restart != "" {
-		config["user.restart"] = service.Restart
-	}
+	return devices, files, resources, errs
+}
 
-	// Resource limits
-	if service.Deploy != nil && service.Deploy.Resources.Limits != nil {
-		applyResourceLimits(config, service.Deploy.Resources.Limits)
-	}
-
-	// Healtcheck
-	if service.HealthCheck != nil {
-		config[client.HealthConfigKey] = client.HealthStatusStarting
-
-		testB, err := json.Marshal(service.HealthCheck.Test)
-		if err != nil {
-			errs = errors.Join(errs, fmt.Errorf("converting service %q healthcheck test: %w", service.Name, err))
-			return nil, errs
-		}
-		config["user.healthcheck.test"] = string(testB)
-
-		if service.HealthCheck.StartPeriod != nil {
-			config["user.healthcheck.start_period"] = service.HealthCheck.StartPeriod.String()
-		}
-
-		if service.HealthCheck.StartInterval != nil {
-			config["user.healthcheck.start_interval"] = service.HealthCheck.StartInterval.String()
-		}
-
-		if service.HealthCheck.Interval != nil {
-			config["user.healthcheck.interval"] = service.HealthCheck.Interval.String()
-		}
-
-		if service.HealthCheck.Retries != nil {
-			config["user.healthcheck.retries"] = strconv.FormatUint(*service.HealthCheck.Retries, 10)
-		}
-
-		if service.HealthCheck.Timeout != nil {
-			config["user.healthcheck.timeout"] = service.HealthCheck.Timeout.String()
-		}
-	}
-
-	// Secrets
+// instanceSecrets resolves a service's secrets from their compose definitions,
+// reading content from a file or an environment variable.
+func instanceSecrets(p *types.Project, service types.ServiceConfig) ([]client.InstanceSecret, error) {
+	var errs error
 	var instanceSecrets []client.InstanceSecret
+
 	for _, svcSecret := range service.Secrets {
 		secretDef, ok := p.Secrets[svcSecret.Source]
 		if !ok {
@@ -512,22 +624,12 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		})
 	}
 
-	if errs != nil {
-		return nil, errs
-	}
+	return instanceSecrets, errs
+}
 
-	// Apply x-incus extensions (raw Incus options)
-	if xIncusOpts := serviceXIncusExtensions(service); len(xIncusOpts) > 0 {
-		for k, v := range xIncusOpts {
-			config[k] = v
-		}
-	}
-
-	// x-incus-compose extensions are extracted but not yet handled in this implementation.
-	// They will be used for compose-specific transformations in future updates.
-	_ = serviceXIncusComposeExtensions(service)
-
-	// Build dependency health-wait map for depends_on with condition: service_healthy.
+// instanceDependencyWaits builds the health-wait map for depends_on entries with
+// condition: service_healthy, keyed by the dependency's sanitized instance names.
+func instanceDependencyWaits(p *types.Project, service types.ServiceConfig, options *ToStackOptions) map[string]string {
 	var deps map[string]string
 	for depName, dep := range service.DependsOn {
 		if dep.Condition != types.ServiceConditionHealthy {
@@ -551,38 +653,22 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 			}
 		}
 	}
+	return deps
+}
 
-	// Instance name: container_name takes precedence, otherwise {service}-{index}.
-	instanceName := fmt.Sprintf("%s-%d", service.Name, index)
+// instanceName derives the instance name: container_name takes precedence,
+// otherwise {service}-{index}. A container_name with scale > 1 is suffixed with
+// the index to keep names unique.
+func instanceName(service types.ServiceConfig, index, scale int) string {
+	name := fmt.Sprintf("%s-%d", service.Name, index)
 	if service.ContainerName != "" {
 		if scale > 1 {
-			instanceName = fmt.Sprintf("%s-%d", service.ContainerName, index)
+			name = fmt.Sprintf("%s-%d", service.ContainerName, index)
 		} else {
-			instanceName = service.ContainerName
+			name = service.ContainerName
 		}
 	}
-
-	instanceConfig := &client.InstanceConfig{
-		ServiceName:      service.Name,
-		Full:             options.Full,
-		Resources:        slices.Clone(resources),
-		Config:           config,
-		Devices:          devices,
-		PostStartDevices: postStartDevices,
-		Secrets:          instanceSecrets,
-		Files:            files,
-		Dependencies:     deps,
-	}
-	if image != nil {
-		instanceConfig.Image = image.IncusName()
-	}
-	instance, err := c.Resource(client.KindInstance, instanceName, instanceConfig)
-	if err != nil {
-		return nil, err
-	}
-	resources = append(resources, instance)
-
-	return resources, nil
+	return name
 }
 
 // applyResourceLimits maps Docker Compose deploy.resources.limits to Incus config keys.
