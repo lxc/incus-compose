@@ -5,7 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/lxc/incus-compose/client"
 )
@@ -22,23 +23,19 @@ func (f fakeResource) Priority() int     { return 0 }
 func (f fakeResource) IsEnsured() bool   { return true }
 func (f fakeResource) Created() bool     { return false }
 
-type ProgressSuite struct {
-	suite.Suite
-	buf      *bytes.Buffer
-	renderer *progressRenderer
+// newTestRenderer builds a progress renderer with a fixed 40-column width.
+func newTestRenderer() (*bytes.Buffer, *progressRenderer) {
+	buf := &bytes.Buffer{}
+	renderer := newProgressRenderer(buf, true, true)
+	renderer.width = func() int { return 40 }
+	return buf, renderer
 }
 
-func TestProgressSuite(t *testing.T) {
-	suite.Run(t, new(ProgressSuite))
-}
+func TestRenderTruncatesToWidth(t *testing.T) {
+	t.Parallel()
 
-func (s *ProgressSuite) SetupTest() {
-	s.buf = &bytes.Buffer{}
-	s.renderer = newProgressRenderer(s.buf, true, true)
-	s.renderer.width = func() int { return 40 }
-}
+	_, renderer := newTestRenderer()
 
-func (s *ProgressSuite) TestRenderTruncatesToWidth() {
 	line := &progressLine{
 		action:  "ensure",
 		kind:    "image",
@@ -47,12 +44,16 @@ func (s *ProgressSuite) TestRenderTruncatesToWidth() {
 		text:    strings.Repeat("x", 100),
 	}
 
-	out := s.renderer.render(line, 40)
-	s.Len(out, 40)
-	s.True(strings.HasSuffix(out, "~"))
+	out := renderer.render(line, 40)
+	assert.Len(t, out, 40)
+	assert.True(t, strings.HasSuffix(out, "~"))
 }
 
-func (s *ProgressSuite) TestRenderPercentTruncatesToWidth() {
+func TestRenderPercentTruncatesToWidth(t *testing.T) {
+	t.Parallel()
+
+	_, renderer := newTestRenderer()
+
 	line := &progressLine{
 		action:  "ensure",
 		kind:    "image",
@@ -61,91 +62,111 @@ func (s *ProgressSuite) TestRenderPercentTruncatesToWidth() {
 		text:    "rootfs: 42% (3.10MB/s)",
 	}
 
-	out := s.renderer.render(line, 40)
-	s.Len(out, 40)
+	out := renderer.render(line, 40)
+	assert.Len(t, out, 40)
 }
 
-func (s *ProgressSuite) TestRenderDoneSkipsColorWhenTruncated() {
-	colored := newProgressRenderer(s.buf, false, true)
+func TestRenderDoneSkipsColorWhenTruncated(t *testing.T) {
+	t.Parallel()
+
+	colored := newProgressRenderer(&bytes.Buffer{}, false, true)
 	line := &progressLine{action: "ensure", kind: "image", label: "alpine", done: true}
 
 	full := colored.render(line, 0)
-	s.Contains(full, colorGreen)
+	assert.Contains(t, full, colorGreen)
 
 	narrow := colored.render(line, 40)
-	s.NotContains(narrow, "\033[")
-	s.Len(narrow, 40)
+	assert.NotContains(t, narrow, "\033[")
+	assert.Len(t, narrow, 40)
 }
 
-func (s *ProgressSuite) TestDrawLinesNeverExceedWidth() {
-	s.renderer.handle(client.ActionEnsure, fakeResource{name: "alpine"}, client.Options{}, client.Progress{
+func TestDrawLinesNeverExceedWidth(t *testing.T) {
+	t.Parallel()
+
+	buf, renderer := newTestRenderer()
+
+	renderer.handle(client.ActionEnsure, fakeResource{name: "alpine"}, client.Options{}, client.Progress{
 		Percent: -1,
 		Text:    strings.Repeat("status ", 30),
 	})
 
-	for _, raw := range strings.Split(s.buf.String(), "\n") {
+	for _, raw := range strings.Split(buf.String(), "\n") {
 		visible := strings.TrimPrefix(raw, "\r"+ansiClearEnd)
-		s.LessOrEqual(len(visible), 40)
+		assert.LessOrEqual(t, len(visible), 40)
 	}
 }
 
-func (s *ProgressSuite) TestBypassWritesLogAboveBlock() {
-	s.renderer.handle(client.ActionEnsure, fakeResource{name: "alpine"}, client.Options{}, client.Progress{
+func TestBypassWritesLogAboveBlock(t *testing.T) {
+	t.Parallel()
+
+	buf, renderer := newTestRenderer()
+
+	renderer.handle(client.ActionEnsure, fakeResource{name: "alpine"}, client.Options{}, client.Progress{
 		Percent: -1,
 		Text:    "pulling",
 	})
-	s.buf.Reset()
+	buf.Reset()
 
-	w := s.renderer.bypass()
+	w := renderer.bypass()
 	_, err := w.Write([]byte("a log line\n"))
-	s.NoError(err)
+	require.NoError(t, err)
 
-	out := s.buf.String()
-	s.True(strings.HasPrefix(out, ansiUp+"\r"+ansiClearDown), "must erase the block first")
-	s.Contains(out, "a log line\n")
-	s.Greater(strings.Index(out, "alpine"), strings.Index(out, "a log line"), "block must be repainted below the log line")
+	out := buf.String()
+	assert.True(t, strings.HasPrefix(out, ansiUp+"\r"+ansiClearDown), "must erase the block first")
+	assert.Contains(t, out, "a log line\n")
+	assert.Greater(t, strings.Index(out, "alpine"), strings.Index(out, "a log line"), "block must be repainted below the log line")
 }
 
-func (s *ProgressSuite) TestBypassBuffersPartialLines() {
-	s.renderer.handle(client.ActionEnsure, fakeResource{name: "alpine"}, client.Options{}, client.Progress{
+func TestBypassBuffersPartialLines(t *testing.T) {
+	t.Parallel()
+
+	buf, renderer := newTestRenderer()
+
+	renderer.handle(client.ActionEnsure, fakeResource{name: "alpine"}, client.Options{}, client.Progress{
 		Percent: -1,
 		Text:    "pulling",
 	})
-	s.buf.Reset()
+	buf.Reset()
 
-	w := s.renderer.bypass()
+	w := renderer.bypass()
 	_, err := w.Write([]byte("partial"))
-	s.NoError(err)
-	s.Empty(s.buf.String())
+	require.NoError(t, err)
+	assert.Empty(t, buf.String())
 
 	_, err = w.Write([]byte(" done\n"))
-	s.NoError(err)
-	s.Contains(s.buf.String(), "partial done\n")
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "partial done\n")
 }
 
-func (s *ProgressSuite) TestStopFlushesPartialLogLine() {
-	w := s.renderer.bypass()
+func TestStopFlushesPartialLogLine(t *testing.T) {
+	t.Parallel()
+
+	buf, renderer := newTestRenderer()
+
+	w := renderer.bypass()
 	_, err := w.Write([]byte("trailing"))
-	s.NoError(err)
+	require.NoError(t, err)
 
-	s.renderer.Stop(true)
-	s.Contains(s.buf.String(), "trailing\n")
+	renderer.Stop(true)
+	assert.Contains(t, buf.String(), "trailing\n")
 }
 
-func (s *ProgressSuite) TestSwapWriterRestores() {
+func TestSwapWriterRestores(t *testing.T) {
+	t.Parallel()
+
 	first := &bytes.Buffer{}
 	second := &bytes.Buffer{}
 	sw := &swapWriter{w: first}
 
 	_, err := sw.Write([]byte("one"))
-	s.NoError(err)
+	require.NoError(t, err)
 
 	old := sw.Swap(second)
-	s.Same(first, old)
+	assert.Same(t, first, old)
 
 	_, err = sw.Write([]byte("two"))
-	s.NoError(err)
+	require.NoError(t, err)
 
-	s.Equal("one", first.String())
-	s.Equal("two", second.String())
+	assert.Equal(t, "one", first.String())
+	assert.Equal(t, "two", second.String())
 }

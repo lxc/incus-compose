@@ -43,13 +43,6 @@ Use `just --list` to see all available commands. Below is the complete reference
 | ------------------ | ----------------------------------- |
 | `just dev-install` | Create nested Incus dev environment |
 
-## Overview
-
-We use `testify/suite` for all tests. Tests are organized into two categories:
-
-- **Unit tests** - Fast, isolated tests using mocks
-- **Integration tests** - Tests against real nested Incus instances
-
 ## Test Organization
 
 Tests live alongside the code they test:
@@ -64,19 +57,6 @@ project/
   ├── project.go
   └── project_test.go     # Tests for project.go
 ```
-
-### Principles
-
-**Do**:
-
-- Use `testify/suite` pattern for each `_test.go` file
-- Copy-paste setup code between test files (KISS over DRY)
-- Keep each test suite self-contained
-
-**Don't create**:
-
-- Shared test base suites or abstractions
-- Test helper packages
 
 ## Unit Tests
 

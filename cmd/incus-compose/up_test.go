@@ -4,39 +4,40 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 
 	"github.com/lxc/incus-compose/cmd/incus-compose/version"
 )
 
-type UpCommandSuite struct {
-	suite.Suite
-}
-
-func (s *UpCommandSuite) TestVersionCommand() {
+func TestVersionCommand(t *testing.T) {
+	// Not parallel: mutates the package-global version.Version.
 	oldVersion := version.Version
 	version.Version = "v1.2.3"
 	defer func() { version.Version = oldVersion }()
 
 	out := &bytes.Buffer{}
-	s.Require().NoError(newVersionCommand().Action(s.T().Context(), &cli.Command{Writer: out}))
-	s.Equal("incus-compose version v1.2.3\n", out.String())
+	require.NoError(t, newVersionCommand().Action(t.Context(), &cli.Command{Writer: out}))
+	assert.Equal(t, "incus-compose version v1.2.3\n", out.String())
 }
 
-func (s *UpCommandSuite) TestResolveHealthdImage() {
+func TestResolveHealthdImage(t *testing.T) {
+	// Not parallel: mutates the package-global version.Version.
 	oldVersion := version.Version
 	version.Version = "v1.2.3"
 	defer func() { version.Version = oldVersion }()
 
-	s.Equal(
+	assert.Equal(t,
 		"ghcr.io/lxc/incus-compose/ic-healthd:v1.2.3",
 		resolveHealthdImage("ghcr.io/lxc/incus-compose/ic-healthd:{version}"),
 	)
-	s.Equal("custom:latest", resolveHealthdImage("custom:latest"))
+	assert.Equal(t, "custom:latest", resolveHealthdImage("custom:latest"))
 }
 
-func (s *UpCommandSuite) TestParseScale() {
+func TestParseScale(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		values []string
@@ -50,12 +51,9 @@ func (s *UpCommandSuite) TestParseScale() {
 	}
 
 	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			s.Equal(tt.want, parseScale(tt.values))
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, parseScale(tt.values))
 		})
 	}
-}
-
-func TestUpCommandSuite(t *testing.T) {
-	suite.Run(t, new(UpCommandSuite))
 }

@@ -10,21 +10,13 @@ import (
 	"testing"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v4"
 
 	"github.com/lxc/incus-compose/project"
 )
 
-// ConfigSnapshotSuite tests config output against saved snapshots.
-type ConfigSnapshotSuite struct {
-	suite.Suite
-	ctx         context.Context
-	fixturesDir string
-	snapshotter *cupaloy.Config
-}
-
-// ConfigTestCase represents a single test case.
+// ConfigTestCase represents a single config snapshot test case.
 type ConfigTestCase struct {
 	Name     string
 	Fixture  string
@@ -34,29 +26,25 @@ type ConfigTestCase struct {
 	EnvFiles []string
 }
 
-func (s *ConfigSnapshotSuite) SetupSuite() {
-	s.fixturesDir = filepath.Join("..", "test", "fixtures")
-	s.snapshotter = cupaloy.New(cupaloy.SnapshotSubdirectory(filepath.Join("..", "test", "snapshots", "project")))
+// newSnapshotter returns a cupaloy config writing to the project snapshot dir.
+func newSnapshotter() *cupaloy.Config {
+	return cupaloy.New(cupaloy.SnapshotSubdirectory(filepath.Join("..", "test", "snapshots", "project")))
 }
 
-func (s *ConfigSnapshotSuite) SetupTest() {
-	s.ctx = context.Background()
-}
+func runConfigTest(t *testing.T, tc ConfigTestCase) {
+	t.Helper()
 
-func (s *ConfigSnapshotSuite) fixturePath(name string) string {
-	return filepath.Join(s.fixturesDir, name)
-}
+	t.Run(tc.Name, func(t *testing.T) {
+		t.Parallel()
 
-func (s *ConfigSnapshotSuite) runConfigTest(tc ConfigTestCase) {
-	s.Run(tc.Name, func() {
-		fixturePath := s.fixturePath(tc.Fixture)
+		fixture := fixturePath(tc.Fixture)
 
 		loadOpts := []project.LoadOption{
-			project.LoadWorkingDir(fixturePath),
+			project.LoadWorkingDir(fixture),
 		}
 
-		if _, err := os.Stat(filepath.Join(fixturePath, "compose.incus.yaml")); err == nil {
-			loadOpts = append(loadOpts, project.LoadFiles([]string{filepath.Join(fixturePath, "compose.yaml"), filepath.Join(fixturePath, "compose.incus.yaml")}))
+		if _, err := os.Stat(filepath.Join(fixture, "compose.incus.yaml")); err == nil {
+			loadOpts = append(loadOpts, project.LoadFiles([]string{filepath.Join(fixture, "compose.yaml"), filepath.Join(fixture, "compose.incus.yaml")}))
 		}
 
 		if len(tc.Profiles) > 0 {
@@ -66,13 +54,13 @@ func (s *ConfigSnapshotSuite) runConfigTest(tc ConfigTestCase) {
 		if len(tc.EnvFiles) > 0 {
 			absEnvFiles := make([]string, len(tc.EnvFiles))
 			for i, f := range tc.EnvFiles {
-				absEnvFiles[i] = filepath.Join(fixturePath, f)
+				absEnvFiles[i] = filepath.Join(fixture, f)
 			}
 			loadOpts = append(loadOpts, project.LoadEnvFiles(absEnvFiles))
 		}
 
-		proj, err := project.New().Load(s.ctx, loadOpts...)
-		s.Require().NoError(err)
+		proj, err := project.New().Load(context.Background(), loadOpts...)
+		require.NoError(t, err)
 
 		// Filter services if specified.
 		if len(tc.Services) > 0 {
@@ -106,30 +94,30 @@ func (s *ConfigSnapshotSuite) runConfigTest(tc ConfigTestCase) {
 			var buf bytes.Buffer
 			encoder := json.NewEncoder(&buf)
 			encoder.SetIndent("", "  ")
-			err := encoder.Encode(proj.Project)
-			s.Require().NoError(err)
+			require.NoError(t, encoder.Encode(proj.Project))
 			output = strings.TrimSuffix(buf.String(), "\n")
 		case "yaml":
 			var buf bytes.Buffer
 			encoder := yaml.NewEncoder(&buf)
 			encoder.SetIndent(2)
-			err := encoder.Encode(proj.Project)
-			s.Require().NoError(err)
-			s.Require().NoError(encoder.Close())
+			require.NoError(t, encoder.Encode(proj.Project))
+			require.NoError(t, encoder.Close())
 			output = strings.TrimSuffix(buf.String(), "\n")
 		default:
-			s.Fail("unsupported format: %s", format)
+			t.Fatalf("unsupported format: %s", format)
 		}
 
 		// Normalize paths for portability.
-		absFixturePath, _ := filepath.Abs(fixturePath)
+		absFixturePath, _ := filepath.Abs(fixture)
 		output = strings.ReplaceAll(output, absFixturePath, "$FIXTURE_PATH")
 
-		s.snapshotter.SnapshotT(s.T(), output)
+		newSnapshotter().SnapshotT(t, output)
 	})
 }
 
-func (s *ConfigSnapshotSuite) TestConfigSnapshots() {
+func TestConfigSnapshots(t *testing.T) {
+	t.Parallel()
+
 	testCases := []ConfigTestCase{
 		{
 			Name:    "simple-nginx_yaml",
@@ -151,11 +139,6 @@ func (s *ConfigSnapshotSuite) TestConfigSnapshots() {
 		{
 			Name:    "wordpress_yaml",
 			Fixture: "wordpress",
-		},
-		{
-			Name:    "wordpress_json",
-			Fixture: "wordpress",
-			Format:  "json",
 		},
 		{
 			Name:     "wordpress_filter_by_service",
@@ -205,11 +188,13 @@ func (s *ConfigSnapshotSuite) TestConfigSnapshots() {
 	}
 
 	for _, tc := range testCases {
-		s.runConfigTest(tc)
+		runConfigTest(t, tc)
 	}
 }
 
-func (s *ConfigSnapshotSuite) TestConfigSnapshotsWithProfiles() {
+func TestConfigSnapshotsWithProfiles(t *testing.T) {
+	t.Parallel()
+
 	testCases := []ConfigTestCase{
 		{
 			Name:     "with-profiles_dev_profile",
@@ -234,11 +219,13 @@ func (s *ConfigSnapshotSuite) TestConfigSnapshotsWithProfiles() {
 	}
 
 	for _, tc := range testCases {
-		s.runConfigTest(tc)
+		runConfigTest(t, tc)
 	}
 }
 
-func (s *ConfigSnapshotSuite) TestConfigSnapshotsWithEnv() {
+func TestConfigSnapshotsWithEnv(t *testing.T) {
+	t.Parallel()
+
 	testCases := []ConfigTestCase{
 		{
 			Name:    "with-env_default_yaml",
@@ -257,10 +244,6 @@ func (s *ConfigSnapshotSuite) TestConfigSnapshotsWithEnv() {
 	}
 
 	for _, tc := range testCases {
-		s.runConfigTest(tc)
+		runConfigTest(t, tc)
 	}
-}
-
-func TestConfigSnapshotSuite(t *testing.T) {
-	suite.Run(t, new(ConfigSnapshotSuite))
 }

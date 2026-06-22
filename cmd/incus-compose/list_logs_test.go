@@ -5,14 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/lxc/incus-compose/client"
 )
-
-type FormattersSuite struct {
-	suite.Suite
-}
 
 type logResource struct {
 	name     string
@@ -26,7 +23,9 @@ func (r logResource) Priority() int     { return r.priority }
 func (r logResource) IsEnsured() bool   { return false }
 func (r logResource) Created() bool     { return false }
 
-func (s *FormattersSuite) TestContainerStatusesFormats() {
+func TestContainerStatusesFormats(t *testing.T) {
+	t.Parallel()
+
 	status := ProjectStatus{
 		Kind:      "container",
 		Name:      "web",
@@ -36,39 +35,44 @@ func (s *FormattersSuite) TestContainerStatusesFormats() {
 		Addresses: []string{"10.0.0.2", "fd42::2"},
 	}
 
-	s.Run("table", func() {
+	t.Run("table", func(t *testing.T) {
+		t.Parallel()
 		var buf bytes.Buffer
 		statuses := NewContainerStatuses(&buf)
 		statuses.Add(status)
 
-		s.Require().NoError(statuses.Table())
-		s.Contains(buf.String(), "KIND")
-		s.Contains(buf.String(), "web-1")
-		s.Contains(buf.String(), "10.0.0.2, fd42::2")
+		require.NoError(t, statuses.Table())
+		assert.Contains(t, buf.String(), "KIND")
+		assert.Contains(t, buf.String(), "web-1")
+		assert.Contains(t, buf.String(), "10.0.0.2, fd42::2")
 	})
 
-	s.Run("json", func() {
+	t.Run("json", func(t *testing.T) {
+		t.Parallel()
 		var buf bytes.Buffer
 		statuses := NewContainerStatuses(&buf)
 		statuses.Add(status)
 
-		s.Require().NoError(statuses.JSON())
-		s.Contains(buf.String(), `"name": "web"`)
-		s.Contains(buf.String(), `"addresses": [`)
+		require.NoError(t, statuses.JSON())
+		assert.Contains(t, buf.String(), `"name": "web"`)
+		assert.Contains(t, buf.String(), `"addresses": [`)
 	})
 
-	s.Run("yaml", func() {
+	t.Run("yaml", func(t *testing.T) {
+		t.Parallel()
 		var buf bytes.Buffer
 		statuses := NewContainerStatuses(&buf)
 		statuses.Add(status)
 
-		s.Require().NoError(statuses.Yaml())
-		s.Contains(buf.String(), "name: web")
-		s.Contains(buf.String(), "incus_name: web-1")
+		require.NoError(t, statuses.Yaml())
+		assert.Contains(t, buf.String(), "name: web")
+		assert.Contains(t, buf.String(), "incus_name: web-1")
 	})
 }
 
-func (s *FormattersSuite) TestSortResources() {
+func TestSortResources(t *testing.T) {
+	t.Parallel()
+
 	resources := []client.Resource{
 		logResource{name: "web-2", priority: client.PriorityInstance},
 		logResource{name: "ic-net", priority: client.PriorityNetwork},
@@ -81,11 +85,13 @@ func (s *FormattersSuite) TestSortResources() {
 		names = append(names, r.IncusName())
 	}
 
-	s.Equal([]string{"ic-net", "db-1", "web-1", "web-2"}, names)
-	s.Equal("web-2", resources[0].IncusName(), "input slice must stay untouched")
+	assert.Equal(t, []string{"ic-net", "db-1", "web-1", "web-2"}, names)
+	assert.Equal(t, "web-2", resources[0].IncusName(), "input slice must stay untouched")
 }
 
-func (s *FormattersSuite) TestLogFormatterNoColor() {
+func TestLogFormatterNoColor(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	formatter := newLogFormatter(&buf, true)
 
@@ -96,12 +102,14 @@ func (s *FormattersSuite) TestLogFormatterNoColor() {
 	formatter.flush()
 
 	output := buf.String()
-	s.Contains(output, "web      | first\n")
-	s.Contains(output, "database | ready\n")
-	s.Contains(output, "web      | partial\n")
+	assert.Contains(t, output, "web      | first\n")
+	assert.Contains(t, output, "database | ready\n")
+	assert.Contains(t, output, "web      | partial\n")
 }
 
-func (s *FormattersSuite) TestLogFormatterColor() {
+func TestLogFormatterColor(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	formatter := newLogFormatter(&buf, false)
 
@@ -109,11 +117,7 @@ func (s *FormattersSuite) TestLogFormatterColor() {
 	formatter.flush()
 
 	output := buf.String()
-	s.True(strings.Contains(output, "\033["))
-	s.Contains(output, "web | ")
-	s.Contains(output, "hello\n")
-}
-
-func TestFormattersSuite(t *testing.T) {
-	suite.Run(t, new(FormattersSuite))
+	assert.True(t, strings.Contains(output, "\033["))
+	assert.Contains(t, output, "web | ")
+	assert.Contains(t, output, "hello\n")
 }
