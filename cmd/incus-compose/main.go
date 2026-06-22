@@ -31,20 +31,27 @@ var errLogged = client.NewError("Logged error")
 func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 	loadOpts := []project.LoadOption{}
 
-	if name := cmd.String("project-name"); name != "" {
+	if name := cmd.Root().String("project-name"); name != "" {
 		loadOpts = append(loadOpts, project.LoadName(name))
 	}
 
-	files := cmd.StringSlice("file")
-	dir := cmd.String("project-directory")
+	files := cmd.Root().StringSlice("file")
+	dir := cmd.Root().String("project-directory")
 
 	composeFileNames := []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
 
 	cfile := ""
 	if len(files) == 0 {
 		for _, name := range composeFileNames {
-			if candidate, err := filepath.Abs(name); err != nil {
-				if _, err := os.Stat(candidate); err != nil {
+			var candidate string
+			var err error
+			if dir != "" {
+				candidate, err = filepath.Abs(filepath.Join(dir, name))
+			} else {
+				candidate, err = filepath.Abs(name)
+			}
+			if err == nil {
+				if _, err := os.Stat(candidate); err == nil {
 					cfile = candidate
 					files = append(files, candidate)
 					break
@@ -62,11 +69,6 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 
 	if cfile != "" {
 		incusCFile := filepath.Join(filepath.Dir(cfile), strings.TrimSuffix(filepath.Base(cfile), filepath.Ext(cfile))+".incus"+filepath.Ext(cfile))
-		if _, err := os.Stat(incusCFile); err == nil {
-			files = append(files, incusCFile)
-		}
-	} else if dir != "" {
-		incusCFile := filepath.Join(dir, "compose.incus.yaml")
 		if _, err := os.Stat(incusCFile); err == nil {
 			files = append(files, incusCFile)
 		}
@@ -177,11 +179,6 @@ func newRootCommand() *cli.Command {
 				Usage:   `Profile to extract devices.eth0.network from`,
 				Sources: cli.EnvVars("INCUS_COMPOSE_NETWORK_PROFILE"),
 				Value:   "default",
-			},
-			&cli.StringFlag{
-				Name:        "project-directory",
-				Usage:       `Specify an alternate working directory`,
-				DefaultText: `current directory or parent of first compose file`,
 			},
 			&cli.StringFlag{
 				Name:  "project-directory",

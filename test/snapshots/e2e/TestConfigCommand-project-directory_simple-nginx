@@ -1,0 +1,14 @@
+project:
+  name: test-local-config
+  services:
+    web:
+      environment:
+        NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+      image: docker.io/nginx:alpine
+      networks:
+        default: null
+      x-incus:
+        limits.cpu: 1
+  networks:
+    default:
+      name: test-local-config_default

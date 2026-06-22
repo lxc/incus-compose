@@ -1,0 +1,22 @@
+{
+  "name": "test-local-config",
+  "services": {
+    "web": {
+      "command": null,
+      "entrypoint": null,
+      "environment": {
+        "NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE": "1"
+      },
+      "image": "docker.io/nginx:alpine",
+      "networks": {
+        "default": null
+      }
+    }
+  },
+  "networks": {
+    "default": {
+      "name": "test-local-config_default",
+      "ipam": {}
+    }
+  }
+}

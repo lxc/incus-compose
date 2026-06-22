@@ -1,0 +1,26 @@
+project:
+  name: test-local-config-filter
+  services:
+    db:
+      environment:
+        MYSQL_DATABASE: wordpress
+        MYSQL_PASSWORD: wordpress
+        MYSQL_ROOT_PASSWORD: somewordpress
+        MYSQL_USER: wordpress
+      image: docker.io/library/mysql:9.5.0
+      networks:
+        default: null
+      restart: always
+      volumes:
+        - type: volume
+          source: db_data
+          target: /var/lib/mysql
+          volume: {}
+  networks:
+    default:
+      name: test-local-config-filter_default
+  volumes:
+    db_data:
+      name: test-local-config-filter_db_data
+    wordpress_data:
+      name: test-local-config-filter_wordpress_data
