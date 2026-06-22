@@ -103,8 +103,13 @@ func (c *Client) Global() *GlobalClient {
 }
 
 // GlobalConnection returns the global incus connection (with the default project).
-func (c *Client) GlobalConnection() *incusClient.ProtocolIncus {
-	return c.globalClient.incus
+func (c *Client) GlobalConnection() (*incusClient.ProtocolIncus, error) {
+	incus, ok := c.incus.UseProject("default").(*incusClient.ProtocolIncus)
+	if !ok {
+		return nil, ErrConnectionFailed.WithText("cannot cast project-scoped client to ProtocolIncus")
+	}
+
+	return incus, nil
 }
 
 // Project returns the user-facing project name.

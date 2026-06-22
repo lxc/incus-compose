@@ -387,9 +387,19 @@ func (c *GlobalClient) Connect() error {
 	return c.setupImageCache()
 }
 
-// Connection returns the project-scoped Connection client.
-func (c *GlobalClient) Connection() *incusClient.ProtocolIncus {
-	return c.incus
+// Connection returns a fresh, event-isolated connection scoped to the default
+// project.
+//
+// Like Client.Connection, each call returns its own *ProtocolIncus (with its
+// own event-listener state) sharing the underlying HTTP transport, so
+// concurrent workers never race on the library's skipEvents field.
+func (c *GlobalClient) Connection() (*incusClient.ProtocolIncus, error) {
+	incus, ok := c.incus.UseProject("default").(*incusClient.ProtocolIncus)
+	if !ok {
+		return nil, ErrConnectionFailed.WithText("cannot cast global client to ProtocolIncus")
+	}
+
+	return incus, nil
 }
 
 // detectStoragePool gets the first storage pool from the incus server.

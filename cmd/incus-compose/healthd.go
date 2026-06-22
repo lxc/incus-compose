@@ -89,7 +89,12 @@ func healthdCreateToken(c *client.Client) (string, error) {
 
 // healthdRevokeCert removes the healthd's trust-store certificate, if any.
 func healthdRevokeCert(c *client.Client) error {
-	certs, err := c.GlobalConnection().GetCertificates()
+	gConn, err := c.GlobalConnection()
+	if err != nil {
+		return fmt.Errorf("while getting a global connection: %w", err)
+	}
+
+	certs, err := gConn.GetCertificates()
 	if err != nil {
 		return fmt.Errorf("listing certificates: %w", err)
 	}
@@ -99,7 +104,7 @@ func healthdRevokeCert(c *client.Client) error {
 		if cert.Name != want {
 			continue
 		}
-		if err := c.GlobalConnection().DeleteCertificate(cert.Fingerprint); err != nil {
+		if err := gConn.DeleteCertificate(cert.Fingerprint); err != nil {
 			return fmt.Errorf("deleting certificate %s: %w", cert.Fingerprint, err)
 		}
 	}

@@ -148,7 +148,10 @@ func TestClientProject_GlobalClientKeepsDefaultProfile(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, project)
 
-	gInfo, err = project.GlobalConnection().GetConnectionInfo()
+	gConn, err := project.GlobalConnection()
+	require.NoError(t, err)
+
+	gInfo, err = gConn.GetConnectionInfo()
 	require.NoError(t, err)
 	require.Equal(t, "default", gInfo.Project)
 }

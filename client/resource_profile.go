@@ -187,7 +187,11 @@ func (r *Profile) create() error {
 func (r *Profile) sourceProfile() (*incusApi.Profile, error) {
 	sourceServer := r.Config.SourceServer
 	if sourceServer == nil {
-		sourceServer = r.client.GlobalConnection()
+		gConn, err := r.client.GlobalConnection()
+		if err != nil {
+			return nil, err
+		}
+		sourceServer = gConn
 	}
 
 	if r.Config.SourceProject != "" {

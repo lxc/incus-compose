@@ -164,7 +164,11 @@ func (r *Network) Ensure(ctx context.Context, opts ...Option) error {
 		return err
 	}
 
-	conn, err := r.client.Connection()
+	// Networks are global, not project-scoped, so this resource caches a
+	// connection scoped to the default project (it must keep working even after
+	// the resource's own project is removed, e.g. the existence check in Delete
+	// during DeleteProject).
+	conn, err := r.client.GlobalConnection()
 	if err != nil {
 		return r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 	}
@@ -209,11 +213,7 @@ func (r *Network) Ensure(ctx context.Context, opts ...Option) error {
 }
 
 func (r *Network) get() error {
-	// Networks are global, not project-scoped (projects are created without
-	// features.networks). Use the global connection like DeleteNetwork does,
-	// so this also works after the project was removed, e.g. the existence
-	// check in Delete during DeleteProject.
-	network, eTag, err := r.client.GlobalConnection().GetNetwork(r.incusName)
+	network, eTag, err := r.conn.GetNetwork(r.incusName)
 	if err != nil {
 		r.IncusNetwork = nil
 		r.ETag = ""
@@ -242,7 +242,7 @@ func (r *Network) create(ctx context.Context) error {
 		},
 	}
 
-	if err := r.client.GlobalConnection().CreateNetwork(req); err != nil {
+	if err := r.conn.CreateNetwork(req); err != nil {
 		return fmt.Errorf("creating network %q: %w", r.Name(), err)
 	}
 
@@ -253,7 +253,7 @@ func (r *Network) create(ctx context.Context) error {
 	defer cancel()
 	interval := 100 * time.Millisecond
 	for {
-		nw, eTag, err := r.client.GlobalConnection().GetNetwork(r.incusName)
+		nw, eTag, err := r.conn.GetNetwork(r.incusName)
 		if err == nil {
 			if nw.Status == incusApi.NetworkStatusCreated || nw.Status == "Created" {
 				r.IncusNetwork = nw
@@ -343,7 +343,7 @@ func (r *Network) Delete(ctx context.Context, opts ...Option) error {
 		ActionDelete,
 		r,
 		options,
-		r.client.globalClient.incus.DeleteNetwork(r.incusName),
+		r.conn.DeleteNetwork(r.incusName),
 	)
 	if err != nil {
 		r.IncusNetwork = nil
@@ -369,7 +369,7 @@ func (r *Network) UpdateDNSAliases(ownedServices []string, newIPs map[string][]s
 		return nil
 	}
 
-	net, etag, err := r.client.GlobalConnection().GetNetwork(r.incusName)
+	net, etag, err := r.conn.GetNetwork(r.incusName)
 	if err != nil {
 		return fmt.Errorf("reading network %q: %w", r.Name(), err)
 	}
@@ -402,7 +402,7 @@ func (r *Network) UpdateDNSAliases(ownedServices []string, newIPs map[string][]s
 
 	r.client.LogDebug("Updating the network", "config", put)
 
-	if err := r.client.GlobalConnection().UpdateNetwork(r.incusName, put, etag); err != nil {
+	if err := r.conn.UpdateNetwork(r.incusName, put, etag); err != nil {
 		return fmt.Errorf("updating dnsmasq records for network %q: %w", r.Name(), err)
 	}
 
