@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"slices"
+	"sync"
 	"time"
 )
 
@@ -257,6 +258,7 @@ func (r *BaseResource) Priority() int {
 
 // ResourceStore provides storage for any BasicResource type.
 type ResourceStore struct {
+	mu        sync.Mutex
 	resources []Resource
 }
 
@@ -267,11 +269,16 @@ func (s *ResourceStore) All() []Resource {
 
 // Add appends a resource to the store.
 func (s *ResourceStore) Add(r Resource) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.resources = append(s.resources, r)
 }
 
 // Remove removes a resource from the store by kind and name.
 func (s *ResourceStore) Remove(r Resource) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.resources = slices.DeleteFunc(s.resources, func(res Resource) bool {
 		if res == nil {
 			return true
@@ -283,6 +290,9 @@ func (s *ResourceStore) Remove(r Resource) {
 
 // Get retrieves a resource by kind and its Incus-normalized name. Returns nil if not found.
 func (s *ResourceStore) Get(kind Kind, incusName string) Resource {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	idx := slices.IndexFunc(s.resources, func(r Resource) bool {
 		return r.Kind() == kind && r.IncusName() == incusName
 	})

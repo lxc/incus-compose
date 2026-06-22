@@ -3,6 +3,7 @@ package client
 import (
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -14,11 +15,17 @@ const (
 	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
 )
 
-var src = rand.NewSource(time.Now().UnixNano())
+var (
+	srcMu = &sync.Mutex{}
+	src   = rand.NewSource(time.Now().UnixNano())
+)
 
 // RandString is a helper that creates a random string for the given size (n).
 // It is from https://stackoverflow.com/a/31832326 -- RandStringBytesMaskImprSrcSB.
 func RandString(n int) string {
+	srcMu.Lock()
+	defer srcMu.Unlock()
+
 	sb := strings.Builder{}
 	sb.Grow(n)
 	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
