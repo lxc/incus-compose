@@ -29,6 +29,8 @@ func newRestartCommand() *cli.Command {
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			noColor := noColor(ctx)
+
 			timeout := cmd.Duration("timeout")
 			withDeps := cmd.Bool("with-deps")
 
@@ -98,7 +100,7 @@ func newRestartCommand() *cli.Command {
 				errs = errors.Join(errs, err)
 			}
 
-			finish := startProgress(globalClient, c, cmd.Root().Writer)
+			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
 
 			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, append([]client.Option{client.OptionForce()}, runOpts...)...)
 			if errStop != nil {

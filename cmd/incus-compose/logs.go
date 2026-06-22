@@ -147,6 +147,8 @@ func newLogsCommand() *cli.Command {
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			noColor := noColor(ctx)
+
 			globalClient, err := clientFromContext(ctx)
 			if err != nil {
 				return err

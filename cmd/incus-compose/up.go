@@ -91,6 +91,8 @@ func newUpCommand() *cli.Command {
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			noColor := noColor(ctx)
+
 			globalClient, err := clientFromContext(ctx)
 			if err != nil {
 				return err
@@ -127,7 +129,7 @@ func newUpCommand() *cli.Command {
 			}
 
 			// Render live progress for the ensure phase, where image downloads happen.
-			finish := startProgress(globalClient, c, cmd.Root().Writer)
+			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
 
 			usesHealthd := !cmd.Bool("no-healthd")
 			if !healthdInUseByProject(p) {

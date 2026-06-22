@@ -42,6 +42,8 @@ func newDownCommand() *cli.Command {
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			noColor := noColor(ctx)
+
 			globalClient, err := clientFromContext(ctx)
 			if err != nil {
 				return err
@@ -75,7 +77,7 @@ func newDownCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			finish := startProgress(globalClient, c, cmd.Root().Writer)
+			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
 
 			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackReverse()}
 			if !cmd.Bool("no-deps") {

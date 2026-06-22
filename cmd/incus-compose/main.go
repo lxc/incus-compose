@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -22,6 +21,8 @@ import (
 	"github.com/lxc/incus-compose/cmd/incus-compose/version"
 	"github.com/lxc/incus-compose/project"
 )
+
+type noColorKey struct{}
 
 // errLogged is an internal sentinel error, return it to silence the error but exit 1.
 var errLogged = client.NewError("Logged error")
@@ -92,10 +93,7 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 	return loadOpts
 }
 
-// noColor is set by the --ansi flag Action based on flag value and terminal detection.
-var noColor bool
-
-func initLogger(debug bool) {
+func initLogger(debug bool, noColor bool) {
 	level := slog.LevelInfo
 	if debug {
 		level = slog.LevelDebug
@@ -129,6 +127,19 @@ func clientFromContext(ctx context.Context) (*client.GlobalClient, error) {
 	return c, nil
 }
 
+func noColor(ctx context.Context) bool {
+	if ctx.Value(noColorKey{}) == nil {
+		return false
+	}
+
+	ok, v := ctx.Value(noColorKey{}).(bool)
+	if !ok {
+		return false
+	}
+
+	return v
+}
+
 func newRootCommand() *cli.Command {
 	return &cli.Command{
 		Usage: "Compose for incus",
@@ -144,20 +155,6 @@ func newRootCommand() *cli.Command {
 				Usage:   `Control when to print ANSI control character ("never", "always", "auto")`,
 				Value:   "auto",
 				Sources: cli.EnvVars("INCUS_COMPOSE_ANSI"),
-				Action: func(ctx context.Context, cmd *cli.Command, v string) error {
-					switch v {
-					case "always":
-						noColor = false
-					case "auto":
-						// Non-windows and no terminal.
-						noColor = runtime.GOOS != "windows" && !isatty.IsTerminal(os.Stderr.Fd())
-					case "never":
-						noColor = true
-					default:
-						return fmt.Errorf("flag 'ansi' value %q invalid", v)
-					}
-					return nil
-				},
 			},
 			&cli.StringSliceFlag{
 				Name:  "env-file",
@@ -232,12 +229,30 @@ func newRootCommand() *cli.Command {
 			newVersionCommand(),
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			noColor := false
+
 			// NO_COLOR takes precedence (https://no-color.org/)
 			if _, ok := os.LookupEnv("NO_COLOR"); ok {
 				noColor = true
+			} else {
+				switch strings.ToLower(cmd.String("ansi")) {
+				case "always":
+					noColor = true
+				case "auto":
+					// Non-windows and no terminal.
+					if runtime.GOOS == "windows" || isatty.IsTerminal(os.Stderr.Fd()) {
+						noColor = false
+					} else {
+						noColor = true
+					}
+				case "never":
+					noColor = true
+				default:
+					noColor = false
+				}
 			}
 
-			initLogger(cmd.Bool("debug"))
+			initLogger(cmd.Bool("debug"), noColor)
 
 			// Commands that don't need an Incus client connection
 			noClientCommands := []string{"config", "version", "incus"}
@@ -279,7 +294,7 @@ func newRootCommand() *cli.Command {
 			}
 
 			c := client.New(ctx, opts...)
-			return context.WithValue(ctx, clientKey{}, c), nil
+			return context.WithValue(context.WithValue(ctx, clientKey{}, c), noColorKey{}, noColor), nil
 		},
 		After: func(ctx context.Context, cmd *cli.Command) error {
 			return nil

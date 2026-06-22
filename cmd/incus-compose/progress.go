@@ -73,7 +73,7 @@ type progressRenderer struct {
 // after any resolution-only ensure so resource lookups stay silent; only the
 // wrapped actions report. The markDone hook fires at action completion, so each
 // action reports in batch/priority order.
-func startProgress(globalClient *client.GlobalClient, c *client.Client, writer io.Writer) func(success bool) {
+func startProgress(globalClient *client.GlobalClient, c *client.Client, noColor bool, writer io.Writer) func(success bool) {
 	if writer == nil {
 		writer = os.Stderr
 	}

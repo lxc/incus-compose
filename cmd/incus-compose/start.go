@@ -29,6 +29,8 @@ func newStartCommand() *cli.Command {
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			noColor := noColor(ctx)
+
 			timeout := cmd.Duration("timeout")
 			withDeps := cmd.Bool("with-deps")
 
@@ -98,7 +100,7 @@ func newStartCommand() *cli.Command {
 				startOpts = append(startOpts, client.OptionNoHealthd())
 			}
 
-			finish := startProgress(globalClient, c, cmd.Root().Writer)
+			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
 			errStart := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, cmd.Root().Writer, cmd.Root().ErrWriter, startOpts...)
 			finish(errStart == nil)
 			if errStart != nil {

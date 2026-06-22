@@ -29,6 +29,8 @@ func newStopCommand() *cli.Command {
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			noColor := noColor(ctx)
+
 			timeout := cmd.Duration("timeout")
 			withDeps := cmd.Bool("with-deps")
 
@@ -99,7 +101,7 @@ func newStopCommand() *cli.Command {
 				stopOpts = append(stopOpts, client.OptionNoHealthd())
 			}
 
-			finish := startProgress(globalClient, c, cmd.Root().Writer)
+			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
 			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, stopOpts...)
 			finish(errStop == nil)
 			if errStop != nil {
