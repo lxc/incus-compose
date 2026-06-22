@@ -37,9 +37,8 @@ jobs:
         run: |
           mkdir -p "$REPORTS_DIR"
           go mod tidy -v -diff
-          go clean -testcache
           set -o pipefail
-          NO_COLOR=1 go test ./... -parallel 1 -v -cover \
+          NO_COLOR=1 go test ./... -count=1 -v -cover \
             -coverprofile="$REPORTS_DIR/go-test-coverage.txt" 2>&1 \
             | tee "$REPORTS_DIR/go-test-results.txt"
 
@@ -95,9 +94,8 @@ jobs:
         run: |
           mkdir -p "$REPORTS_DIR"
           go mod tidy -v -diff
-          go clean -testcache
           set -o pipefail
-          NO_COLOR=1 go test ./... -parallel 1 -v -cover \
+          NO_COLOR=1 go test ./... -count=1 -v -cover \
             -coverprofile="$REPORTS_DIR/go-test-coverage.txt" 2>&1 \
             | tee "$REPORTS_DIR/go-test-results.txt"
 
