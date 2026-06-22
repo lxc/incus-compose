@@ -151,9 +151,17 @@ func (c *Client) LogError(msg string, args ...any) {
 	c.logger.ErrorContext(c.ctx, msg, args...)
 }
 
-// Connection returns the project-scoped Connection client.
-func (c *Client) Connection() *incusClient.ProtocolIncus {
-	return c.incus
+// Connection returns a fresh, event-isolated project-scoped client.
+//
+// Each call returns its own *ProtocolIncus (with its own event-listener state)
+// that shares the underlying HTTP transp^ort, which is safe for concurrent use.
+func (c *Client) Connection() (*incusClient.ProtocolIncus, error) {
+	incus, ok := c.incus.UseProject(c.incusProject).(*incusClient.ProtocolIncus)
+	if !ok {
+		return nil, ErrConnectionFailed.WithText("cannot cast project-scoped client to ProtocolIncus")
+	}
+
+	return incus, nil
 }
 
 // Config returns a copy of the clients config.

@@ -53,6 +53,11 @@ type StorageVolume struct {
 	created   bool
 	Config    StorageVolumeConfig
 
+	// conn is this resource's own event-isolated Incus connection, set in
+	// Ensure() (which always runs before any other action) so concurrent
+	// workers never share a *ProtocolIncus. See Client.Connection.
+	conn *incusClient.ProtocolIncus
+
 	// State - nil means not ensured.
 	IncusVolume *incusApi.StorageVolume
 	ETag        string
@@ -109,20 +114,26 @@ func (r *StorageVolume) Created() bool {
 
 // Ensure retrieves an existing storage volume or creates a new one if Create option is set.
 func (r *StorageVolume) Ensure(ctx context.Context, opts ...Option) error {
-	args := NewOptions(opts...)
+	options := NewOptions(opts...)
 
-	if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
+	if err := r.client.hookBefore(ctx, ActionEnsure, r, options, nil); err != nil {
 		return err
 	}
 
-	err := r.get()
+	conn, err := r.client.Connection()
 	if err != nil {
-		if args.Create && errors.Is(err, ErrNotFound) {
+		return r.client.hookAfter(ctx, ActionEnsure, r, options, err)
+	}
+	r.conn = conn
+
+	err = r.get()
+	if err != nil {
+		if options.Create && errors.Is(err, ErrNotFound) {
 			err = r.create()
 		}
 	}
 
-	err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
+	err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 	return err
 }
@@ -131,7 +142,7 @@ func (r *StorageVolume) get() error {
 	// r.client.LogDebug("getting volume", "pool", r.Config.Pool, "volume", r.incusName)
 
 	// Try to get existing volume
-	volume, eTag, err := r.client.incus.GetStoragePoolVolume(r.Config.Pool, "custom", r.incusName)
+	volume, eTag, err := r.conn.GetStoragePoolVolume(r.Config.Pool, "custom", r.incusName)
 	if err != nil {
 		r.IncusVolume = nil
 		r.ETag = ""
@@ -227,11 +238,11 @@ func (r *StorageVolume) create() error {
 
 	// r.client.LogDebug("creating volume", "pool", r.Config.Pool, "volume", r.incusName)
 
-	if err := r.client.incus.CreateStoragePoolVolume(r.Config.Pool, volReq); err != nil {
+	if err := r.conn.CreateStoragePoolVolume(r.Config.Pool, volReq); err != nil {
 		return ErrCreate.Wrap(err)
 	}
 
-	volume, eTag, err := r.client.incus.GetStoragePoolVolume(r.Config.Pool, "custom", r.incusName)
+	volume, eTag, err := r.conn.GetStoragePoolVolume(r.Config.Pool, "custom", r.incusName)
 	if err != nil {
 		return ErrCreate.WithText("fetching created volume").Wrap(err)
 	}
@@ -286,7 +297,7 @@ func (r *StorageVolume) pushDirectoryContent() error {
 
 		if d.IsDir() {
 			args.Type = "directory"
-			return r.client.incus.CreateStorageVolumeFile(r.Config.Pool, "custom", r.incusName, rel, args)
+			return r.conn.CreateStorageVolumeFile(r.Config.Pool, "custom", r.incusName, rel, args)
 		}
 
 		f, err := os.Open(path)
@@ -297,7 +308,7 @@ func (r *StorageVolume) pushDirectoryContent() error {
 
 		args.Type = "file"
 		args.Content = f
-		return r.client.incus.CreateStorageVolumeFile(r.Config.Pool, "custom", r.incusName, rel, args)
+		return r.conn.CreateStorageVolumeFile(r.Config.Pool, "custom", r.incusName, rel, args)
 	})
 }
 
@@ -327,7 +338,7 @@ func (r *StorageVolume) Delete(ctx context.Context, opts ...Option) error {
 		return err
 	}
 
-	err := r.client.incus.DeleteStoragePoolVolume(r.Config.Pool, "custom", r.incusName)
+	err := r.conn.DeleteStoragePoolVolume(r.Config.Pool, "custom", r.incusName)
 	err = r.client.hookAfter(ctx, ActionDelete, r, options, err)
 	if err != nil {
 		r.IncusVolume = nil
@@ -337,6 +348,7 @@ func (r *StorageVolume) Delete(ctx context.Context, opts ...Option) error {
 		return err
 	}
 
+	r.conn = nil
 	r.IncusVolume = nil
 	r.ETag = ""
 

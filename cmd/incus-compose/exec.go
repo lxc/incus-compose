@@ -282,7 +282,11 @@ func newExecCommand() *cli.Command {
 
 			// Perform the exec via the incus client.
 			incusName := inst.IncusName()
-			op, err := c.Connection().ExecInstance(incusName, req, &argsExec)
+			conn, err := c.Connection()
+			if err != nil {
+				return err
+			}
+			op, err := conn.ExecInstance(incusName, req, &argsExec)
 			if err != nil {
 				c.LogError("ExecInstance failed", "error", err)
 				return errLogged.Wrap(err)

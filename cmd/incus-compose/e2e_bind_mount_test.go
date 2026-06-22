@@ -61,7 +61,11 @@ func pollContainerHTTP(c *client.Client, instance, want string, timeout time.Dur
 	var lastErr error
 
 	for {
-		out, err := containerGet(c.Connection(), instance, "http://127.0.0.1:8080/")
+		conn, err := c.Connection()
+		if err != nil {
+			return err
+		}
+		out, err := containerGet(conn, instance, "http://127.0.0.1:8080/")
 		if err == nil && strings.Contains(out, want) {
 			return nil
 		}

@@ -36,6 +36,11 @@ type Profile struct {
 	client *Client
 	Config ProfileConfig
 
+	// conn is this resource's own event-isolated Incus connection, set in
+	// Ensure() (which always runs before any other action) so concurrent
+	// workers never share a *ProtocolIncus. See Client.Connection.
+	conn *incusClient.ProtocolIncus
+
 	// State - nil means not ensured.
 	IncusProfile *incusApi.Profile
 	ETag         string
@@ -98,8 +103,14 @@ func (r *Profile) Ensure(ctx context.Context, opts ...Option) error {
 		return err
 	}
 
+	conn, err := r.client.Connection()
+	if err != nil {
+		return r.client.hookAfter(ctx, ActionEnsure, r, options, err)
+	}
+	r.conn = conn
+
 	// Try to get existing
-	err := r.get()
+	err = r.get()
 	if err == nil {
 		if r.Config.SourceProfile != "" {
 			err = r.updateFromSource()
@@ -122,7 +133,7 @@ func (r *Profile) Ensure(ctx context.Context, opts ...Option) error {
 }
 
 func (r *Profile) get() error {
-	profile, eTag, err := r.client.incus.GetProfile(r.incusName)
+	profile, eTag, err := r.conn.GetProfile(r.incusName)
 	if err != nil {
 		r.IncusProfile = nil
 		r.ETag = ""
@@ -158,11 +169,11 @@ func (r *Profile) create() error {
 		}
 	}
 
-	if err := r.client.incus.CreateProfile(postArgs); err != nil {
+	if err := r.conn.CreateProfile(postArgs); err != nil {
 		return fmt.Errorf("creating profile %s: %w", r.Name(), err)
 	}
 
-	profile, eTag, err := r.client.incus.GetProfile(r.incusName)
+	profile, eTag, err := r.conn.GetProfile(r.incusName)
 	if err != nil {
 		return fmt.Errorf("fetching created profile %s: %w", r.Name(), err)
 	}
@@ -231,7 +242,7 @@ func (r *Profile) updateFromSource() error {
 		}
 	}
 
-	if err := r.client.incus.UpdateProfile(r.incusName, profilePut, r.ETag); err != nil {
+	if err := r.conn.UpdateProfile(r.incusName, profilePut, r.ETag); err != nil {
 		return fmt.Errorf("updating profile %s from source %s:%s: %w", r.Name(), r.Config.SourceProject, r.Config.SourceProfile, err)
 	}
 
@@ -279,7 +290,7 @@ func (r *Profile) Delete(ctx context.Context, opts ...Option) error {
 	}
 
 	// Do the actual work
-	err := r.client.incus.DeleteProfile(r.incusName)
+	err := r.conn.DeleteProfile(r.incusName)
 	err = r.client.hookAfter(ctx, ActionDelete, r, options, err)
 	if err != nil {
 		r.IncusProfile = nil

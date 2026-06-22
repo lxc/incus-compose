@@ -304,7 +304,9 @@ func TestDownProjectDeletesNetworks(t *testing.T) {
 	c := projectClient(t, ctx, pn)
 
 	for _, name := range networks {
-		_, _, err := c.Connection().GetNetwork(name)
+		conn, err := c.Connection()
+		require.NoError(t, err)
+		_, _, err = conn.GetNetwork(name)
 		require.NoError(t, err, "for network %q", name)
 	}
 
@@ -313,7 +315,9 @@ func TestDownProjectDeletesNetworks(t *testing.T) {
 	cleaned = true
 
 	for _, name := range networks {
-		_, _, err := c.Connection().GetNetwork(name)
+		conn, err := c.Connection()
+		require.NoError(t, err)
+		_, _, err = conn.GetNetwork(name)
 		require.Error(t, err, "for network %q", name)
 	}
 }

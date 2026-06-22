@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 )
 
@@ -53,6 +54,11 @@ type Network struct {
 	composeName string // original compose name; used as fallback in candidateNames
 	created     bool
 	Config      NetworkConfig
+
+	// conn is this resource's own event-isolated Incus connection, set in
+	// Ensure() (which always runs before any other action) so concurrent
+	// workers never share a *ProtocolIncus. See Client.Connection.
+	conn *incusClient.ProtocolIncus
 
 	// State - nil means not ensured.
 	IncusNetwork *incusApi.Network
@@ -158,9 +164,14 @@ func (r *Network) Ensure(ctx context.Context, opts ...Option) error {
 		return err
 	}
 
+	conn, err := r.client.Connection()
+	if err != nil {
+		return r.client.hookAfter(ctx, ActionEnsure, r, options, err)
+	}
+	r.conn = conn
+
 	// Try to get existing network.
 	// External networks probe each candidate name in resolution order.
-	var err error
 	if r.Config.External {
 		for _, candidate := range r.candidateNames() {
 			r.incusName = candidate

@@ -68,7 +68,12 @@ func healthdCreateToken(c *client.Client) (string, error) {
 		Token: true,
 	}
 
-	op, err := c.Connection().CreateCertificateToken(req)
+	conn, err := c.Connection()
+	if err != nil {
+		return "", err
+	}
+
+	op, err := conn.CreateCertificateToken(req)
 	if err != nil {
 		return "", err
 	}
@@ -234,7 +239,12 @@ func healthdUp(ctx context.Context, c *client.Client, inst *client.Instance, res
 			},
 		})
 
-		network, _, err := c.Connection().GetNetwork(params.network)
+		conn, err := c.Connection()
+		if err != nil {
+			return err
+		}
+
+		network, _, err := conn.GetNetwork(params.network)
 		if err != nil {
 			return fmt.Errorf("failed to fetch the network: %w", err)
 		}
@@ -302,7 +312,12 @@ func healthdUp(ctx context.Context, c *client.Client, inst *client.Instance, res
 			WaitForWS:   false,
 			Interactive: false,
 		}
-		op, err := c.Connection().ExecInstance(inst.IncusName(), execReq, nil)
+		conn, err := c.Connection()
+		if err != nil {
+			return err
+		}
+
+		op, err := conn.ExecInstance(inst.IncusName(), execReq, nil)
 		if err != nil {
 			return err
 		}
@@ -395,7 +410,15 @@ func healthdRegisterReloader(c *client.Client, h *client.Instance) error {
 
 		reloading = true
 
-		state, _, e := c.Connection().GetInstanceState(h.IncusName())
+		conn, e := c.Connection()
+		if e != nil {
+			c.LogDebug("HealthdReloader connection failed, skipping reload", "healthd", h.IncusName(), "error", e)
+			reloading = false
+			mu.Unlock()
+			return err
+		}
+
+		state, _, e := conn.GetInstanceState(h.IncusName())
 		if e != nil {
 			c.LogDebug("HealthdReloader healthd missing, skipping reload", "healthd", h.IncusName(), "error", e)
 			reloading = false
@@ -433,7 +456,12 @@ func healthdReload(c *client.Client, h *client.Instance) error {
 		Interactive: false,
 	}
 
-	op, err := c.Connection().ExecInstance(h.IncusName(), req, nil)
+	conn, err := c.Connection()
+	if err != nil {
+		return err
+	}
+
+	op, err := conn.ExecInstance(h.IncusName(), req, nil)
 	if err != nil {
 		return err
 	}

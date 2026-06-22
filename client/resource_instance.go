@@ -99,6 +99,11 @@ type Instance struct {
 	created   bool
 	Config    InstanceConfig
 
+	// conn is this resource's own event-isolated Incus connection, set in
+	// Ensure() (which always runs before any other action) so concurrent
+	// workers never share a *ProtocolIncus. See Client.Connection.
+	conn *incusClient.ProtocolIncus
+
 	// image is for internal use in create operations.
 	image *Image
 
@@ -209,7 +214,7 @@ func (r *Instance) HasFull() bool {
 
 func (r *Instance) fetch() error {
 	// Fresh instance.
-	instance, eTag, err := r.client.incus.GetInstance(r.incusName)
+	instance, eTag, err := r.conn.GetInstance(r.incusName)
 	if err != nil {
 		return err
 	}
@@ -217,7 +222,7 @@ func (r *Instance) fetch() error {
 	r.ETag = eTag
 
 	if r.Config.Full {
-		full, _, err := r.client.incus.GetInstanceFull(r.IncusInstance.Name)
+		full, _, err := r.conn.GetInstanceFull(r.IncusInstance.Name)
 		if err != nil {
 			return err
 		}
@@ -236,9 +241,15 @@ func (r *Instance) Ensure(ctx context.Context, opts ...Option) error {
 		return err
 	}
 
+	conn, err := r.client.Connection()
+	if err != nil {
+		return err
+	}
+	r.conn = conn
+
 	// Try to get existing
 	// Check if exists
-	err := r.fetch()
+	err = r.fetch()
 	if err == nil {
 		err = r.ensured()
 		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
@@ -332,7 +343,7 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 	}
 
 	// Get image info from project
-	incusImage, _, err := r.client.incus.GetImage(image.IncusAlias.Target)
+	incusImage, _, err := r.conn.GetImage(image.IncusAlias.Target)
 	if err != nil {
 		return ErrNotFound.WithText("getting image").Wrap(err)
 	}
@@ -363,8 +374,8 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 		},
 	}
 
-	// Create instance from project image
-	op, err := r.client.incus.CreateInstanceFromImage(r.client.incus, *incusImage, req)
+	// Create instance from project image.
+	op, err := r.conn.CreateInstanceFromImage(r.conn, *incusImage, req)
 	if err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, options, op, err); err != nil {
 		return err
 	}
@@ -583,7 +594,7 @@ func (r *Instance) waitForDependencies(ctx context.Context, options Options) err
 	for depName, requiredStatus := range r.Config.Dependencies {
 		r.client.LogDebug("Waiting for dependency", "instance", r.incusName, "dep", depName, "status", requiredStatus)
 		for {
-			inst, _, err := r.client.incus.GetInstance(depName)
+			inst, _, err := r.conn.GetInstance(depName)
 			if err == nil && inst.Config[HealthConfigKey] == requiredStatus {
 				r.client.LogDebug("Dependency ready", "dep", depName)
 				break
@@ -622,7 +633,7 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 		return nil
 	}
 
-	op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
+	op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
 		Action:  "start",
 		Timeout: options.incusTimeout(),
 	}, r.ETag)
@@ -693,7 +704,7 @@ func (r *Instance) PushSecrets() error {
 			return ErrCreate.WithText("creating secret directory").Wrap(err)
 		}
 
-		err := r.client.incus.CreateInstanceFile(r.incusName, target, incusClient.InstanceFileArgs{
+		err := r.conn.CreateInstanceFile(r.incusName, target, incusClient.InstanceFileArgs{
 			Content: bytes.NewReader(secret.Content),
 			UID:     secret.UID,
 			GID:     secret.GID,
@@ -745,7 +756,7 @@ func (r *Instance) PushFiles() error {
 			file.Content = f
 		}
 
-		err := r.client.incus.CreateInstanceFile(r.incusName, target, incusClient.InstanceFileArgs{
+		err := r.conn.CreateInstanceFile(r.incusName, target, incusClient.InstanceFileArgs{
 			Content: file.Content,
 			UID:     uid,
 			GID:     gid,
@@ -781,7 +792,7 @@ func (r *Instance) mkdirP(dirPath string, mode int) error {
 	slices.Reverse(dirs)
 
 	for _, dir := range dirs {
-		err := r.client.incus.CreateInstanceFile(r.incusName, dir, incusClient.InstanceFileArgs{
+		err := r.conn.CreateInstanceFile(r.incusName, dir, incusClient.InstanceFileArgs{
 			Type: "directory",
 			Mode: mode,
 			UID:  int64(r.UID),
@@ -800,7 +811,7 @@ func (r *Instance) mkdirP(dirPath string, mode int) error {
 
 // secretExists checks if a file exists in the instance with the same content.
 func (r *Instance) secretExists(sPath string, content []byte) bool {
-	reader, _, err := r.client.incus.GetInstanceFile(r.incusName, sPath)
+	reader, _, err := r.conn.GetInstanceFile(r.incusName, sPath)
 	if err != nil {
 		return false // doesn't exist
 	}
@@ -845,7 +856,7 @@ func (r *Instance) stop(ctx context.Context, options Options) error {
 		return nil
 	}
 
-	op, err := r.client.incus.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
+	op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
 		Action:  "stop",
 		Force:   options.Force,
 		Timeout: options.incusTimeout(),
@@ -878,7 +889,7 @@ func (r *Instance) patch(body instancePatch) error {
 		u += "?project=" + url.QueryEscape(r.client.incusProject)
 	}
 
-	_, _, err := r.client.incus.RawQuery(http.MethodPatch, u, body, "")
+	_, _, err := r.conn.RawQuery(http.MethodPatch, u, body, "")
 	return err
 }
 
@@ -927,7 +938,7 @@ func (r *Instance) Delete(ctx context.Context, opts ...Option) error {
 		return err
 	}
 
-	op, err := r.client.incus.DeleteInstance(r.incusName)
+	op, err := r.conn.DeleteInstance(r.incusName)
 
 	// Do the delete
 	err = r.client.hookOperation(ctx, ActionDelete, r, options, op, err)
@@ -988,7 +999,7 @@ func (r *Instance) log(ctx context.Context, options Options) error {
 // logBuffer reads the saved console log buffer via GET /console (equivalent to
 // `incus console --show-log`). Used for non-follow log retrieval.
 func (r *Instance) logBuffer(outputHandler func(Action, Resource, []byte)) error {
-	reader, err := r.client.incus.GetInstanceConsoleLog(r.incusName, nil)
+	reader, err := r.conn.GetInstanceConsoleLog(r.incusName, nil)
 	if err != nil {
 		return ErrOperation.WithText("getting console log").Wrap(err)
 	}
@@ -1032,7 +1043,7 @@ func (r *Instance) logStream(ctx context.Context, options Options, outputHandler
 		ConsoleDisconnect: consoleDisconnect,
 	}
 
-	op, err := r.client.incus.ConsoleInstance(r.incusName, req, args)
+	op, err := r.conn.ConsoleInstance(r.incusName, req, args)
 	if err != nil {
 		return ErrOperation.WithText("connecting to console").Wrap(err)
 	}

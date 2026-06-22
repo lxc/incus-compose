@@ -183,8 +183,8 @@ func newPsCommand() *cli.Command {
 			// Include orphaned instances (instances present in the Incus project but not defined in compose).
 			// Use GetInstancesFull to obtain complete instance information and avoid reflection workarounds.
 			func() {
-				incus := c.Connection()
-				if incus == nil {
+				incus, err := c.Connection()
+				if err != nil {
 					return
 				}
 

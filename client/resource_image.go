@@ -50,6 +50,11 @@ type Image struct {
 	incusName string
 	created   bool
 
+	// conn is this resource's own event-isolated Incus connection, set in
+	// Ensure() (which always runs before any other action) so concurrent
+	// workers never share a *ProtocolIncus. See Client.Connection.
+	conn *incusClient.ProtocolIncus
+
 	// remote is the domain part of the image reference
 	remote string
 
@@ -188,6 +193,16 @@ func (r *Image) NativeIncus() bool {
 func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 	args := NewOptions(opts...)
 
+	if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
+		return err
+	}
+
+	conn, err := r.client.Connection()
+	if err != nil {
+		return err
+	}
+	r.conn = conn
+
 	if r.Config.Build != nil {
 		return r.ensureBuild(ctx, args)
 	}
@@ -225,12 +240,8 @@ func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 		}
 	}
 
-	if err := r.client.hookBefore(ctx, ActionEnsure, r, args, nil); err != nil {
-		return err
-	}
-
 	// Try to get existing image
-	err := r.get()
+	err = r.get()
 	if err == nil {
 		if args.Pull {
 			err = r.refresh(ctx, args)
@@ -255,7 +266,7 @@ func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 
 func (r *Image) get() error {
 	// Check if image alias exists in cache
-	alias, eTag, err := r.client.incus.GetImageAlias(r.incusName)
+	alias, eTag, err := r.conn.GetImageAlias(r.incusName)
 	if err != nil {
 		r.IncusAlias = nil
 		r.ETag = ""
@@ -265,7 +276,7 @@ func (r *Image) get() error {
 	r.IncusAlias = alias
 	r.ETag = eTag
 
-	if img, _, err := r.client.incus.GetImage(alias.Target); err == nil {
+	if img, _, err := r.conn.GetImage(alias.Target); err == nil {
 		r.readOCIConfigFromProperties(img.Properties)
 	}
 
@@ -306,7 +317,7 @@ func (r *Image) refresh(ctx context.Context, args Options) error {
 		}
 	}
 
-	op, err := r.client.incus.DeleteImage(r.IncusAlias.Target)
+	op, err := r.conn.DeleteImage(r.IncusAlias.Target)
 	if err = r.client.hookOperation(ctx, ActionEnsure, r, args, op, err); err != nil {
 		r.client.LogDebug("deleting stale project image for refresh", "error", err)
 		return nil
@@ -371,7 +382,7 @@ func (r *Image) create(ctx context.Context, args Options) error {
 		}
 	}
 
-	_, _, err = r.client.incus.GetImageAlias(r.incusName)
+	_, _, err = r.conn.GetImageAlias(r.incusName)
 	if err != nil {
 		projectCopyArgs := &incusClient.ImageCopyArgs{
 			Aliases:    []incusApi.ImageAlias{{Name: r.incusName}},
@@ -400,7 +411,7 @@ func (r *Image) create(ctx context.Context, args Options) error {
 		}
 
 		// Copy from cache to project
-		op, err := r.client.incus.CopyImage(r.cache, projectImageInfo, projectCopyArgs)
+		op, err := r.conn.CopyImage(r.cache, projectImageInfo, projectCopyArgs)
 
 		// Wait for copy to complete
 		if err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, args, op, err); err != nil {
@@ -562,7 +573,7 @@ func (r *Image) ensureBuild(ctx context.Context, args Options) error {
 		if args.Build.Mode == BuildForce {
 			// Delete the existing image so we can replace it.
 			if r.IncusAlias != nil {
-				op, delErr := r.client.incus.DeleteImage(r.IncusAlias.Target)
+				op, delErr := r.conn.DeleteImage(r.IncusAlias.Target)
 				if hookErr := r.client.hookOperation(ctx, ActionEnsure, r, args, op, delErr); hookErr != nil {
 					r.client.LogDebug("deleting image for rebuild", "error", hookErr)
 				}
@@ -588,7 +599,7 @@ func (r *Image) ensureBuild(ctx context.Context, args Options) error {
 // buildImage shells out to the detected container builder, imports the rootfs
 // into Incus as a split (metadata + rootfs) image, and records the alias.
 func (r *Image) buildImage(ctx context.Context, args Options) error {
-	server, _, err := r.client.incus.GetServer()
+	server, _, err := r.conn.GetServer()
 	if err != nil {
 		return ErrCreate.WithText("getting Incus server info").Wrap(err)
 	}
@@ -628,7 +639,7 @@ func (r *Image) buildImage(ctx context.Context, args Options) error {
 		return ErrCreate.WithText("building image metadata").Wrap(err)
 	}
 
-	op, err := r.client.incus.CreateImage(incusApi.ImagesPost{
+	op, err := r.conn.CreateImage(incusApi.ImagesPost{
 		Aliases: []incusApi.ImageAlias{{Name: r.incusName}},
 	}, &incusClient.ImageCreateArgs{
 		MetaFile:   meta,
@@ -640,7 +651,7 @@ func (r *Image) buildImage(ctx context.Context, args Options) error {
 		return ErrCreate.WithText("importing built image").Wrap(err)
 	}
 
-	alias, eTag, err := r.client.incus.GetImageAlias(r.incusName)
+	alias, eTag, err := r.conn.GetImageAlias(r.incusName)
 	if err != nil {
 		return ErrCreate.WithText("fetching alias after build").Wrap(err)
 	}
@@ -689,7 +700,7 @@ func (r *Image) Delete(ctx context.Context, opts ...Option) error {
 
 	// Resolve the per-project copy in the active project (not the cache). A
 	// missing alias means nothing was copied here, so there is nothing to do.
-	alias, _, err := r.client.incus.GetImageAlias(r.incusName)
+	alias, _, err := r.conn.GetImageAlias(r.incusName)
 	if err != nil || alias == nil {
 		r.IncusAlias = nil
 		r.ETag = ""
@@ -699,7 +710,7 @@ func (r *Image) Delete(ctx context.Context, opts ...Option) error {
 		return r.client.hookAfter(ctx, ActionDelete, r, options, err)
 	}
 
-	op, err := r.client.incus.DeleteImage(alias.Target)
+	op, err := r.conn.DeleteImage(alias.Target)
 
 	err = r.client.hookOperation(ctx, ActionDelete, r, options, op, err)
 	r.IncusAlias = nil

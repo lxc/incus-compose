@@ -785,7 +785,10 @@ func (c *GlobalClient) DefaultNetwork() (string, error) {
 			return "", err
 		}
 
-		conn = pc.Connection()
+		conn, err = pc.Connection()
+		if err != nil {
+			return "", err
+		}
 	}
 
 	p, _, err := conn.GetProfile("default")
