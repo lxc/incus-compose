@@ -158,6 +158,10 @@ func TestConfigSnapshots(t *testing.T) {
 			Fixture: "dev-environment",
 		},
 		{
+			Name:    "with-bind-mounts_yaml",
+			Fixture: "with-bind-mounts",
+		},
+		{
 			Name:    "with-tmpfs_yaml",
 			Fixture: "with-tmpfs",
 		},
@@ -180,6 +184,10 @@ func TestConfigSnapshots(t *testing.T) {
 		{
 			Name:    "with-container-name_yaml",
 			Fixture: "with-container-name",
+		},
+		{
+			Name:    "with-seeded-bind-mounts_yaml",
+			Fixture: "with-seeded-bind-mounts",
 		},
 		{
 			Name:    "with-shm-size_yaml",

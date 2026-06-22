@@ -1,0 +1,33 @@
+name: with-bind-mounts
+services:
+  dir-web:
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+    image: docker.io/nginxinc/nginx-unprivileged:alpine-slim
+    networks:
+      default: null
+    volumes:
+      - type: bind
+        source: $FIXTURE_PATH/html
+        target: /usr/share/nginx/html
+        read_only: true
+        bind: {}
+    x-incus:
+      limits.cpu: 1
+  file-web:
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+    image: docker.io/nginxinc/nginx-unprivileged:alpine-slim
+    networks:
+      default: null
+    volumes:
+      - type: bind
+        source: $FIXTURE_PATH/file.html
+        target: /usr/share/nginx/html/index.html
+        read_only: true
+        bind: {}
+    x-incus:
+      limits.cpu: 1
+networks:
+  default:
+    name: with-seeded-bind-mounts_default

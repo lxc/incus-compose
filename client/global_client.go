@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 
 	incusClient "github.com/lxc/incus/v7/client"
@@ -122,7 +123,7 @@ type GlobalClient struct {
 	connected  bool
 
 	// Cache for ConnectionIP()
-	connectionIP string
+	connectionIP net.IP
 
 	// Cache for DefaultNetwork()
 	defaultNetwork string
@@ -356,7 +357,7 @@ func (c *GlobalClient) Connect() error {
 	c.incus = pIncus
 	c.connected = true
 
-	c.logger.Debug("Connected")
+	c.logger.Debug("Connected", "url", c.Config.URL)
 
 	if c.Config.DefaultStoragePool == "detect" {
 		if err = c.detectStoragePool(); err != nil {
@@ -715,54 +716,75 @@ func (c *GlobalClient) NetworkBridgeIPs(networkName string) (ipv4 []string, ipv6
 
 // ConnectionIP returns the IP of the current connection,
 // this function is cached by GlobalClient.connectionIP.
-func (c *GlobalClient) ConnectionIP() (string, error) {
+func (c *GlobalClient) ConnectionIP() (net.IP, error) {
 	if !c.IsRemote() {
-		return "", errors.New("Client.ConnectionIP needs a non unix connection")
+		return nil, errors.New("Client.ConnectionIP needs a non unix connection")
 	}
 
-	if c.connectionIP != "" {
+	if c.connectionIP != nil {
 		return c.connectionIP, nil
 	}
 
 	u, err := url.Parse(c.Config.URL)
 	if err != nil {
-		return "", fmt.Errorf("while parsing url %q: %w", c.Config.URL, err)
+		return nil, fmt.Errorf("while parsing url %q: %w", c.Config.URL, err)
 	}
 
-	if net.ParseIP(u.Hostname()) != nil {
-		c.connectionIP = u.Hostname()
+	ip := net.ParseIP(u.Hostname())
+	if ip != nil {
+		c.connectionIP = ip
 		return c.connectionIP, nil
 	}
 
-	ip, err := net.LookupIP(u.Hostname())
+	ips, err := net.LookupIP(u.Hostname())
 	if err != nil {
-		return "", fmt.Errorf("while looking up the IP for %q: %w", c.Config.URL, err)
+		return nil, fmt.Errorf("while looking up the IP for %q: %w", c.Config.URL, err)
 	}
 
-	c.connectionIP = ip[0].String()
+	c.connectionIP = ips[0]
 	return c.connectionIP, nil
 }
 
-// NetworkForIP lookups the incus network for the given ip.
-func (c *GlobalClient) NetworkForIP(ip string) (string, error) {
-	isV4 := net.ParseIP(ip).To4() != nil
+// SameHost returns nil of the connected incus and the current host share the same ip else an error.
+func (c *GlobalClient) SameHost() error {
+	if c.unix {
+		// Assume a unix socket is always on the same host.
+		return nil
+	}
 
-	networks, err := c.incus.GetNetworks()
+	ip, err := c.ConnectionIP()
 	if err != nil {
-		return "", fmt.Errorf("GetNetworks: %w", err)
+		return err
 	}
 
-	for _, network := range networks {
-		if isV4 && network.Config["ipv4.address"] == ip {
-			return network.Name, nil
+	// Source - https://stackoverflow.com/a/23558495
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return fmt.Errorf("failed to get current hosts interfaces: %w", err)
+	}
+
+	for _, i := range ifaces {
+		addrs, err := i.Addrs()
+		if err != nil {
+			return fmt.Errorf("failed to get ip addresses of %v: %w", i.Name, err)
 		}
 
-		if !isV4 && network.Config["ipv6.address"] == ip {
-			return network.Name, nil
+		for _, addr := range addrs {
+			var ifaceIP net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ifaceIP = v.IP
+			case *net.IPAddr:
+				ifaceIP = v.IP
+			}
+
+			if slices.Equal(ifaceIP, ip) {
+				return nil
+			}
 		}
 	}
 
-	return "", fmt.Errorf("network with ip %q not found", ip)
+	return errors.New("not on the same host")
 }
 
 // DefaultNetwork returns the network from the profile in the configured project.

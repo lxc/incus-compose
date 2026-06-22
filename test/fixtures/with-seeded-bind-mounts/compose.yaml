@@ -1,4 +1,4 @@
-name: with-bind-mounts
+name: with-seeded-bind-mounts
 
 services:
   file-web:
@@ -8,7 +8,12 @@ services:
     x-incus:
       limits.cpu: 1
     volumes:
-      - ./file.html:/usr/share/nginx/html/index.html:ro
+      - type: bind
+        source: ./file.html
+        target: /usr/share/nginx/html/index.html
+        read_only: true
+        x-incus-compose:
+          seed: true
 
   dir-web:
     image: docker.io/nginxinc/nginx-unprivileged:alpine-slim
@@ -17,4 +22,9 @@ services:
     x-incus:
       limits.cpu: 1
     volumes:
-      - ./html:/usr/share/nginx/html:ro
+      - type: bind
+        source: ./html
+        target: /usr/share/nginx/html
+        read_only: true
+        x-incus-compose:
+          seed: true

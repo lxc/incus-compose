@@ -16,12 +16,70 @@ import (
 )
 
 func TestBindMounts(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 
-	t.Parallel()
-
-	pn := "with-bind-mounts"
+	pn := t.Name()
 	compose := "../../test/fixtures/with-bind-mounts/compose.yaml"
+	ctx := context.Background()
+
+	gc, err := client.NewTestClient(ctx)
+	if err != nil {
+		t.Skip(err.Error())
+	}
+
+	skipNotSameHost(t, gc)
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	c, err := gc.EnsureProject(pn)
+	require.NoError(t, err)
+
+	t.Run("file bind-mount", func(t *testing.T) {
+		t.Parallel()
+		err := pollContainerHTTP(c, "file-web-1", "file-bind-mount-ok", 60*time.Second)
+		require.NoError(t, err)
+	})
+
+	t.Run("dir bind-mount", func(t *testing.T) {
+		t.Parallel()
+		err := pollContainerHTTP(c, "dir-web-1", "dir-bind-mount-ok", 60*time.Second)
+		require.NoError(t, err)
+	})
+}
+
+func TestBindMountErrorsOnRemote(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+
+	pn := t.Name()
+	compose := "../../test/fixtures/with-bind-mounts/compose.yaml"
+	ctx := context.Background()
+
+	gc, err := client.NewTestClient(ctx)
+	if err != nil {
+		t.Skip(err.Error())
+	}
+
+	if gc.SameHost() == nil {
+		t.Skip("this test requires the incus server to be on a remote host")
+	}
+
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.Error(t, err)
+}
+
+func TestSeededBindMounts(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+
+	pn := t.Name()
+	compose := "../../test/fixtures/with-seeded-bind-mounts/compose.yaml"
 	ctx := context.Background()
 
 	gc, err := client.NewTestClient(ctx)

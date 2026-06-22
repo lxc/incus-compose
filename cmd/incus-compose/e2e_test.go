@@ -31,6 +31,12 @@ func skipSlow(t *testing.T) {
 	}
 }
 
+func skipNotSameHost(t *testing.T, gc *client.GlobalClient) {
+	if gc.SameHost() != nil {
+		t.Skip("not on the same host")
+	}
+}
+
 func runCommand(t *testing.T, ctx context.Context, projectName string, args ...string) (*bytes.Buffer, *bytes.Buffer, error) {
 	t.Helper()
 

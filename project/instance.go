@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,6 +14,10 @@ import (
 
 	"github.com/lxc/incus-compose/client"
 )
+
+type xICInstanceVolume struct {
+	Seed bool `mapstructure:"seed"`
+}
 
 func buildPlatform(service types.ServiceConfig) (string, error) {
 	if service.Build == nil {
@@ -248,7 +251,7 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 		if networkDef, ok := p.Networks[name]; ok {
 			netConfig.External = bool(networkDef.External)
 			netConfig.Extensions = networkExtensions(networkDef)
-			netConfig.OverrideName = networkXIncusComposeNetwork(networkDef)
+			netConfig.OverrideName = xICInstanceNetwork(networkDef)
 		}
 
 		network, err := c.Resource(client.KindNetwork, name, netConfig)
@@ -451,6 +454,19 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 	files := map[string]client.InstanceFile{}
 
 	for _, cVol := range service.Volumes {
+		seed := false
+		if cVol.Extensions != nil {
+			var ext xICInstanceVolume
+			ok, err := cVol.Extensions.Get("x-incus-compose", &ext)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+
+			if ok {
+				seed = ext.Seed
+			}
+		}
+
 		if cVol.Type == "" {
 			// Infer type from source path (short syntax compatibility)
 			// Absolute or relative paths are bind mounts, named sources are volumes
@@ -498,50 +514,72 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 
 			devices = append(devices, client.InstanceDevice{Name: devName, Config: devConfig})
 		case "bind":
-			info, err := os.Stat(cVol.Source)
-			if err != nil {
-				return nil, nil, nil, client.ErrUnknown.WithKindName(client.KindInstance, service.Name).Wrap(err)
-			}
+			if seed {
+				c.LogDebug("Will seed", "service", service.Name, "source", cVol.Source, "target", cVol.Target)
 
-			absSource, err := filepath.Abs(cVol.Source)
-			if err != nil {
-				return nil, nil, nil, client.ErrUnknown.WithKindName(client.KindInstance, service.Name).Wrap(err)
-			}
+				info, err := os.Stat(cVol.Source)
+				if err != nil {
+					return nil, nil, nil, client.ErrUnknown.WithKindName(client.KindInstance, service.Name).Wrap(err)
+				}
 
-			devName := "bind-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-5)
+				if !info.IsDir() {
+					files[cVol.Target] = client.InstanceFile{
+						File:    cVol.Source,
+						UID:     -1,
+						GID:     -1,
+						Mode:    0o644,
+						DirMode: 0o755,
+					}
+				} else {
+					devName := "bind-seed-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-10)
 
-			if !info.IsDir() {
-				files[cVol.Target] = client.InstanceFile{
-					File:    absSource,
-					UID:     -1,
-					GID:     -1,
-					Mode:    0o644,
-					DirMode: 0o755,
+					volConfig := &client.StorageVolumeConfig{
+						Shifted:       true,
+						ImageResource: image,
+						HostPath:      cVol.Source,
+					}
+
+					v, err := c.Resource(client.KindStorageVolume, "bind-"+cVol.Source, volConfig)
+					if err != nil {
+						errs = errors.Join(errs, err)
+						continue
+					}
+
+					if options.StorageVolumes {
+						resources = append(resources, v)
+					}
+
+					devConfig := client.InstanceDeviceConfig{
+						DeviceType: client.InstanceDeviceTypeDisk,
+						Disk: client.InstanceDeviceDiskConfig{
+							StorageVolumeConfig: volConfig,
+							Source:              v.IncusName(),
+							Path:                cVol.Target,
+							Shift:               true,
+						},
+					}
+
+					if cVol.ReadOnly {
+						devConfig.Disk.ReadOnly = true
+					}
+
+					devices = append(devices, client.InstanceDevice{Name: devName, Config: devConfig})
 				}
 			} else {
-				volConfig := &client.StorageVolumeConfig{
-					Shifted:       true,
-					ImageResource: image,
-					HostPath:      absSource,
-				}
-
-				v, err := c.Resource(client.KindStorageVolume, "bind-"+cVol.Source, volConfig)
+				// Refuse bind without seed on remote hosts.
+				err := c.Global().SameHost()
 				if err != nil {
-					errs = errors.Join(errs, err)
-					continue
+					return nil, nil, nil, fmt.Errorf("failed to add a bind-mount for service %v: %w", service.Name, err)
 				}
 
-				if options.StorageVolumes {
-					resources = append(resources, v)
-				}
+				devName := "bind-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-5)
 
 				devConfig := client.InstanceDeviceConfig{
 					DeviceType: client.InstanceDeviceTypeDisk,
 					Disk: client.InstanceDeviceDiskConfig{
-						StorageVolumeConfig: volConfig,
-						Source:              v.IncusName(),
-						Path:                cVol.Target,
-						Shift:               true,
+						Source: cVol.Source,
+						Path:   cVol.Target,
+						Shift:  true,
 					},
 				}
 
@@ -769,9 +807,9 @@ func parseSecretMode(mode *types.FileMode) int {
 	return int(*mode)
 }
 
-// networkXIncusComposeNetwork extracts the x-incus-compose.network string override
+// xICInstanceNetwork extracts the x-incus-compose.network string override
 // from a compose network definition. Returns "" if not set.
-func networkXIncusComposeNetwork(networkDef types.NetworkConfig) string {
+func xICInstanceNetwork(networkDef types.NetworkConfig) string {
 	var raw map[string]any
 	ok, err := networkDef.Extensions.Get("x-incus-compose", &raw)
 	if !ok || err != nil {
