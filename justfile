@@ -29,6 +29,10 @@ test-local folder="./..." *args:
 test folder="./..." *args:
     @just log-run "test/logs/`date +%Y%m%d-%H%M%S`-test.log" "go test {{ folder }} -parallel {{ v_test_procs }} -v -coverprofile=coverage.out -covermode=atomic {{ args }}"
 
+# Run the tests with a race detector.
+test-race folder="./..." *args:
+    @just test {{ folder }} -race -count=1 {{ args }}
+
 # Run all tests against nested Incus, includes direct incus as well as slow tests.
 [env("INCUS_COMPOSE_TEST_SLOW", "1")]
 [env("NO_COLOR", "1")]
