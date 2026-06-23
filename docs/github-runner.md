@@ -27,7 +27,7 @@ there.
 ## 2. Install base packages — _container (root)_
 
 ```bash
-apt install sudo-rs vim golang git
+apt install sudo-rs vim golang git shellcheck
 ```
 
 ## 3. Install Incus from the Zabbly repository — _container (root)_
@@ -60,14 +60,14 @@ usermod -aG incus-admin runner
 
 ## 5. Install golangci-lint — _runner user_
 
-The install script drops the binary in `~/bin`. Create that directory _before_
-logging in: Debian's `~/.profile` only adds `~/bin` to `PATH` if it exists at
+The install script drops the binary in `~/.local/bin`. Create that directory _before_
+logging in: Debian's `~/.profile` only adds `~/.local/bin` to `PATH` if it exists at
 login, so log out and back in afterwards to pick it up.
 
 ```bash
 sudo -u runner -iH
 mkdir ~/bin
-curl -sSfL https://golangci-lint.run/install.sh | sh -s
+curl -sSfL https://golangci-lint.run/install.sh | sh -s -b ~/.local/bin
 exit
 
 sudo -u runner -iH
