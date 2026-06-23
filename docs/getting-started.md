@@ -106,7 +106,7 @@ This will:
 - Create networks and volumes
 - Start containers in dependency order
 
-If your compose file uses health checks, incus-compose manages the `ic-healthd` sidecar automatically. It is transparent during normal use, but if you need to inspect or manage it directly, see [Health Checking](healthd.md).
+If your compose file uses health checks, incus-compose manages the `ic-healthd` sidecar automatically. It is transparent during normal use, but it is also a core component: all `healthcheck`, `restart:` and `depends_on: service_healthy` behavior is enforced by this sidecar, not by Incus. A working healthd is also required to bring up a project that has `service_healthy` dependencies - `up` waits for healthd to report them healthy, so a broken healthd makes `up` hang and fail (unless you pass `--no-healthd`). If health, restart, or startup behavior ever looks wrong, debug healthd first - see [Health Checking](healthd.md) and [Debugging ic-healthd](healthd.md#debugging-ic-healthd).
 
 ### 3. Check status
 

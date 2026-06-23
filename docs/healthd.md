@@ -3,6 +3,22 @@
 incus-compose implements health checks via a sidecar container called `ic-healthd`.
 Incus has no native healthcheck support, so ic-healthd fills that role.
 
+> **ic-healthd is a core component.** Every `healthcheck`, every restart policy
+> (`restart: always | on-failure | unless-stopped`), and every
+> `depends_on: { condition: service_healthy }` is enforced by this sidecar, not by
+> Incus. If healthd is misconfigured, stopped, or crashing:
+>
+> - instances are not restarted, and
+> - **the project may fail to come up at all**: `incus-compose up` waits for
+>   `service_healthy` dependencies to be reported healthy by healthd. If that
+>   status never arrives, `up` blocks until `--dependency-timeout` (default 5m;
+>   `0` waits forever) and then fails.
+>
+> Opt out of healthd entirely with `incus-compose up --no-healthd` (this also
+> drops the dependency wait); `--no-deps` skips the wait too. When health,
+> restart, or startup-ordering behavior looks wrong, debug healthd first (see
+> [Debugging ic-healthd](#debugging-ic-healthd)).
+
 ## How It Works
 
 `incus-compose up` creates the sidecar when any service declares a `healthcheck`,
@@ -60,7 +76,28 @@ When keys are missing, ic-healthd falls back to:
 
 After `retries` consecutive failures the instance is restarted. The first
 restart waits `interval * retries`; the delay doubles on every further restart,
-capped at 60s.
+capped at 5 minutes.
+
+### Retries during the start period
+
+The `retries` value above applies to the normal checker only. During the start
+period the instance is given the whole period to come up, so the start-period
+checker derives its own retry budget from the period itself:
+
+```
+start retries = start_period / start_interval
+```
+
+That is the number of checks that fit in the start period. A check that succeeds
+at any point ends the start period early and switches to the normal checker. If
+the instance never becomes healthy, the start period elapses and the checker
+either restarts the instance (when a restart policy is set) or falls back to the
+normal checker.
+
+Keep `start_interval` smaller than `start_period`: if it is larger, the derived
+budget rounds down to zero and the instance is restarted on the first failed
+check during start. `start_interval` must also be a positive, at-least-1ms
+duration.
 
 ## Dockerfile HEALTHCHECK Not Supported
 
@@ -184,6 +221,110 @@ Override with `--healthd-image` flag or `INCUS_COMPOSE_HEALTHD_IMAGE` env var.
 
 The container is named `{project}-ic-healthd` and tagged with
 `user.healthcheck.daemon=true` so ic-healthd skips itself during discovery.
+
+## Debugging ic-healthd
+
+Because healthd drives all health and restart behavior, most "container did not
+restart" or "stuck `service_healthy`" problems are diagnosed from the sidecar.
+Work through these in order.
+
+### 1. Check the reported health status
+
+Instances are named `<service>-1` (the replica index starts at 1) and live in the
+Incus project named after your compose project, so pass `--project`. ic-healthd
+writes its verdict to `user.healthcheck.status`
+(`starting | healthy | unhealthy`):
+
+```bash
+incus config get web-1 user.healthcheck.status --project <project>
+```
+
+`starting` that never becomes `healthy` means the test never passes within the
+start period; `unhealthy` means it failed `retries` times.
+
+### 2. Inspect the config keys healthd reads
+
+All inputs live in `user.healthcheck.*` (and `user.restart`). If a key is wrong,
+healthd behaves wrong - it never reads the compose file directly:
+
+```bash
+incus config show web-1 --project <project> | grep -E 'user\.(healthcheck|restart)'
+```
+
+### 3. Watch the daemon logs
+
+```bash
+incus-compose healthd logs --follow
+```
+
+Enable debug logging for full per-check detail (failures, retry counts,
+`inStart` transitions, restart delays). The `--debug` flag is inherited by the
+sidecar, so recreate it with debug on:
+
+```bash
+incus-compose --debug healthd up --recreate
+incus-compose healthd logs --follow
+```
+
+### 4. Confirm the sidecar is actually running
+
+The container is named `{project}-ic-healthd`. If it is missing or stopped,
+nothing is being monitored:
+
+```bash
+incus-compose list --healthd
+incus-compose healthd up --recreate   # recreate if missing/stale
+```
+
+Remember: `incus-compose start` never (re)starts the sidecar - only `up` does.
+
+### 5. Reproduce the health test by hand
+
+healthd runs `user.healthcheck.test` via `incus exec`. Run it yourself to see
+why it fails:
+
+```bash
+incus-compose exec <service> -- sh -c 'wget -q --spider http://localhost; echo exit: $?'
+```
+
+### 6. Reload after editing keys
+
+If you change `user.healthcheck.*` keys directly (instead of via `up`), tell the
+running daemon to re-read them:
+
+```bash
+incus-compose healthd reload   # sends SIGHUP
+```
+
+### `incus-compose up` hangs or times out on dependencies
+
+If a service uses `depends_on: { condition: service_healthy }`, `up` waits for
+healthd to report the dependency `healthy` before starting the dependent service.
+A broken or missing healthd means that status never arrives and `up` blocks until
+`--dependency-timeout` (default 5m) elapses, then fails.
+
+1. Confirm the dependency's status with steps 1-3 above; it is likely stuck on
+   `starting` or `unhealthy`.
+2. If you only want to bring the project up without the wait, opt out:
+
+   ```bash
+   incus-compose up --no-healthd   # also stops managing healthchecks/restarts
+   # or keep healthd but skip the wait:
+   incus-compose up --no-deps
+   ```
+
+### Iterating on the daemon itself
+
+When changing ic-healthd code, push a locally built binary instead of the
+published image:
+
+```bash
+just build-healthd
+incus-compose healthd down
+incus-compose --debug up --healthd-binary ./bin/ic-healthd
+```
+
+See [Development: Local Binary](#development-local-binary).
 
 ## Troubleshooting
 

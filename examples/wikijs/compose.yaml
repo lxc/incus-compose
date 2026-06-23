@@ -18,6 +18,8 @@ services:
         condition: service_healthy
         restart: true # restart wiki after database - not supported
     init: true
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
     environment:
       DB_TYPE: postgres
       DB_HOST: database

@@ -114,9 +114,14 @@ func (c *Checker) Run(ctx context.Context, inStart bool, startInstance bool) {
 // cancelled. The returned phaseResult tells Run how to proceed.
 func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 	interval := c.config.Interval
+	retries := c.config.Retries
 	phaseCtx, cancel := context.WithCancel(ctx)
 	if inStart {
 		interval = c.config.StartInterval
+		retries = 1
+		if c.config.StartInterval > 0 {
+			retries = max(1, int(c.config.StartPeriod/c.config.StartInterval))
+		}
 		phaseCtx, cancel = context.WithTimeout(ctx, c.config.StartPeriod)
 	}
 	defer cancel()
@@ -158,13 +163,13 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 				slog.Warn("check failed",
 					"instance", c.name,
 					"failures", c.failures,
-					"retries", c.config.Retries,
+					"retries", retries,
 					"inStart", inStart,
 					"error", err,
 				)
 				status = client.HealthStatusUnhealthy
 
-				if c.failures >= c.config.Retries {
+				if c.failures >= retries {
 					switch {
 					case !c.config.Restart:
 						slog.Debug("stopping the check", "instance", c.name)
