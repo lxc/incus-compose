@@ -145,6 +145,19 @@ func noColor(ctx context.Context) bool {
 	return v
 }
 
+// selfUpdateWritable reports whether the running executable can be replaced in
+// place. Self-update writes a new binary into the executable's directory and
+// renames it over the target, so directory writability is what matters -- the
+// running file itself cannot be opened O_WRONLY (ETXTBSY on Linux, locked on
+// Windows). The check is delegated to a platform-specific dirWritable.
+func selfUpdateWritable() bool {
+	exe, err := selfupdate.ExecutablePath() // resolves symlinks to the real file
+	if err != nil {
+		return false
+	}
+	return dirWritable(filepath.Dir(exe))
+}
+
 func newRootCommand() *cli.Command {
 	commands := []*cli.Command{
 		newUpCommand(),
@@ -164,15 +177,8 @@ func newRootCommand() *cli.Command {
 	}
 
 	// "self-update" is only available if the executable is writeable and the version is not "latest".
-	if version.Current() != "latest" {
-		exe, err := selfupdate.ExecutablePath()
-		if err == nil {
-			f, err := os.OpenFile(exe, os.O_WRONLY, 0o644)
-			if err == nil {
-				f.Close()
-				commands = append(commands, newSelfUpdateCommand())
-			}
-		}
+	if version.Current() != "latest" && selfUpdateWritable() {
+		commands = append(commands, newSelfUpdateCommand())
 	}
 
 	return &cli.Command{
