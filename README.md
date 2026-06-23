@@ -49,9 +49,13 @@ incus-compose uses a **resource-first design**, see [Architecture Documentation]
 Requires `podman` or `docker` for image building and an Incus https remote (needed for healthchecking) with OCI registries added.
 See [Getting Started](docs/getting-started.md) for the full setup walkthrough.
 
-Install from the
+Install the latest release (the script verifies the SHA-256 checksum):
 
-[Releases Page](https://github.com/lxc/incus-compose/releases)
+```bash
+curl -sSfL https://raw.githubusercontent.com/lxc/incus-compose/main/install.sh | sh -s -- -b ~/.local/bin
+```
+
+Or grab a prebuilt archive from the [Releases Page](https://github.com/lxc/incus-compose/releases).
 
 Then point it at your existing `compose.yaml`:
 
@@ -73,6 +77,7 @@ incus-compose down
 
 This project is inspired by [@bketelsen](https://github.com/bketelsen/incus-compose).
 Some components are adapted from [docker compose](https://github.com/docker/compose).
+The `install.sh` script is adapted from [golangci-lint](https://github.com/golangci/golangci-lint), based on the [GoReleaser](https://goreleaser.com) install-script template.
 
 This project uses AI tools as development aids (drafting, iteration, reviews, tests, and documentation).
 Architecture, constraints, and final code decisions are owned by the human committers.

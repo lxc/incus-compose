@@ -54,11 +54,28 @@ incus remote add --protocol oci registry.gitlab.com https://registry.gitlab.com
 
 ## Installation
 
-Binary:
+### Install script (recommended)
 
-https://github.com/lxc/incus-compose/-/releases
+The install script downloads the matching release for your OS/architecture and
+verifies it against the published SHA-256 checksums.
 
-Source:
+```bash
+# Into a user-writable directory on your PATH (no sudo and self-update working)
+curl -sSfL https://raw.githubusercontent.com/lxc/incus-compose/main/install.sh | sh -s -- -b ~/.local/bin
+
+# Or System-wide into /usr/local/bin
+curl -sSfL https://raw.githubusercontent.com/lxc/incus-compose/main/install.sh | sudo sh -s -- -b /usr/local/bin
+```
+
+Pass a release tag as the final argument to pin a version, e.g.
+`... | sudo sh -s -- -b /usr/local/bin 1.0.0-beta15`. Without a tag the latest
+release is installed.
+
+### Binary
+
+Download a prebuilt archive from the [Releases Page](https://github.com/lxc/incus-compose/releases).
+
+### Source
 
 ```bash
 # Build from source
