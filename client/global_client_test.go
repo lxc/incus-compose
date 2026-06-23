@@ -6,6 +6,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestEmitProgress(t *testing.T) {
+	t.Parallel()
+
+	r := newMockResource("web", KindInstance, 0, true)
+
+	t.Run("forwards to handler", func(t *testing.T) {
+		t.Parallel()
+
+		var got Progress
+		var gotAction Action
+		var gotResource Resource
+		gc := &GlobalClient{progressHandler: func(a Action, res Resource, _ Options, p Progress) {
+			gotAction, gotResource, got = a, res, p
+		}}
+
+		want := Progress{Percent: -1, Text: "Waiting for dependency db"}
+		gc.emitProgress(ActionStart, r, Options{}, want)
+
+		require.Equal(t, ActionStart, gotAction)
+		require.Same(t, r, gotResource)
+		require.Equal(t, want, got)
+	})
+
+	t.Run("no handler is a no-op", func(t *testing.T) {
+		t.Parallel()
+
+		gc := &GlobalClient{}
+		require.NotPanics(t, func() {
+			gc.emitProgress(ActionStart, r, Options{}, Progress{Percent: -1, Text: "x"})
+		})
+	})
+}
+
 func TestParsePercent(t *testing.T) {
 	t.Parallel()
 

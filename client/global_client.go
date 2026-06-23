@@ -652,6 +652,17 @@ func (c *GlobalClient) reportProgress(action Action, r Resource, args Options, o
 	c.progressHandler(action, r, args, p)
 }
 
+// emitProgress sends a progress event that is not backed by an Incus operation,
+// for in-client waits like blocking on a dependency's health. It is a no-op
+// when no handler is registered. Like reportProgress it may run concurrently.
+func (c *GlobalClient) emitProgress(action Action, r Resource, args Options, p Progress) {
+	if c.progressHandler == nil {
+		return
+	}
+
+	c.progressHandler(action, r, args, p)
+}
+
 // parsePercent extracts a "NN%" value from an Incus progress string, returning
 // -1 when none is present (as with OCI status text). It finds the percent sign
 // anywhere in the string, e.g. "rootfs: 42% (3.10MB/s)" -> 42.

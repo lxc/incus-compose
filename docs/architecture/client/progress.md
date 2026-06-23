@@ -41,6 +41,13 @@ operation, the hook calls `op.AddHandler`, which on each update reads the operat
 Metadata for a key ending in `_progress`, parses a `NN%` out of it, and invokes the
 handler.
 
+Not every wait is an Incus operation. In-client waits that block without an
+operation (e.g. an instance blocking on a dependency's health) call
+`emitProgress` to push a synthetic `Progress{Percent: -1, Text: ...}` straight to
+the handler, so the line shows a spinner with status instead of stalling silently.
+It lands on the acting resource's current line (same action key), so the wait and
+the operation that follows share one line.
+
 ### Progress
 
 ```go
