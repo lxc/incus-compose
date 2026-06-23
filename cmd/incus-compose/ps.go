@@ -85,7 +85,7 @@ func newPsCommand() *cli.Command {
 				stackOpts = append(stackOpts, project.ToStackWithDeps())
 			}
 
-			stack := client.NewStack(c)
+			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
 			if err := p.ToStack(c, stack, stackOpts...); err != nil {
 				c.LogError(err.Error())
 				return errLogged.Wrap(err)

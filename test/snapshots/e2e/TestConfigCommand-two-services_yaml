@@ -1,0 +1,44 @@
+project:
+  name: test-local-config
+  services:
+    web1:
+      environment:
+        NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+      healthcheck:
+        test:
+          - CMD
+          - wget
+          - -q
+          - --spider
+          - http://127.0.0.1:8080
+        timeout: 5s
+        interval: 10s
+        retries: 3
+      image: docker.io/nginxinc/nginx-unprivileged:alpine
+      networks:
+        default: null
+      restart: unless-stopped
+      x-incus:
+        limits.cpu: 1
+    web2:
+      environment:
+        NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+      healthcheck:
+        test:
+          - CMD
+          - wget
+          - -q
+          - --spider
+          - http://127.0.0.1:8080
+        timeout: 5s
+        interval: 10s
+        retries: 3
+      image: docker.io/nginxinc/nginx-unprivileged:alpine
+      networks:
+        default: null
+      restart: unless-stopped
+      x-incus:
+        limits.cpu: 1
+  networks:
+    default:
+      name: test-local-config_default

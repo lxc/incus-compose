@@ -156,7 +156,7 @@ func newListCommand() *cli.Command {
 			}
 			defer func() { _ = c.Done() }()
 
-			stack := client.NewStack(c)
+			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
 			err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackFull(), project.ToStackNoImages())
 			if err != nil {
 				c.LogError(err.Error())

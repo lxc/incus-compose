@@ -6,7 +6,7 @@
 - [CLI Reference](cli.md) - All commands and options
 - [Compose Compatibility](compose-compatibility.md) - Supported features and differences
 - [Builds](build.md) - Build service images from Compose `build:` definitions
-- [Health Checking](healthd.md) - Healthchecks and restart policies via the ic-healthd sidecar
+- [Health Checking](healthd.md) - Healthchecks, restart policies, and `service_healthy` dependencies via the ic-healthd sidecar (a core component; includes [debugging](healthd.md#debugging-ic-healthd))
 - [Environment Variables](environment-variables.md) - How env vars and interpolation work
 - [Why Incus?](why-incus.md) - Benefits over Docker
 

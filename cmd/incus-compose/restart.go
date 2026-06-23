@@ -82,7 +82,7 @@ func newRestartCommand() *cli.Command {
 				stopStackOpts = append(stopStackOpts, project.ToStackInstancesOnly())
 			}
 
-			stack := client.NewStack(c)
+			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
 			err = p.ToStack(c, stack, stopStackOpts...)
 			if err != nil {
 				c.LogError("Adding the project to a stack", "error", err)
@@ -118,7 +118,7 @@ func newRestartCommand() *cli.Command {
 				startStackOpts = append(startStackOpts, project.ToStackInstancesOnly())
 			}
 
-			stack = client.NewStack(c)
+			stack = client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
 			err = p.ToStack(c, stack, startStackOpts...)
 			if err != nil {
 				c.LogError("Adding the project to a stack", "error", err)

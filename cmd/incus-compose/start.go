@@ -73,7 +73,7 @@ func newStartCommand() *cli.Command {
 				stackOpts = append(stackOpts, project.ToStackInstancesOnly())
 			}
 
-			stack := client.NewStack(c)
+			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
 			err = p.ToStack(c, stack, stackOpts...)
 			if err != nil {
 				c.LogError("Adding the project to a stack", "error", err)

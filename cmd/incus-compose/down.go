@@ -94,7 +94,7 @@ func newDownCommand() *cli.Command {
 				stackOpts = append(stackOpts, project.ToStackNoImages())
 			}
 
-			stack := client.NewStack(c)
+			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
 			if err := p.ToStack(c, stack, stackOpts...); err != nil {
 				c.LogError("Adding the project to a stack", "error", err)
 				return errLogged

@@ -39,6 +39,7 @@ type healthdParams struct {
 	timeout     time.Duration
 	stdout      io.Writer
 	stderr      io.Writer
+	workers     int
 }
 
 // closingBufferReader wraps bytes.Reader to add a no-op Close.
@@ -286,7 +287,7 @@ func healthdUp(ctx context.Context, c *client.Client, inst *client.Instance, res
 		inst.Config.Config["oci.entrypoint"] = "/usr/local/bin/ic-healthd run" + strings.Join(flags, " ")
 	}
 
-	stack := client.NewStack(c)
+	stack := client.NewStack(c, client.StackWorkers(params.workers))
 	stack.Add(resources...)
 	stack.Add(inst)
 
@@ -770,6 +771,7 @@ func newHealthdUpCommand() *cli.Command {
 				timeout:     cmd.Duration("timeout"),
 				stdout:      cmd.Root().Writer,
 				stderr:      cmd.Root().ErrWriter,
+				workers:     cmd.Root().Int("workers"),
 			}
 
 			c, err := globalClient.EnsureProject(

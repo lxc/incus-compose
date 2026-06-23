@@ -1,0 +1,25 @@
+project:
+  name: test-local-config
+  services:
+    database:
+      environment:
+        NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+      image: docker.io/nginx:alpine
+      networks:
+        default: null
+      x-incus:
+        limits.cpu: "4"
+        limits.memory: 1GB
+    web:
+      environment:
+        NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+      image: docker.io/nginx:alpine
+      networks:
+        default: null
+      x-incus:
+        limits.cpu: "2"
+        limits.memory: 1024MB
+        security.nesting: "false"
+  networks:
+    default:
+      name: test-local-config_default

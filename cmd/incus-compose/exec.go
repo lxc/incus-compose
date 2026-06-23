@@ -111,7 +111,7 @@ func newExecCommand() *cli.Command {
 			defer func() { _ = c.Done() }()
 
 			// Build stack with the requested service and its dependencies
-			stack := client.NewStack(c)
+			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
 			err = p.ToStack(c, stack, project.ToStackFull(), project.ToStackOnlyServices([]string{service}), project.ToStackInstancesOnly())
 			if err != nil {
 				c.LogError(err.Error())

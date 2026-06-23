@@ -147,6 +147,7 @@ func newUpCommand() *cli.Command {
 					timeout:     cmd.Duration("timeout"),
 					stdout:      cmd.Root().Writer,
 					stderr:      cmd.Root().ErrWriter,
+					workers:     cmd.Root().Int("workers"),
 				}
 
 				inst, resources, err := healthdGetResources(c, hparams)
@@ -189,6 +190,7 @@ func newUpCommand() *cli.Command {
 				scale:             parseScale(cmd.StringSlice("scale")),
 				stdout:            cmd.Root().Writer,
 				stderr:            cmd.Root().ErrWriter,
+				workers:           cmd.Root().Int("workers"),
 			}
 			if err := runUp(ctx, globalClient, c, p, params); err != nil {
 				_ = c.Done()
@@ -221,6 +223,7 @@ type upParams struct {
 	scale             map[string]int
 	stdout            io.Writer
 	stderr            io.Writer
+	workers           int
 }
 
 // parseScale parses --scale flags of the form "service=num".
@@ -262,7 +265,7 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 	// }()
 
 	if params.reCreate {
-		stack := client.NewStack(c)
+		stack := client.NewStack(c, client.StackWorkers(params.workers))
 		toStackOpts := []project.ToStackOption{}
 		toStackOpts = append(toStackOpts, project.ToStackNoImages(), project.ToStackReverse(), project.ToStackOnlyServices(params.services))
 		if params.deps {
@@ -304,7 +307,7 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 		c.ResetResources()
 	}
 
-	stack := client.NewStack(c)
+	stack := client.NewStack(c, client.StackWorkers(params.workers))
 	toStackOpts := []project.ToStackOption{}
 	toStackOpts = append(toStackOpts, project.ToStackStorageVolumes(), project.ToStackOnlyServices(params.services))
 	if params.deps {

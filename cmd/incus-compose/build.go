@@ -63,7 +63,7 @@ func newBuildCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			stack := client.NewStack(c)
+			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
 			err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackImagesOnly())
 			if err != nil {
 				c.LogError("Creating the stack", "error", err)

@@ -119,52 +119,68 @@ func TestConfigCommand(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    []string
+		fixture string
 		wantErr bool
 	}{
 		{
 			name:    "simple-nginx yaml",
 			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "config"},
-			wantErr: false,
+			fixture: "../../test/fixtures/simple-nginx",
 		},
 		{
 			name:    "simple-nginx json",
 			args:    []string{"-f", "../../test/fixtures/simple-nginx/compose.yaml", "config", "--format", "json"},
-			wantErr: false,
+			fixture: "../../test/fixtures/simple-nginx",
 		},
 		{
 			name:    "two-services yaml",
 			args:    []string{"-f", "../../test/fixtures/two-services/compose.yaml", "config"},
-			wantErr: false,
+			fixture: "../../test/fixtures/two-services",
 		},
 		{
 			name:    "wordpress",
 			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config"},
-			wantErr: false,
+			fixture: "../../test/fixtures/wordpress",
 		},
 		{
 			name:    "with-secrets",
 			args:    []string{"-f", "../../test/fixtures/with-secrets/compose.yaml", "config"},
-			wantErr: false,
+			fixture: "../../test/fixtures/with-secrets",
 		},
 		{
 			name:    "with-restart",
 			args:    []string{"-f", "../../test/fixtures/with-restart/compose.yaml", "config"},
-			wantErr: false,
+			fixture: "../../test/fixtures/with-restart",
 		},
 		{
 			name:    "with-incus-options",
 			args:    []string{"-f", "../../test/fixtures/with-incus-options/compose.yaml", "config"},
-			wantErr: false,
+			fixture: "../../test/fixtures/with-incus-options",
 		},
 		{
 			name:    "with-project-options",
 			args:    []string{"-f", "../../test/fixtures/with-project-options/compose.yaml", "config"},
-			wantErr: false,
+			fixture: "../../test/fixtures/with-project-options",
 		},
 		{
 			name:    "with-build",
 			args:    []string{"-f", "../../test/fixtures/with-build/compose.yaml", "config"},
-			wantErr: false,
+			fixture: "../../test/fixtures/with-build",
+		},
+		{
+			name:    "project-directory simple-nginx",
+			args:    []string{"--project-directory", "../../test/fixtures/simple-nginx", "config"},
+			fixture: "../../test/fixtures/simple-nginx",
+		},
+		{
+			name:    "project-directory docker-compose with incus overlay",
+			args:    []string{"--project-directory", "../../test/fixtures/with-docker-compose", "config"},
+			fixture: "../../test/fixtures/with-docker-compose",
+		},
+		{
+			name:    "file docker-compose with incus overlay",
+			args:    []string{"-f", "../../test/fixtures/with-docker-compose/docker-compose.yaml", "config"},
+			fixture: "../../test/fixtures/with-docker-compose",
 		},
 		{
 			name:    "nonexistent file",
@@ -188,6 +204,12 @@ func TestConfigCommand(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+
+			if tt.fixture != "" {
+				absFixturePath, _ := filepath.Abs(tt.fixture)
+				output := strings.ReplaceAll(stdout.String(), absFixturePath, "$FIXTURE_PATH")
+				snapshotter.SnapshotT(t, output)
+			}
 		})
 	}
 }
@@ -198,47 +220,45 @@ func TestConfigFilterByService(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    []string
-		wantErr bool
+		fixture string
 	}{
 		{
 			name:    "wordpress filter db service",
 			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "db"},
-			wantErr: false,
+			fixture: "../../test/fixtures/wordpress",
 		},
 		{
 			name:    "wordpress filter wordpress service includes db dependency",
 			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "wordpress"},
-			wantErr: false,
+			fixture: "../../test/fixtures/wordpress",
 		},
 		{
 			name:    "config --services list",
 			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "--services"},
-			wantErr: false,
+			fixture: "../../test/fixtures/wordpress",
 		},
 		{
 			name:    "config --volumes list",
 			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "--volumes"},
-			wantErr: false,
+			fixture: "../../test/fixtures/wordpress",
 		},
 		{
 			name:    "config --quiet validation",
 			args:    []string{"-f", "../../test/fixtures/wordpress/compose.yaml", "config", "--quiet"},
-			wantErr: false,
+			fixture: "../../test/fixtures/wordpress",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, _, err := runCommand(t, context.Background(), "test-local-config-extra", tt.args...)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error, got nil")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("unexpected error: %v", err)
-				}
+			stdout, _, err := runCommand(t, context.Background(), "test-local-config-filter", tt.args...)
+			require.NoError(t, err)
+
+			if tt.fixture != "" {
+				absFixturePath, _ := filepath.Abs(tt.fixture)
+				output := strings.ReplaceAll(stdout.String(), absFixturePath, "$FIXTURE_PATH")
+				snapshotter.SnapshotT(t, output)
 			}
 		})
 	}

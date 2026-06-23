@@ -1,0 +1,21 @@
+project:
+  name: test-local-config
+  services:
+    web:
+      deploy:
+        replicas: 4
+      environment:
+        NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: "1"
+      image: docker.io/nginx:alpine
+      networks:
+        default: null
+      x-incus:
+        limits.cpu: "1"
+        limits.memory: 512MB
+  networks:
+    default:
+      name: test-local-config_default
+  x-incus:
+    limits.cpu: "5"
+    limits.memory: 2149MB
+    limits.virtual-machines: 0

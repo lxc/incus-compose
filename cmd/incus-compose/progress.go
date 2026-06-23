@@ -25,6 +25,7 @@ const (
 	ansiClearEnd  = "\033[K" // clear from cursor to end of line
 	ansiClearDown = "\033[J" // clear from cursor to end of screen
 	colorGreen    = "\033[32m"
+	colorRed      = "\033[31m"
 	colorReset    = "\033[0m"
 
 	actionWidth = 8
@@ -45,6 +46,7 @@ type progressLine struct {
 	percent   int    // -1 when the operation reports no percentage (OCI pulls)
 	text      string // latest status text from Incus
 	done      bool
+	err       error  // set when the action failed; rendered as an error line
 	lastPlain string // last message emitted in non-animated mode (dedup)
 }
 
@@ -71,8 +73,9 @@ type progressRenderer struct {
 // startProgress attaches a live progress renderer to the project client and
 // returns a finish func that detaches it and flushes the final frame. Call it
 // after any resolution-only ensure so resource lookups stay silent; only the
-// wrapped actions report. The markDone hook fires at action completion, so each
-// action reports in batch/priority order.
+// wrapped actions report. The before-hook starts a spinner at action start and
+// the after-hook ends it (done or error), so each action reports in
+// batch/priority order.
 func startProgress(globalClient *client.GlobalClient, c *client.Client, noColor bool, writer io.Writer) func(success bool) {
 	if writer == nil {
 		writer = os.Stderr
@@ -90,8 +93,15 @@ func startProgress(globalClient *client.GlobalClient, c *client.Client, noColor 
 		prevLog = logWriter.Swap(renderer.bypass())
 	}
 
+	c.AddHookBefore(func(_ context.Context, action client.Action, r client.Resource, _ client.Options, herr error) error {
+		renderer.markStart(action, r)
+		return herr
+	})
+
 	c.AddHookAfter(func(_ context.Context, action client.Action, r client.Resource, _ client.Options, herr error) error {
-		if herr == nil {
+		if herr != nil {
+			renderer.markError(action, r, herr)
+		} else {
 			renderer.markDone(action, r)
 		}
 		return herr
@@ -227,6 +237,26 @@ func (p *progressRenderer) handle(action client.Action, r client.Resource, _ cli
 	}
 }
 
+// markStart creates the line for an action/resource so a spinner shows while
+// the action runs. Driven by the client's before-hook, it fires for every
+// action, including quick ones (start, stop, delete) that report no progress.
+func (p *progressRenderer) markStart(action client.Action, r client.Resource) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.stopped {
+		return
+	}
+
+	p.line(action, r)
+
+	// Plain mode has no spinner and the fresh line carries no status text
+	// yet, so there is nothing to emit until done or error.
+	if p.animate {
+		p.draw()
+	}
+}
+
 // markDone marks an action/resource as finished. Driven by the client's
 // after-hook (fires at action completion), it creates the line if no progress
 // event arrived, so quick actions (start, stop, delete) still report. Batches
@@ -244,6 +274,26 @@ func (p *progressRenderer) markDone(action client.Action, r client.Resource) {
 		return
 	}
 	line.done = true
+
+	if p.animate {
+		p.draw()
+	} else {
+		p.drawPlain(line)
+	}
+}
+
+// markError records the failure for an action/resource so the line renders as
+// an error. Driven by the client's after-hook when the action returns an error.
+func (p *progressRenderer) markError(action client.Action, r client.Resource, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.stopped {
+		return
+	}
+
+	line := p.line(action, r)
+	line.err = err
 
 	if p.animate {
 		p.draw()
@@ -298,6 +348,9 @@ func (p *progressRenderer) drawPlain(line *progressLine) {
 	if line.done {
 		msg = "done"
 	}
+	if line.err != nil {
+		msg = "error: " + line.err.Error()
+	}
 	if msg == "" || msg == line.lastPlain {
 		return
 	}
@@ -314,6 +367,15 @@ func (p *progressRenderer) render(line *progressLine, width int) string {
 	label := fmt.Sprintf("%-*s", labelWidth, truncate(line.label, labelWidth))
 
 	switch {
+	case line.err != nil:
+		// Colorize only when the line fits; truncating would cut the
+		// escape sequence and print garbage.
+		status := "[error: " + line.err.Error() + "]"
+		plain := action + " " + kind + " " + label + " " + status
+		if width > 0 && len(plain) > width {
+			return truncate(plain, width)
+		}
+		return action + " " + kind + " " + label + " " + p.colorize(status, colorRed)
 	case line.done:
 		// Colorize only when the line fits; truncating would cut the
 		// escape sequence and print garbage.

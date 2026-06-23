@@ -198,7 +198,11 @@ func (r *StorageVolume) Start(_ context.Context, _ ...Option) error {
 		errs = errors.Join(errs, fmt.Errorf("GID mismatch, expected %s got %s", expectedGID, r.IncusVolume.Config["initial.gid"]))
 	}
 
-	return errs
+	if errs != nil {
+		return ErrVolumeMismatch.Wrap(errs)
+	}
+
+	return nil
 }
 
 func (r *StorageVolume) create() error {

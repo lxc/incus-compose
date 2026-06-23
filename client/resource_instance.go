@@ -571,7 +571,7 @@ func (r *Instance) Running() bool {
 
 // waitForDependencies blocks until all Config.Dependencies reach their required
 // health status, or until the dependency timeout elapses.
-func (r *Instance) waitForDependencies(ctx context.Context, options Options) error {
+func (r *Instance) waitForDependencies(ctx context.Context, action Action, options Options) error {
 	if len(r.Config.Dependencies) == 0 {
 		return nil
 	}
@@ -593,6 +593,13 @@ func (r *Instance) waitForDependencies(ctx context.Context, options Options) err
 
 	for depName, requiredStatus := range r.Config.Dependencies {
 		r.client.LogDebug("Waiting for dependency", "instance", r.incusName, "dep", depName, "status", requiredStatus)
+		// Report the wait on the instance's start line so it shows a spinner
+		// instead of stalling silently. This wait is not an Incus operation,
+		// so it has no percentage.
+		r.client.globalClient.emitProgress(action, r, options, Progress{
+			Percent: -1,
+			Text:    fmt.Sprintf("Waiting for dependency %s", depName),
+		})
 		for {
 			inst, _, err := r.conn.GetInstance(depName)
 			if err == nil && inst.Config[HealthConfigKey] == requiredStatus {
@@ -620,7 +627,7 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 	}
 
 	if options.Healthd {
-		if err := r.waitForDependencies(ctx, options); err != nil {
+		if err := r.waitForDependencies(ctx, ActionStart, options); err != nil {
 			return err
 		}
 	}

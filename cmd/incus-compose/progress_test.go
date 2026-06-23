@@ -66,6 +66,52 @@ func TestRenderPercentTruncatesToWidth(t *testing.T) {
 	assert.Len(t, out, 40)
 }
 
+func TestMarkStartShowsSpinner(t *testing.T) {
+	t.Parallel()
+
+	buf, renderer := newTestRenderer()
+	renderer.width = func() int { return 0 } // do not truncate away the spinner
+
+	renderer.markStart(client.ActionEnsure, fakeResource{name: "alpine"})
+
+	out := buf.String()
+	assert.Contains(t, out, "alpine")
+	assert.Contains(t, out, spinFrames[0], "a freshly started line must show the spinner")
+}
+
+func TestRenderError(t *testing.T) {
+	t.Parallel()
+
+	colored := newProgressRenderer(&bytes.Buffer{}, false, true)
+	line := &progressLine{action: "start", kind: "instance", label: "web", err: assert.AnError}
+
+	full := colored.render(line, 0)
+	assert.Contains(t, full, "[error: "+assert.AnError.Error()+"]")
+	assert.Contains(t, full, colorRed)
+}
+
+func TestMarkErrorPlainMode(t *testing.T) {
+	t.Parallel()
+
+	buf := &bytes.Buffer{}
+	renderer := newProgressRenderer(buf, true, false)
+
+	renderer.markError(client.ActionStart, fakeResource{name: "web"}, assert.AnError)
+
+	assert.Contains(t, buf.String(), "error: "+assert.AnError.Error())
+}
+
+func TestRenderErrorTruncatesToWidth(t *testing.T) {
+	t.Parallel()
+
+	_, renderer := newTestRenderer()
+	line := &progressLine{action: "start", kind: "instance", label: "web", err: assert.AnError}
+
+	out := renderer.render(line, 40)
+	assert.Len(t, out, 40)
+	assert.NotContains(t, out, "\033[", "truncated error line must not carry a torn escape")
+}
+
 func TestRenderDoneSkipsColorWhenTruncated(t *testing.T) {
 	t.Parallel()
 

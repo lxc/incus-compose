@@ -16,22 +16,22 @@ const (
 )
 
 var (
-	srcMu = &sync.Mutex{}
-	src   = rand.NewSource(time.Now().UnixNano())
+	randSrcMu = &sync.Mutex{}
+	randSrc   = rand.NewSource(time.Now().UnixNano())
 )
 
 // RandString is a helper that creates a random string for the given size (n).
 // It is from https://stackoverflow.com/a/31832326 -- RandStringBytesMaskImprSrcSB.
 func RandString(n int) string {
-	srcMu.Lock()
-	defer srcMu.Unlock()
+	randSrcMu.Lock()
+	defer randSrcMu.Unlock()
 
 	sb := strings.Builder{}
 	sb.Grow(n)
 	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
-	for i, cache, remain := n-1, src.Int63(), letterIdxMax; i >= 0; {
+	for i, cache, remain := n-1, randSrc.Int63(), letterIdxMax; i >= 0; {
 		if remain == 0 {
-			cache, remain = src.Int63(), letterIdxMax
+			cache, remain = randSrc.Int63(), letterIdxMax
 		}
 		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
 			sb.WriteByte(letterBytes[idx])

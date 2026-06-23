@@ -1,3 +1,9 @@
+// Package client - a High-level Incus API wrapper with resource management and parallel execution.
+//
+// This package provides a compose-spec friendly interface for managing Incus resources:
+// instances, networks, volumes, profiles, and images.
+//
+// It also adds support for container image building by using `podman`.
 package client
 
 import (

@@ -1,13 +1,24 @@
 name: many-dependencies
 
-services:
-  gateway:
+x-service-templates:
+  nginx: &nginx
     image: docker.io/nginxinc/nginx-unprivileged:alpine
     restart: unless-stopped
     environment:
       NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
     x-incus:
       limits.cpu: 1
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_interval: 5s
+      start_period: 1m
+
+services:
+  gateway:
+    <<: *nginx
     ports:
       - "8080:8080"
     depends_on:
@@ -17,44 +28,26 @@ services:
         condition: service_healthy
     networks:
       - public
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   frontend:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
+    <<: *nginx
     environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
       API_URL: http://api:8080
-    x-incus:
-      limits.cpu: 1
     depends_on:
       api:
         condition: service_healthy
     networks:
       - public
       - internal
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   api:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
+    <<: *nginx
     environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
       AUTH_URL: http://auth:8080
       USERS_URL: http://users:8080
       PRODUCTS_URL: http://products:8080
       ORDERS_URL: http://orders:8080
       CACHE_HOST: cache
-    x-incus:
-      limits.cpu: 1
     depends_on:
       auth:
         condition: service_healthy
@@ -69,25 +62,16 @@ services:
     networks:
       - public
       - internal
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   auth:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
+    <<: *nginx
     environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
       DB_HOST: auth-db
       DB_NAME: auth
       DB_USER: auth_user
       DB_PASSWORD: ${AUTH_DB_PASSWORD}
       CACHE_HOST: cache
       JWT_SECRET: ${JWT_SECRET}
-    x-incus:
-      limits.cpu: 1
     depends_on:
       auth-db:
         condition: service_healthy
@@ -96,24 +80,15 @@ services:
     networks:
       - internal
       - auth-net
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   users:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
+    <<: *nginx
     environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
       DB_HOST: users-db
       DB_NAME: users
       DB_USER: users_user
       DB_PASSWORD: ${USERS_DB_PASSWORD}
       CACHE_HOST: cache
-    x-incus:
-      limits.cpu: 1
     depends_on:
       users-db:
         condition: service_healthy
@@ -122,25 +97,16 @@ services:
     networks:
       - internal
       - users-net
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   products:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
+    <<: *nginx
     environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
       DB_HOST: products-db
       DB_NAME: products
       DB_USER: products_user
       DB_PASSWORD: ${PRODUCTS_DB_PASSWORD}
       CACHE_HOST: cache
       SEARCH_URL: http://search:8080
-    x-incus:
-      limits.cpu: 1
     depends_on:
       products-db:
         condition: service_healthy
@@ -151,17 +117,10 @@ services:
     networks:
       - internal
       - products-net
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   orders:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
+    <<: *nginx
     environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
       DB_HOST: orders-db
       DB_NAME: orders
       DB_USER: orders_user
@@ -169,8 +128,6 @@ services:
       USERS_URL: http://users:8080
       PRODUCTS_URL: http://products:8080
       QUEUE_HOST: queue
-    x-incus:
-      limits.cpu: 1
     depends_on:
       orders-db:
         condition: service_healthy
@@ -183,22 +140,13 @@ services:
     networks:
       - internal
       - orders-net
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   notifications:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
+    <<: *nginx
     environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
       USERS_URL: http://users:8080
       QUEUE_HOST: queue
       MAILER_HOST: mailer
-    x-incus:
-      limits.cpu: 1
     depends_on:
       queue:
         condition: service_healthy
@@ -208,45 +156,29 @@ services:
         condition: service_healthy
     networks:
       - internal
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   mailer:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
+    <<: *nginx
     environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
       QUEUE_HOST: queue
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT:-587}
-    x-incus:
-      limits.cpu: 1
     depends_on:
       queue:
         condition: service_healthy
     networks:
       - internal
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   worker:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
+    <<: *nginx
     environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
       QUEUE_HOST: queue
       DB_HOST: orders-db
       DB_NAME: orders
       DB_USER: orders_user
       DB_PASSWORD: ${ORDERS_DB_PASSWORD}
-    x-incus:
-      limits.cpu: 1
+    deploy:
+      replicas: 3
     depends_on:
       queue:
         condition: service_healthy
@@ -255,150 +187,66 @@ services:
     networks:
       - internal
       - orders-net
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   search:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
+    <<: *nginx
     environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
       DB_HOST: search-db
-    x-incus:
-      limits.cpu: 1
     depends_on:
       search-db:
         condition: service_healthy
     networks:
       - internal
       - search-net
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   auth-db:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
-    x-incus:
-      limits.cpu: 1
+    <<: *nginx
     volumes:
       - auth-db-data:/var/lib/data
     networks:
       - auth-net
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   users-db:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
-    x-incus:
-      limits.cpu: 1
+    <<: *nginx
     volumes:
       - users-db-data:/var/lib/data
     networks:
       - users-net
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   products-db:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
-    x-incus:
-      limits.cpu: 1
+    <<: *nginx
     volumes:
       - products-db-data:/var/lib/data
     networks:
       - products-net
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   orders-db:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
-    x-incus:
-      limits.cpu: 1
+    <<: *nginx
     volumes:
       - orders-db-data:/var/lib/data
     networks:
       - orders-net
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   search-db:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
-    x-incus:
-      limits.cpu: 1
+    <<: *nginx
     volumes:
       - search-db-data:/var/lib/data
     networks:
       - search-net
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   cache:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
-    x-incus:
-      limits.cpu: 1
+    <<: *nginx
     volumes:
       - cache-data:/var/lib/data
     networks:
       - internal
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   queue:
-    image: docker.io/nginxinc/nginx-unprivileged:alpine
-    restart: unless-stopped
-    environment:
-      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES}
-    x-incus:
-      limits.cpu: 1
+    <<: *nginx
     volumes:
       - queue-data:/var/lib/data
     networks:
       - internal
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
 volumes:
   auth-db-data:

@@ -2,11 +2,11 @@ services:
   database:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
-      interval: 30s
+      interval: 10s
       timeout: 10s
       retries: 3
-      start_interval: 30s
-      start_period: 90s
+      start_interval: 10s
+      start_period: 4m
     networks:
       default:
 

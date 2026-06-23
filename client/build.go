@@ -1,10 +1,3 @@
-// Package client - container image building.
-//
-// Build support intentionally shells out to podman or docker rather than using
-// the buildah Go library. The buildah library pulls in containers/storage,
-// containers/image, BuildKit, and an OCI runtime, which is too heavy a
-// dependency for this project. The CLI path gives the same result with zero
-// additional Go dependencies.
 package client
 
 import (
