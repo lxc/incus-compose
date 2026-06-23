@@ -256,3 +256,26 @@ incus-compose list [SERVICE...]
 | `--healthd` | Include the ic-healthd sidecar in output |
 
 The `IMAGE` column shows the compose image for each service. When `--healthd` is set, the sidecar image is resolved from the instance's stored metadata.
+
+## version
+
+Print the incus-compose version.
+
+```
+incus-compose version
+```
+
+## self-update
+
+Update incus-compose to the latest release from GitHub.
+
+```
+incus-compose self-update
+```
+
+This command is only available when both conditions are met:
+
+1. The binary was built with a release version (not `latest` / development builds)
+2. The binary file is writable by the current user
+
+When available, `self-update` checks the [lxc/incus-compose](https://github.com/lxc/incus-compose) GitHub releases for a newer version matching the current OS and architecture. If a newer version is found, the binary is replaced in-place. If you are already on the latest version, no action is taken.

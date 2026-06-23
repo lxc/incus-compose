@@ -445,6 +445,12 @@ func (c *GlobalClient) LogWarn(msg string, args ...any) {
 	c.logger.WarnContext(c.ctx, msg, args...)
 }
 
+// LogInfo logs an info message.
+// The `any` here is ok.
+func (c *GlobalClient) LogInfo(msg string, args ...any) {
+	c.logger.InfoContext(c.ctx, msg, args...)
+}
+
 // LogDebug logs a debug message.
 // The `any` here is ok.
 func (c *GlobalClient) LogDebug(msg string, args ...any) {

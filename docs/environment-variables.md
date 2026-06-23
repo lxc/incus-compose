@@ -78,30 +78,60 @@ incus-compose --os-env up
 | Default    | `.env` files only (can interpolate OS vars) | Production, CI/CD                           |
 | `--os-env` | All OS environment variables                | Quick testing, docker-compose compatibility |
 
-## Incus Connection
+## CLI Configuration
 
-These environment variables configure how incus-compose connects to an Incus server. For normal use, incus-compose uses your existing Incus CLI configuration via the `--remote` flag or defaults to `local`.
+Every global flag can be set via an environment variable. Flags given on the command line take precedence over environment variables.
 
-### Variables
+### Project and Files
 
-| Variable                       | Description                                                                    |
-| ------------------------------ | ------------------------------------------------------------------------------ |
-| `INCUS_REMOTE`                 | Incus remote name from CLI config (e.g., `local`, `myserver`)                  |
-| `INCUS_COMPOSE_IMAGE_CACHE`    | Incus project for image cache (default: `default`)                             |
-| `INCUS_COMPOSE_HEALTHD_IMAGE`  | Healthd OCI image to use; {version} is replaced with the incus-compose version |
-| `INCUS_COMPOSE_HEALTHD_BINARY` | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image) |
+| Variable                          | Flag                         | Description                                                  |
+| --------------------------------- | ---------------------------- | ------------------------------------------------------------ |
+| `INCUS_COMPOSE_FILE`              | `--file`, `-f`               | Compose configuration files (comma-separated for multiple)   |
+| `INCUS_COMPOSE_PROJECT_NAME`      | `--project-name`, `-p`       | Project name                                                 |
+| `INCUS_COMPOSE_PROJECT_DIRECTORY` | `--project-directory`, `-pd` | Alternate working directory                                  |
+| `INCUS_COMPOSE_ENV_FILE`          | `--env-file`                 | Alternative environment files (comma-separated for multiple) |
+| `INCUS_COMPOSE_PROFILES`          | `--profile`                  | Profiles to enable (comma-separated for multiple)            |
+
+### Incus Connection
+
+| Variable                        | Flag                | Description                                                       |
+| ------------------------------- | ------------------- | ----------------------------------------------------------------- |
+| `INCUS_REMOTE`                  | `--remote`          | Incus remote name from CLI config (e.g., `local`, `myserver`)     |
+| `INCUS_COMPOSE_IMAGE_CACHE`     | `--image-cache`     | Incus project for image cache (default: `default`)                |
+| `INCUS_COMPOSE_STORAGE_POOL`    | `--storage-pool`    | Default storage pool (default: `detect`)                          |
+| `INCUS_COMPOSE_NETWORK_PROJECT` | `--network-project` | Project to locate the network profile (default: `default`)        |
+| `INCUS_COMPOSE_NETWORK_PROFILE` | `--network-profile` | Profile to extract devices.eth0.network from (default: `default`) |
+
+### Display and Debugging
+
+| Variable                | Flag        | Description                                                      |
+| ----------------------- | ----------- | ---------------------------------------------------------------- |
+| `INCUS_COMPOSE_ANSI`    | `--ansi`    | Control ANSI output: `never`, `always`, `auto` (default: `auto`) |
+| `INCUS_COMPOSE_DEBUG`   | `--debug`   | Enable debug logging (`true`/`1`)                                |
+| `INCUS_COMPOSE_WORKERS` | `--workers` | Number of concurrent workers (default: `10`)                     |
+| `NO_COLOR`              | --          | Disable color output ([no-color.org](https://no-color.org/))     |
+
+### Healthd
+
+| Variable                       | Flag | Description                                                                    |
+| ------------------------------ | ---- | ------------------------------------------------------------------------------ |
+| `INCUS_COMPOSE_HEALTHD_IMAGE`  | --   | Healthd OCI image; `{version}` is replaced with the incus-compose version      |
+| `INCUS_COMPOSE_HEALTHD_BINARY` | --   | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image) |
 
 ### Examples
 
-**Using Incus CLI remotes (recommended):**
-
 ```bash
-# Use a configured remote
-incus-compose --remote myserver up
-
-# Or via environment variable
+# Use a configured Incus remote
 export INCUS_REMOTE=myserver
 incus-compose up
+
+# Set project defaults in your shell profile
+export INCUS_COMPOSE_FILE=compose.yaml,compose.prod.yaml
+export INCUS_COMPOSE_PROJECT_NAME=myapp
+incus-compose up
+
+# Debug with extra workers
+INCUS_COMPOSE_DEBUG=1 INCUS_COMPOSE_WORKERS=20 incus-compose up
 ```
 
 ## See Also

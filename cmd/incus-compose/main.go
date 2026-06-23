@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/creativeprojects/go-selfupdate"
 	"github.com/lmittmann/tint"
 	"github.com/lxc/incus/v7/shared/cliconfig"
 	"github.com/mattn/go-colorable"
@@ -145,6 +146,35 @@ func noColor(ctx context.Context) bool {
 }
 
 func newRootCommand() *cli.Command {
+	commands := []*cli.Command{
+		newUpCommand(),
+		newDownCommand(),
+		newBuildCommand(),
+		newStartCommand(),
+		newStopCommand(),
+		newRestartCommand(),
+		newListCommand(),
+		newPsCommand(),
+		newConfigCommand(),
+		newExecCommand(),
+		newLogsCommand(),
+		newIncusCommand(),
+		newHealthdCommand(),
+		newVersionCommand(),
+	}
+
+	// "self-update" is only available if the executable is writeable and the version is not "latest".
+	if version.Current() != "latest" {
+		exe, err := selfupdate.ExecutablePath()
+		if err == nil {
+			f, err := os.OpenFile(exe, os.O_WRONLY, 0o644)
+			if err == nil {
+				f.Close()
+				commands = append(commands, newSelfUpdateCommand())
+			}
+		}
+	}
+
 	return &cli.Command{
 		Usage: "Compose for incus",
 		Flags: []cli.Flag{
@@ -161,12 +191,14 @@ func newRootCommand() *cli.Command {
 				Sources: cli.EnvVars("INCUS_COMPOSE_ANSI"),
 			},
 			&cli.StringSliceFlag{
-				Name:  "env-file",
-				Usage: `Specify alternative environment files`,
+				Name:    "env-file",
+				Usage:   `Specify alternative environment files`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_ENV_FILE"),
 			},
 			&cli.StringSliceFlag{
-				Name:  "profile",
-				Usage: `Specify profiles to enable`,
+				Name:    "profile",
+				Usage:   `Specify profiles to enable`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_PROFILES"),
 			},
 			&cli.StringFlag{
 				Name:    "network-project",
@@ -184,16 +216,19 @@ func newRootCommand() *cli.Command {
 				Name:    "project-directory",
 				Aliases: []string{"pd"},
 				Usage:   `Specify an alternate working directory (default: the path of the, first specified, Compose file)`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_PROJECT_DIRECTORY"),
 			},
 			&cli.StringFlag{
 				Name:    "project-name",
 				Aliases: []string{"p"},
 				Usage:   `Project name`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_PROJECT_NAME"),
 			},
 			&cli.StringFlag{
-				Name:  "storage-pool",
-				Usage: `Default storage pool to use, 'detect' will auto detect the name`,
-				Value: "detect",
+				Name:    "storage-pool",
+				Usage:   `Default storage pool to use, 'detect' will auto detect the name`,
+				Value:   "detect",
+				Sources: cli.EnvVars("INCUS_COMPOSE_STORAGE_POOL"),
 			},
 			&cli.StringFlag{
 				Name:    "image-cache",
@@ -205,6 +240,7 @@ func newRootCommand() *cli.Command {
 				Name:    "file",
 				Aliases: []string{"f"},
 				Usage:   `Compose configuration files`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_FILE"),
 			},
 			&cli.BoolFlag{
 				Name:    "os-env",
@@ -212,8 +248,9 @@ func newRootCommand() *cli.Command {
 				Usage:   `Include OS environment variables for interpolation`,
 			},
 			&cli.BoolFlag{
-				Name:  "debug",
-				Usage: `Enable debug logging`,
+				Name:    "debug",
+				Usage:   `Enable debug logging`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_DEBUG"),
 			},
 			&cli.IntFlag{
 				Name:    "workers",
@@ -222,22 +259,7 @@ func newRootCommand() *cli.Command {
 				Value:   10,
 			},
 		},
-		Commands: []*cli.Command{
-			newUpCommand(),
-			newDownCommand(),
-			newBuildCommand(),
-			newStartCommand(),
-			newStopCommand(),
-			newRestartCommand(),
-			newListCommand(),
-			newPsCommand(),
-			newConfigCommand(),
-			newExecCommand(),
-			newLogsCommand(),
-			newIncusCommand(),
-			newHealthdCommand(),
-			newVersionCommand(),
-		},
+		Commands: commands,
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			noColor := false
 
