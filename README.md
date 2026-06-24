@@ -27,18 +27,20 @@ Full docs index: [docs/README.md](docs/README.md)
 
 Status: **Beta** - testing the beta release of incus-compose.
 
-- `up`, `down`, `list` (and `ps`), `start`, `stop`, `restart`, `exec`, `config`, `logs` commands
-- Compose project parsing via compose-go
+- Familiar commands: `up`, `down`, `start`, `stop`, `restart`, `list` (and `ps`), `logs`, `exec`, `config`, plus `build`, `healthd`, `incus` (pass-through), and `self-update`
+- Compose project parsing via compose-go, with automatic `compose.incus.yaml` overrides and `x-incus` / `x-incus-compose` extensions for raw Incus options
 - OCI image pulling from docker.io, ghcr.io, and other registries
+- Two-stage image cache in a dedicated Incus project (survives `down`/`up`, avoids registry rate limits)
+- Local image building via Podman/Docker [doc](docs/build.md)
 - Bridge networks with automatic name sanitization
-- Static IP Addresses for your containers [doc](docs/compose-compatibility.md#automatic-dhcp-ranges)
-- Storage volumes with UID/GID shifting for proper permissions
-- Bind mounts (one-way copy to container/storage volume)
-- Port forwarding via proxy devices and kernel nat mode.
+- Static IPv4/IPv6 addresses with automatic DHCP ranges [doc](docs/compose-compatibility.md#automatic-dhcp-ranges)
+- Port forwarding via proxy devices or kernel NAT mode
+- Storage volumes with UID/GID shifting; bind mounts (pass-through by default, optional seeding)
+- Health checks, restart policies, and `depends_on: service_healthy` ordering via the `ic-healthd` sidecar [doc](docs/healthd.md)
+- Service scaling with `up --scale` and orphan pruning
 - Incus project isolation
-- Container image building via Podman/Docker [doc](docs/build.md)
-- Advanced compose features (healthchecks, resource limits, etc.)
-- Automatic `compose.incus.yaml` overrides for Incus-specific settings
+- Resource limits and other advanced compose features (`shm_size`, `container_name`, etc.)
+- Configuration via `INCUS_COMPOSE_*` environment variables for every flag, with a configurable parallel worker count [doc](docs/environment-variables.md)
 
 ## Architecture
 
