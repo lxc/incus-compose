@@ -8,13 +8,13 @@ const MaxIncusNameLen = 63
 
 // Health check status constants written to HealthConfigKey by ic-healthd.
 const (
-	HealthStatusStarting  = "starting"
+	HealthStatusUnknown   = "unknown"
 	HealthStatusHealthy   = "healthy"
 	HealthStatusUnhealthy = "unhealthy"
 	HealthStatusStopped   = "stopped"
 
-	// HealthConfigKey is the instance config key used to store health status.
-	HealthConfigKey = "user.healthcheck.status"
+	// HealthStatusKey is the instance config key used to store health status.
+	HealthStatusKey = "user.healthcheck.status"
 
 	// HealthStoppedKey when "true" means healthchecking is stopped.
 	HealthStoppedKey = "user.healthcheck.stopped"

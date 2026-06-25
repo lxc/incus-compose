@@ -280,7 +280,7 @@ func newListCommand() *cli.Command {
 					}
 
 					// Use the healthcheck status if available.
-					if val, ok := instFull.Config[client.HealthConfigKey]; ok {
+					if val, ok := instFull.Config[client.HealthStatusKey]; ok {
 						status.Health = titleCaser.String(val)
 					}
 				}

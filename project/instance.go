@@ -152,9 +152,9 @@ func instanceConfig(service types.ServiceConfig) (map[string]string, error) {
 	}
 
 	// Healtcheck
-	if service.HealthCheck != nil {
-		config[client.HealthConfigKey] = client.HealthStatusStarting
+	config[client.HealthStatusKey] = client.HealthStatusUnknown
 
+	if service.HealthCheck != nil {
 		testB, err := json.Marshal(service.HealthCheck.Test)
 		if err != nil {
 			return nil, fmt.Errorf("converting service %q healthcheck test: %w", service.Name, err)

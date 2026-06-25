@@ -621,14 +621,14 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 		})
 		for {
 			inst, _, err := r.conn.GetInstance(depName)
-			if err == nil && inst.Config[HealthConfigKey] == requiredStatus {
+			if err == nil && inst.Config[HealthStatusKey] == requiredStatus {
 				r.client.LogDebug("Dependency ready", "dep", depName)
 				break
 			}
 
 			select {
 			case <-ticker.C:
-				r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthConfigKey])
+				r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthStatusKey])
 			case <-ctx.Done():
 				cancel()
 				return fmt.Errorf("dependency %q did not reach status %q within %s", depName, requiredStatus, timeout)

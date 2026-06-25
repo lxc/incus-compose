@@ -329,7 +329,7 @@ func (c *Checker) writeStatus(status string) error {
 		}
 	}
 
-	inst.Config[client.HealthConfigKey] = status
+	inst.Config[client.HealthStatusKey] = status
 	op, err := c.client.UpdateInstance(c.name, inst.Writable(), etag)
 	if err != nil {
 		return err
