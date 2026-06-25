@@ -22,7 +22,9 @@
       "Bash(go build:*)",
       "Bash(go run:*)",
       "Bash(incus:*)",
-      "Bash(incus-compose:*)"
+      "Bash(incus-compose:*)",
+      "Bash(glab:*)",
+      "Bash(gh:*)"
     ],
     "defaultMode": "acceptEdits"
   }

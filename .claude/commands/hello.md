@@ -6,8 +6,8 @@ Load these files in parallel as your working context.
 
 ## Rules and settings (non-negotiable)
 
-- `.rules` — AI-specific meta rules
-- `.rules.local.md` — personal collaboration notes (treat as canonical for agent behavior; do not copy content into public docs)
+- `AGENTS.md` — org + project AI meta rules (rule hierarchy, Legal, Formatting)
+- `AGENTS.local.md` — personal collaboration notes (treat as canonical for agent behavior; do not copy content into public docs)
 - `CONTRIBUTING.md` — coding, architecture, testing, workflow rules
 - `.claude/settings.json`, `.claude/settings.local.json` — permissions, deny list
 
@@ -15,8 +15,7 @@ Load these files in parallel as your working context.
 
 Preload these — CONTRIBUTING.md cites them as authoritative:
 
-- `docs/architecture.md`
-- `docs/architecture/testing.md`
+- `docs/architecture.md` and all the files it links.
 
 ## Lazy-load on demand
 

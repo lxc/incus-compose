@@ -2,6 +2,15 @@
 
 Thank you for your interest in contributing! This document outlines the conventions and practices we follow.
 
+This project is destined for the **lxc** org. The org-wide contributing
+policy ([lxc/incus CONTRIBUTING](https://github.com/lxc/incus/blob/main/CONTRIBUTING.md)) applies in full,
+including:
+
+- **License**: Apache 2.0, no copyright assignment.
+- **DCO**: Every commit must carry a `Signed-off-by` line (`git commit -s`).
+- **AI tooling**: See the org policy. Contributors must fully own their
+  work. AI tools cannot be credited. See also [AGENTS.md](AGENTS.md).
+
 ## Philosophy
 
 **KISS** - Keep It Simple, Stupid. As well as "boring" code. These are the guiding principles for all work.
@@ -14,24 +23,7 @@ Thank you for your interest in contributing! This document outlines the conventi
 
 ## Working with Go code
 
-Make sure to follow these proverbs, they are partially copied from [go-proverbs](https://go-proverbs.github.io/).
-
-- Don't communicate by sharing memory, share memory by communicating.
-- Concurrency is not parallelism.
-- Channels orchestrate; mutexes serialize.
-- The bigger the interface, the weaker the abstraction.
-- Make the zero value useful.
-- interface{} says nothing.
-- Gofmt's style is no one's favorite, yet gofmt is everyone's favorite.
-- A little copying is better than a little dependency.
-- With the unsafe package there are no guarantees.
-- Clear is better than clever.
-- Reflection is never clear.
-- Errors are values.
-- Don't just check errors, handle them gracefully.
-- Design the architecture, name the components, document the details.
-- Documentation is for users.
-- Don't panic.
+Follow the [Go proverbs](https://go-proverbs.github.io/).
 
 ## Architecture and design rules
 
@@ -104,13 +96,31 @@ Go code reads better when names are short and context provides meaning.
 
 ### Comments
 
-- All exported functions and types need doc comments
+- All exported functions and types need doc comments ending with a period
 - No misleading comments - if code is self-explanatory, don't comment
 
 ### Use of `any`
 
 Avoid using `any` (`interface{}`).
 Prefer a small, explicit interface. Use generics only if they clearly reduce duplication.
+
+### Unused parameters
+
+Use `_` for unused parameters rather than ignoring in the function body:
+
+```go
+// Preferred
+func (t *logTerminal) Read(_ []byte) (int, error) {
+
+// Avoid
+func (t *logTerminal) Read(p []byte) (int, error) {
+    _ = p
+```
+
+### CLI environment variables
+
+- Use `INCUS_COMPOSE_*` prefix for configuration env vars
+- Support common standards like [no-color.org](https://no-color.org/) where applicable
 
 ### Error Handling
 
@@ -188,68 +198,6 @@ Output should match `docker compose config` where possible.
 **Intentional differences**:
 
 - OS env vars not included by default (use `--os-env` for compatibility)
-
-## Style Preferences
-
-These aren't hard rules, but following them helps maintain consistency:
-
-### Keep it direct
-
-Avoid intermediate variables when the expression is clear:
-
-### Unused parameters
-
-Use `_` for unused parameters rather than ignoring in the function body:
-
-```go
-// Preferred
-func (t *logTerminal) Read(_ []byte) (int, error) {
-
-// Avoid
-func (t *logTerminal) Read(p []byte) (int, error) {
-    _ = p
-```
-
-### Reuse existing patterns
-
-Before adding new functionality, check if similar patterns exist in the codebase. For example, if there's already a helper function or flag handling logic, extend it rather than creating something new.
-
-### CLI environment variables
-
-- Use `INCUS_COMPOSE_*` prefix for configuration env vars
-- Support common standards like [no-color.org](https://no-color.org/) where applicable
-
-## Guidelines
-
-### Don't
-
-- Don't create abstractions before they're needed
-- Don't add features not in the compose spec
-- Don't shell out when the Go API exists
-- Don't duplicate compose-go types with custom structs
-- Don't over-engineer for hypothetical future needs
-
-### Do
-
-- Keep functions small and focused
-- Test with real compose files
-- Compare with docker-compose behavior
-- Ask "is this simpler?" before adding code
-- Delete code that isn't pulling its weight
-
-## Documentation
-
-- Keep user docs minimal and practical
-- All exported functions/types must have doc comments ending with a period
-
-## Exploring Incus and Docker Compose
-
-When implementing features that interact with Incus or Docker Compose:
-
-1. Use `go doc` to check API types (e.g., `go doc github.com/lxc/incus/v7/client.InstanceServer`)
-2. Look at vendor source for implementation patterns
-3. Test with real tools (`docker-compose`, `incus`) to verify expected behavior
-4. Compare output for compatibility
 
 ## Questions?
 

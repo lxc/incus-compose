@@ -1,6 +1,8 @@
 *.local.json
 *.local.md
 
+.mcp.json
+
 test/logs/*
 !test/logs/.gitkeep
 
