@@ -384,6 +384,8 @@ func healthdResolve(c *client.Client) (*client.Instance, error) {
 	return inst, nil
 }
 
+var errHealthdReloader = client.NewError("HealthdReloader")
+
 func healthdRegisterReloader(c *client.Client, h *client.Instance) error {
 	mu := &sync.Mutex{}
 	reloading := false
@@ -421,7 +423,7 @@ func healthdRegisterReloader(c *client.Client, h *client.Instance) error {
 			c.LogDebug("HealthdReloader connection failed, skipping reload", "healthd", h.IncusName(), "error", e)
 			reloading = false
 			mu.Unlock()
-			return err
+			return errHealthdReloader.Wrap(e)
 		}
 
 		state, _, e := conn.GetInstanceState(h.IncusName())
@@ -429,27 +431,33 @@ func healthdRegisterReloader(c *client.Client, h *client.Instance) error {
 			c.LogDebug("HealthdReloader healthd missing, skipping reload", "healthd", h.IncusName(), "error", e)
 			reloading = false
 			mu.Unlock()
-			return err
+			return errHealthdReloader.Wrap(e)
 		}
 		if state.StatusCode != incusApi.Running {
 			c.LogDebug("HealthdReloader healthd not running, skipping reload", "healthd", h.IncusName(), "status", state.Status)
 			reloading = false
 			mu.Unlock()
-			return err
+
+			return errHealthdReloader.WithText("not running")
 		}
 
 		if e := healthdReload(c, h); e == nil {
 			c.LogDebug("HealthdReloader reloaded healthd", "healthd", h.IncusName())
 			reloading = false
 			mu.Unlock()
-			return err
+			return nil
 		}
 
 		c.LogWarn("Reloading healthd failed, restarting", "healthd", h.IncusName(), "error", e)
 		err = errors.Join(err, e, h.Stop(ctx, client.OptionForce()), h.Start(ctx))
 		reloading = false
 		mu.Unlock()
-		return err
+
+		if err != nil {
+			return errHealthdReloader.Wrap(err)
+		}
+
+		return nil
 	})
 
 	return nil

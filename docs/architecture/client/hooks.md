@@ -133,6 +133,40 @@ client.AddHookAfter(func(_ context.Context, action Action, r Resource, args Opti
 })
 ```
 
+### Attribute Failures in Complex Hooks
+
+A long-lived after hook (for example the DNS watcher or the healthd reloader)
+runs deep inside the LIFO chain, so a raw error it returns is hard to trace back
+to the hook that produced it. Tag your failures with a per-hook sentinel so
+`errors.Is` and logs point at the source:
+
+```go
+var ErrDNSWatcher = NewError("DNSWatcher")
+
+client.AddHookAfter(func(ctx context.Context, action Action, r Resource, _ Options, err error) error {
+    if err != nil || !r.IsEnsured() {
+        return err // pass through; not our failure
+    }
+
+    ips, ipErr := r.(*Instance).WaitIPs(ctx, timeout)
+    if ipErr != nil {
+        return ErrDNSWatcher.Wrap(ipErr) // tag a real failure
+    }
+    // ...
+    return nil
+})
+```
+
+Now `errors.Is(err, ErrDNSWatcher)` tells you which hook failed.
+
+**Only wrap a non-nil error.** `Wrap(nil)` returns a non-nil error (an `*Error`
+with no cause), so wrapping the incoming `err` on a no-op or success path
+fabricates a failure that aborts the action. Wrap only when you hold a real
+error; otherwise return the incoming `err` (which may be nil):
+
+This is the after-hook form of the "pass through errors" rule below: a hook must
+never invent an error where the action actually succeeded.
+
 ## Lifecycle Hooks
 
 Connected and Done hooks bracket the client's whole run instead of a single
