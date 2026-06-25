@@ -190,14 +190,20 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 			return fmt.Errorf("found %q a service that does not exists in services, this should never happen", serviceName)
 		}
 
-		// Determine scale: CLI override > deploy.replicas > 1
-		scale := 1
-		if s, ok := options.Scale[serviceName]; ok {
-			scale = s
+		// Determine the desired count: CLI --scale > deploy.replicas > 1.
+		// A plain `up` reconciles to deploy.replicas in both directions, matching
+		// `docker compose up`: a manual --scale applies only to that invocation,
+		// and the next plain `up` restores replicas (scaling up or down).
+		desired := 1
+		if s, ok := options.Scale[service.Name]; ok {
+			desired = s
 		} else if service.Deploy != nil && service.Deploy.Replicas != nil {
-			scale = int(*service.Deploy.Replicas)
+			desired = int(*service.Deploy.Replicas)
 		}
 
+		// Discover existing instances above the desired count so they can be
+		// reconciled away (highest index first) during Ensure.
+		scale := desired
 		for {
 			instanceName := fmt.Sprintf("%s-%d", service.Name, scale+1)
 			if ok, err := c.InstanceExists(instanceName); !ok || err != nil {
@@ -207,14 +213,28 @@ func (p *Project) ToStack(c *client.Client, stack *client.Stack, opts ...ToStack
 			scale = scale + 1
 		}
 
+		instances := []*client.Instance{}
 		for i := 1; i <= scale; i++ {
-			instanceResources, err := serviceToInstance(c, p.Project, serviceName, options, i, scale)
+			instance, instanceResources, err := serviceToInstance(c, p.Project, service.Name, options, i, scale)
 			if err != nil {
 				errs = errors.Join(errs, err)
 				continue
 			}
 
+			resources = append(resources, instance)
 			resources = append(resources, instanceResources...)
+
+			instances = append(instances, instance)
+		}
+
+		// Reconcile down: instances beyond the desired count are marked for
+		// deletion (highest index first) and torn down during Ensure.
+		if len(instances) > desired {
+			slices.Reverse(instances)
+
+			for idx := range len(instances) - desired {
+				instances[idx].MarkDelete()
+			}
 		}
 	}
 

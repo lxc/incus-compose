@@ -309,3 +309,121 @@ func TestNormalLifecycle(t *testing.T) {
 		})
 	}
 }
+
+// dnsServiceIPs aggregates the dnsmasq address records for a service across the
+// project's managed networks.
+func dnsServiceIPs(t *testing.T, c *client.Client, networks []string, service string) []string {
+	t.Helper()
+
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	var ips []string
+	for _, name := range networks {
+		net, _, err := conn.GetNetwork(name)
+		require.NoError(t, err, "for network %q", name)
+		ips = append(ips, client.DNSmasqParse(net.Config["raw.dnsmasq"])[service]...)
+	}
+	return ips
+}
+
+// TestUpDownscaleRemovesInstancesAndDNS deploys the replicas=3 baseline, then
+// downscales to a single instance with --scale and verifies both the surplus
+// instances and their DNS records are removed while the survivor keeps resolving.
+func TestUpDownscaleRemovesInstancesAndDNS(t *testing.T) {
+	skipLocal(t)
+	t.Parallel()
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/nginx-downscale/compose.yaml"
+
+	networks := plannedNetworkNames(t, ctx, pn, compose)
+	require.NotEmpty(t, networks)
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	c := projectClient(t, ctx, pn)
+	for _, name := range []string{"web-1", "web-2", "web-3"} {
+		ok, err := c.InstanceExists(name)
+		require.NoError(t, err)
+		require.True(t, ok, "instance %q should exist after up", name)
+	}
+
+	before := dnsServiceIPs(t, c, networks, "web")
+	require.NotEmpty(t, before, "web should have DNS records for 3 replicas")
+
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=1")
+	require.NoError(t, err)
+
+	survivor, err := c.InstanceExists("web-1")
+	require.NoError(t, err)
+	require.True(t, survivor, "web-1 should remain after downscale")
+
+	for _, name := range []string{"web-2", "web-3"} {
+		ok, err := c.InstanceExists(name)
+		require.NoError(t, err)
+		require.False(t, ok, "instance %q should be removed after downscale", name)
+	}
+
+	after := dnsServiceIPs(t, c, networks, "web")
+	require.NotEmpty(t, after, "web-1 should still resolve after downscale")
+	require.Less(t, len(after), len(before), "DNS must shed records for removed instances")
+}
+
+// TestUpReconcilesToReplicas verifies docker-parity scaling: a plain `up`
+// reconciles a service to deploy.replicas in both directions. A manual --scale
+// applies only to that invocation; the next plain `up` restores replicas.
+func TestUpReconcilesToReplicas(t *testing.T) {
+	skipLocal(t)
+	t.Parallel()
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/nginx-downscale/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	// Baseline: deploy.replicas=3.
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	c := projectClient(t, ctx, pn)
+	allNames := []string{"web-1", "web-2", "web-3", "web-4", "web-5"}
+	assertCount := func(want int) {
+		t.Helper()
+		for i, name := range allNames {
+			ok, err := c.InstanceExists(name)
+			require.NoError(t, err)
+			require.Equal(t, i < want, ok, "instance %q existence (want %d running)", name, want)
+		}
+	}
+	assertCount(3)
+
+	// Manual downscale to 1.
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=1")
+	require.NoError(t, err)
+	assertCount(1)
+
+	// Plain up restores replicas=3 (scales back up).
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+	assertCount(3)
+
+	// Manual upscale to 5.
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach", "--scale=web=5")
+	require.NoError(t, err)
+	assertCount(5)
+
+	// Plain up reconciles back down to replicas=3.
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+	assertCount(3)
+}

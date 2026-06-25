@@ -389,7 +389,7 @@ func healthdRegisterReloader(c *client.Client, h *client.Instance) error {
 	reloading := false
 
 	c.AddHookAfter(func(ctx context.Context, action client.Action, r client.Resource, _ client.Options, err error) error {
-		if err != nil || r.Kind() != client.KindInstance {
+		if err != nil || !r.IsEnsured() || r.Kind() != client.KindInstance {
 			return err
 		}
 

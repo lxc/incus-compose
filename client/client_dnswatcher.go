@@ -15,8 +15,8 @@ import (
 // acquire its DHCP lease before recording its DNS address.
 const dnsIPWaitTimeout = 15 * time.Second
 
-// dnsmasqParse parses raw.dnsmasq address lines into a service→[]IP map.
-func dnsmasqParse(raw string) map[string][]string {
+// DNSmasqParse parses raw.dnsmasq address lines into a service->[]IP map.
+func DNSmasqParse(raw string) map[string][]string {
 	result := map[string][]string{}
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimSpace(line)
@@ -62,7 +62,7 @@ func (c *Client) RegisterDNSWatcher() error {
 	mu := &sync.Mutex{}
 
 	c.AddHookAfter(func(ctx context.Context, action Action, r Resource, _ Options, err error) error {
-		if err != nil || r == nil {
+		if err != nil || !r.IsEnsured() {
 			return err
 		}
 
@@ -148,13 +148,9 @@ func (c *Client) RegisterDNSWatcher() error {
 					}
 
 					if len(iPs) > 0 {
-						cSIPs, ok := servicesIPs[instIncusName]
-						if ok {
-							cSIPs := append(cSIPs, iPs...)
-							servicesIPs[sName] = cSIPs
-						} else {
-							servicesIPs[sName] = iPs
-						}
+						// Aggregate by service name so every replica of a
+						// service is registered under one DNS record.
+						servicesIPs[sName] = append(servicesIPs[sName], iPs...)
 					}
 				}
 

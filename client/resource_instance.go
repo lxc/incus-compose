@@ -99,6 +99,10 @@ type Instance struct {
 	created   bool
 	Config    InstanceConfig
 
+	// deleteMarked indicates that this instance will be deleted after Ensure(),
+	// this is for down scaling instances.
+	deleteMarked bool
+
 	// conn is this resource's own event-isolated Incus connection, set in
 	// Ensure() (which always runs before any other action) so concurrent
 	// workers never share a *ProtocolIncus. See Client.Connection.
@@ -254,12 +258,27 @@ func (r *Instance) Ensure(ctx context.Context, opts ...Option) error {
 		err = r.ensured()
 		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
+		if err == nil && r.deleteMarked {
+			if err := r.Stop(ctx, OptionTimeout(options.Timeout), OptionForce()); err != nil {
+				return err
+			}
+
+			if err := r.Delete(ctx); err != nil {
+				return err
+			}
+		}
+
 		return err
 	}
 
 	if !options.Create {
 		err = ErrNotFound.Wrap(err)
 		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
+
+		if r.deleteMarked {
+			// Just remove the resource
+			r.client.resources.Remove(r)
+		}
 
 		return err
 	}
@@ -543,18 +562,18 @@ func (r *Instance) attachPostStartDevices(ctx context.Context) error {
 
 // Start starts the instance.
 func (r *Instance) Start(ctx context.Context, opts ...Option) error {
-	if !r.IsEnsured() {
-		return ErrNotEnsured
-	}
-
-	if r.Running() {
-		return nil
-	}
-
 	options := NewOptions(opts...)
 
 	if err := r.client.hookBefore(ctx, ActionStart, r, options, nil); err != nil {
 		return err
+	}
+
+	if !r.IsEnsured() {
+		return r.client.hookAfter(ctx, ActionStart, r, options, ErrNotEnsured)
+	}
+
+	if r.Running() {
+		return r.client.hookAfter(ctx, ActionStart, r, options, nil)
 	}
 
 	return r.client.hookAfter(ctx, ActionStart, r, options, r.start(ctx, options))
@@ -834,18 +853,18 @@ func (r *Instance) secretExists(sPath string, content []byte) bool {
 
 // Stop stops the instance.
 func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
-	if !r.IsEnsured() {
-		return ErrNotEnsured
-	}
-
-	if !r.Running() {
-		return nil
-	}
-
 	options := NewOptions(opts...)
 
 	if err := r.client.hookBefore(ctx, ActionStop, r, options, nil); err != nil {
 		return err
+	}
+
+	if !r.IsEnsured() {
+		return r.client.hookAfter(ctx, ActionStop, r, options, ErrNotEnsured)
+	}
+
+	if !r.Running() {
+		return r.client.hookAfter(ctx, ActionStop, r, options, nil)
 	}
 
 	return r.client.hookAfter(ctx, ActionStop, r, options, r.stop(ctx, options))
@@ -925,16 +944,14 @@ func (r *Instance) setHealthCheckingStopped(stopped bool) error {
 	return nil
 }
 
+// MarkDelete marks a instance to be deleted after Ensure(),
+// this is for down scaling instances.
+func (r *Instance) MarkDelete() {
+	r.deleteMarked = true
+}
+
 // Delete removes the instance from Incus.
 func (r *Instance) Delete(ctx context.Context, opts ...Option) error {
-	if !r.IsEnsured() {
-		r.IncusInstance = nil
-		r.ETag = ""
-
-		r.client.resources.Remove(r)
-		return nil
-	}
-
 	options := NewOptions(opts...)
 
 	if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
@@ -943,6 +960,14 @@ func (r *Instance) Delete(ctx context.Context, opts ...Option) error {
 
 		r.client.resources.Remove(r)
 		return err
+	}
+
+	if !r.IsEnsured() {
+		r.IncusInstance = nil
+		r.ETag = ""
+
+		r.client.resources.Remove(r)
+		return r.client.hookAfter(ctx, ActionDelete, r, options, nil)
 	}
 
 	op, err := r.conn.DeleteInstance(r.incusName)
@@ -967,18 +992,18 @@ func (r *Instance) Delete(ctx context.Context, opts ...Option) error {
 
 // Log streams the instance console log to the outputHandler.
 func (r *Instance) Log(ctx context.Context, opts ...Option) error {
-	if !r.IsEnsured() {
-		return ErrNotEnsured
-	}
-
-	if !r.Running() {
-		return nil
-	}
-
 	options := NewOptions(opts...)
 
 	if err := r.client.hookBefore(ctx, ActionLog, r, options, nil); err != nil {
 		return err
+	}
+
+	if !r.IsEnsured() {
+		return r.client.hookAfter(ctx, ActionLog, r, options, ErrNotEnsured)
+	}
+
+	if !r.Running() {
+		return r.client.hookAfter(ctx, ActionLog, r, options, nil)
 	}
 
 	err := r.log(ctx, options)

@@ -345,7 +345,9 @@ func runUp(ctx context.Context, globalClient *client.GlobalClient, c *client.Cli
 
 	// Start
 	if params.start {
-		if err := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, params.stdout, params.stderr, startOptions...); err != nil {
+		startFilter := func(r client.Resource) bool { return r.IsEnsured() }
+
+		if err := stack.ForActionF(client.ActionStart, startFilter).Run(ctx, client.ActionStart, params.stdout, params.stderr, startOptions...); err != nil {
 			c.LogError("Starting resources", "error", err)
 			return errLogged.Wrap(err)
 		}

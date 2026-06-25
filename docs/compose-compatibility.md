@@ -519,6 +519,11 @@ You can also override replicas via CLI:
 incus-compose up --scale web=5
 ```
 
+`--scale` applies only to that invocation. Like `docker compose up`, a plain `up`
+reconciles each service back to `deploy.replicas` in both directions: it recreates
+instances removed by an earlier `--scale` and tears down extras added by one. Use
+`--scale` (or edit `deploy.replicas`) to change the persistent count.
+
 ### DNS Resolution
 
 After `up`, both the **service name** and the **instance name** resolve inside containers:

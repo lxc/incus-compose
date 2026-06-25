@@ -374,7 +374,7 @@ func (r *Network) UpdateDNSAliases(ownedServices []string, newIPs map[string][]s
 		return fmt.Errorf("reading network %q: %w", r.Name(), err)
 	}
 
-	current := dnsmasqParse(net.Config["raw.dnsmasq"])
+	current := DNSmasqParse(net.Config["raw.dnsmasq"])
 
 	// Delete owned.
 	maps.DeleteFunc(current, func(k string, _ []string) bool {

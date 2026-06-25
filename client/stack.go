@@ -195,3 +195,26 @@ func (s *Stack) ForAction(action Action) *Stack {
 
 	return result
 }
+
+// ForActionF returns a new stack with resources filtered for the given action,
+// it allows custom filtering with the filter hook.
+func (s *Stack) ForActionF(action Action, filter func(r Resource) bool) *Stack {
+	result := &Stack{
+		client:         s.client,
+		workers:        s.workers,
+		sortDescending: s.sortDescending,
+		seen:           make(map[Resource]struct{}),
+	}
+
+	if filter == nil {
+		filter = func(_ Resource) bool { return true }
+	}
+
+	for _, r := range s.All() {
+		if SupportsAction(r, action) && filter(r) {
+			result.Add(r)
+		}
+	}
+
+	return result
+}

@@ -35,10 +35,10 @@ func buildPlatform(service types.ServiceConfig) (string, error) {
 // serviceToInstance translates a compose service to an Incus instance.
 // Environment vars become instance config, labels become user metadata.
 // Volumes default to bind mounts for paths starting with / or ., otherwise named volumes.
-func serviceToInstance(c *client.Client, p *types.Project, serviceName string, options *ToStackOptions, index, scale int) ([]client.Resource, error) {
+func serviceToInstance(c *client.Client, p *types.Project, serviceName string, options *ToStackOptions, index, scale int) (*client.Instance, []client.Resource, error) {
 	service, ok := p.Services[serviceName]
 	if !ok {
-		return nil, fmt.Errorf("service %q not found", serviceName)
+		return nil, nil, fmt.Errorf("service %q not found", serviceName)
 	}
 
 	var errs error
@@ -56,7 +56,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 			errs = errors.Join(errs, err)
 		}
 		if image == nil {
-			return nil, errs
+			return nil, nil, errs
 		}
 		resources = append(resources, image)
 	}
@@ -86,7 +86,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 	}
 
 	if errs != nil {
-		return nil, errs
+		return nil, nil, errs
 	}
 
 	instCfg := &client.InstanceConfig{
@@ -104,13 +104,17 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		instCfg.Image = image.IncusName()
 	}
 
-	instance, err := c.Resource(client.KindInstance, instanceName(service, index, scale), instCfg)
+	ir, err := c.Resource(client.KindInstance, instanceName(service, index, scale), instCfg)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	resources = append(resources, instance)
 
-	return resources, nil
+	instance, ok := ir.(*client.Instance)
+	if !ok {
+		return nil, nil, client.ErrUnknown.WithKindName(client.KindInstance, instanceName(service, index, scale))
+	}
+
+	return instance, resources, nil
 }
 
 // instanceConfig builds the Incus instance config map from a compose service.
