@@ -102,3 +102,7 @@ return ErrCreate.WithResource(r).Wrap(incusErr)
 ```
 
 Each `With*` method returns a new `*Error` preserving the sentinel identity, so `errors.Is()` continues to work correctly.
+
+`Wrap(nil)` returns a non-nil `*Error` (a sentinel with no cause), so only wrap a
+real error: wrapping unconditionally turns a success path into a spurious failure
+(common in after hooks, see [Hooks](hooks.md#attribute-failures-in-complex-hooks)).

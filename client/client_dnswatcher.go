@@ -48,6 +48,9 @@ func dnsmasqRecords(serviceIPs map[string][]string) string {
 	return b.String()
 }
 
+// ErrDNSWatcher is used as wrapper to indicate an error happened in the DNSWatcher.
+var ErrDNSWatcher = NewError("DNSWatcher")
+
 // RegisterDNSWatcher wires service-name DNS records into the project's managed
 // networks via the client lifecycle hooks. On each instance create/start/stop/
 // delete it reads raw.dnsmasq from Incus, updates only the records for services
@@ -80,7 +83,7 @@ func (c *Client) RegisterDNSWatcher() error {
 		case KindInstance:
 			inst, ok := r.(*Instance)
 			if !ok {
-				return err
+				return ErrDNSWatcher.WithText("resource is not an *Instance")
 			}
 
 			svcKey := inst.ServiceName()
@@ -92,7 +95,7 @@ func (c *Client) RegisterDNSWatcher() error {
 				if !inst.Created() && inst.Running() {
 					ips, ipErr := inst.WaitIPs(ctx, dnsIPWaitTimeout)
 					if ipErr != nil {
-						return ipErr
+						return ErrDNSWatcher.Wrap(ipErr)
 					}
 
 					instances[inst.IncusName()] = inst
@@ -103,7 +106,7 @@ func (c *Client) RegisterDNSWatcher() error {
 			case ActionStart:
 				ips, ipErr := inst.WaitIPs(ctx, dnsIPWaitTimeout)
 				if ipErr != nil {
-					return ipErr
+					return ErrDNSWatcher.Wrap(ipErr)
 				}
 
 				instances[inst.IncusName()] = inst
@@ -118,7 +121,7 @@ func (c *Client) RegisterDNSWatcher() error {
 			}
 
 			if !changed {
-				return err
+				return nil
 			}
 
 			owned := make([]string, 0, len(ownedSet))
@@ -156,10 +159,16 @@ func (c *Client) RegisterDNSWatcher() error {
 
 				errs = errors.Join(errs, network.UpdateDNSAliases(owned, servicesIPs))
 			}
-			return errors.Join(err, errs)
+
+			err = errors.Join(err, errs)
+			if err != nil {
+				return ErrDNSWatcher.Wrap(err)
+			}
+
+			return nil
 		}
 
-		return err
+		return nil
 	})
 
 	return nil
