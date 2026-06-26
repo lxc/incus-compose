@@ -16,32 +16,33 @@ By default healthd uses the project's own network and reaches Incus over that
 bridge. Use `--healthd-network` / `--healthd-incus` if your setup differs — see
 [Network Configuration](healthd.md#network-configuration).
 
-1.) Get the IP address of your main bridge (incusbr0 or the one in the default profile).
+1.) Either set incus to listen on all interfaces on port `8443`
 
 ```bash
-incus network list
+incus config set core.https_address=:8443
 ```
 
-2.) Either set that IP as `$IP:8443` or listen on all interfaces with `:8443`
-
-```bash
-incus config set core.https_address=<ip>:8443
-```
-
-3.) Generate a cert and add it to the trust store as admin cert.
+2.) Generate a cert and add it to the trust store as admin cert
 
 ```bash
 # Generate and trust a certificate
 incus remote generate-certificate
 incus config trust add-certificate ~/.config/incus/client.crt
+```
 
-incus remote add local-https <ip>
-# or
-incus remote add local-https 127.0.0.1
+3.) Add it as remote and set it as default remote
+
+```bash
+incus remote add local-https <a-ip-of-your-host>
 
 # Switch to local-https as default remote
 incus remote switch local-https
 ```
+
+#### Listen on a specific IP Address
+
+If you dont want to listen all interfaces you have to set the `INCUS_COMPOSE_HEALTHD_INCUS` environment variable or call up with `--healthd-incus`,
+see [doc](healthd.md#network-configuration)
 
 ### OCI Image Remotes
 
