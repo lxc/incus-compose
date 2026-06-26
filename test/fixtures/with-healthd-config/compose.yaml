@@ -1,0 +1,8 @@
+x-incus-compose:
+  healthd:
+    incus: https://10.0.0.1:8443
+    network: healthd:default
+
+services:
+  web:
+    image: docker.io/nginx:alpine

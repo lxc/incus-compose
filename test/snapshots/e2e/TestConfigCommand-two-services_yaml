@@ -12,8 +12,8 @@ project:
           - --spider
           - http://127.0.0.1:8080
         timeout: 5s
-        interval: 10s
-        retries: 3
+        interval: 1s
+        retries: 10
       image: docker.io/nginxinc/nginx-unprivileged:alpine
       networks:
         default: null
@@ -31,8 +31,8 @@ project:
           - --spider
           - http://127.0.0.1:8080
         timeout: 5s
-        interval: 10s
-        retries: 3
+        interval: 1s
+        retries: 10
       image: docker.io/nginxinc/nginx-unprivileged:alpine
       networks:
         default: null

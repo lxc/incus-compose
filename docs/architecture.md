@@ -182,18 +182,20 @@ Compose-specific transformations and conveniences handled by incus-compose:
 
 ```yaml
 x-incus-compose:
-  network:
-    project: default
-    profile: default
+  healthd:
+    incus: https://:8443
+    network: default:default
 
 services:
   app:
     image: docker.io/myapp:latest
 ```
 
-`network-profile` copies NIC devices from an existing Incus profile into the project-local `default` profile. The value uses `{project}:{profile}` syntax. When this option is set, incus-compose does not create compose-managed network resources for service network attachments; instances use networking from the copied profile instead.
-
-Service-level static IP assignments are rejected with `network-profile` because incus-compose does not create an explicit NIC device in that mode.
+`healthd.incus` and `healthd.network` configure where the ic-healthd sidecar
+attaches and which Incus endpoint it connects to. Both default to the project's
+own network and the connection's port; see
+[Health Checking - Network Configuration](healthd.md#network-configuration) for
+the full set of combinations.
 
 ## Quick Reference
 

@@ -50,7 +50,7 @@ The override file follows normal Compose merge rules. For example, `!reset []` c
 - `deploy.replicas` - Service scaling (instances named `{service}-{index}`)
 - `restart` - Restart policies (`no`, `always`, `on-failure`, `unless-stopped`)
 - `x-incus` extension — pass any Incus project, network and instance option directly (see below)
-- Top-level `x-incus-compose.network-profile` — reuse NIC devices from an existing Incus profile
+- Top-level `x-incus-compose.healthd` — configure the ic-healthd sidecar's network and Incus endpoint (see below)
 
 #### x-incus Instance Extensions
 
@@ -87,20 +87,27 @@ services:
 
 Any [Project option](https://linuxcontainers.org/incus/docs/main/reference/projects/) is accepted.
 
-#### x-incus-compose Network Profile
+#### x-incus-compose Healthd
 
-Set top-level `x-incus-compose.network-profile` to copy NIC devices from an existing Incus profile into the project-local `default` profile:
+Configure the ic-healthd sidecar's network and Incus endpoint with the top-level
+`x-incus-compose.healthd` extension:
 
 ```yaml
 x-incus-compose:
-  network-profile: default:default
+  healthd:
+    incus: https://:8443
+    network: default:default
 
 services:
   web:
     image: docker.io/nginx:alpine
 ```
 
-The value must use `{project}:{profile}` syntax. For example, `default:default` reads the `default` profile from the Incus `default` project.
+`network` is `<project>:<network>` for a managed network or a plain bridge name;
+`incus` is the API URL healthd connects to. Both default to the project's own
+network and the connection's port. The same values are available as
+`--healthd-network`/`--healthd-incus` (CLI overrides the compose file). See
+[Health Checking - Network Configuration](healthd.md#network-configuration).
 
 When this option is set, incus-compose does not create compose-managed Incus network resources for service network attachments. Instances use the network devices provided by the copied profile instead. Service-level static IP assignments (`ipv4_address` / `ipv6_address`) are not supported in this mode because incus-compose does not create explicit NIC devices.
 

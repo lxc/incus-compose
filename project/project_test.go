@@ -848,26 +848,26 @@ func TestProjectConfigReturnsNilWithoutExtensions(t *testing.T) {
 	assert.Nil(t, proj.ProjectConfig())
 }
 
-func TestNetworkConfigExtractsXIncusCompose(t *testing.T) {
+func TestHealthdConfigExtractsXIncusCompose(t *testing.T) {
 	t.Parallel()
 
-	proj, err := project.New().Load(context.Background(), project.LoadWorkingDir(fixturePath("with-network-config")))
+	proj, err := project.New().Load(context.Background(), project.LoadWorkingDir(fixturePath("with-healthd-config")))
 	require.NoError(t, err)
 
-	projectName, profile, err := proj.NetworkConfig()
-	require.NoError(t, err)
-	assert.Equal(t, "my-project", projectName)
-	assert.Equal(t, "my-profile", profile)
+	incusURL, network := proj.HealthdConfig()
+	assert.Equal(t, "https://10.0.0.1:8443", incusURL)
+	assert.Equal(t, "healthd:default", network)
 }
 
-func TestNetworkConfigReturnsErrorWithoutExtension(t *testing.T) {
+func TestHealthdConfigEmptyWithoutExtension(t *testing.T) {
 	t.Parallel()
 
 	proj, err := project.New().Load(context.Background(), project.LoadWorkingDir(fixturePath("simple-nginx")))
 	require.NoError(t, err)
 
-	_, _, err = proj.NetworkConfig()
-	require.Error(t, err)
+	incusURL, network := proj.HealthdConfig()
+	assert.Empty(t, incusURL)
+	assert.Empty(t, network)
 }
 
 func TestToStackKeepsNetworkResourcesWithoutNetworkProfile(t *testing.T) {

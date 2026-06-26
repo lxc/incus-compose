@@ -637,26 +637,6 @@ func TestNetworkHooks(t *testing.T) {
 // External Network Tests
 // ----------------------------------------------------------------------------
 
-func TestNetworkExternal_DefaultNetworkResolves(t *testing.T) {
-	t.Parallel()
-	skipLocal(t)
-	ctx := context.Background()
-	c := newRandomTestClient(t, ctx, "network-ext-")
-
-	networkName, err := c.Global().DefaultNetwork()
-	require.NoError(t, err)
-
-	r, err := c.Resource(KindNetwork, networkName, &NetworkConfig{External: true})
-	require.NoError(t, err)
-
-	require.NoError(t, RunAction(ctx, r, ActionEnsure))
-	require.True(t, r.IsEnsured())
-
-	network, ok := r.(*Network)
-	require.True(t, ok)
-	require.Equal(t, networkName, network.IncusName())
-}
-
 func TestNetworkExternal_EnsureFailsIfNotExists(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)

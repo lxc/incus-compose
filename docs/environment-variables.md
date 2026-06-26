@@ -99,8 +99,6 @@ Every global flag can be set via an environment variable. Flags given on the com
 | `INCUS_REMOTE`                  | `--remote`          | Incus remote name from CLI config (e.g., `local`, `myserver`)     |
 | `INCUS_COMPOSE_IMAGE_CACHE`     | `--image-cache`     | Incus project for image cache (default: `default`)                |
 | `INCUS_COMPOSE_STORAGE_POOL`    | `--storage-pool`    | Default storage pool (default: `detect`)                          |
-| `INCUS_COMPOSE_NETWORK_PROJECT` | `--network-project` | Project to locate the network profile (default: `default`)        |
-| `INCUS_COMPOSE_NETWORK_PROFILE` | `--network-profile` | Profile to extract devices.eth0.network from (default: `default`) |
 
 ### Display and Debugging
 
@@ -113,10 +111,12 @@ Every global flag can be set via an environment variable. Flags given on the com
 
 ### Healthd
 
-| Variable                       | Flag | Description                                                                    |
-| ------------------------------ | ---- | ------------------------------------------------------------------------------ |
-| `INCUS_COMPOSE_HEALTHD_IMAGE`  | --   | Healthd OCI image; `{version}` is replaced with the incus-compose version      |
-| `INCUS_COMPOSE_HEALTHD_BINARY` | --   | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image) |
+| Variable                        | Flag                | Description                                                                       |
+| ------------------------------- | ------------------- | -------------------------------------------------------------------------------- |
+| `INCUS_COMPOSE_HEALTHD_IMAGE`   | `--healthd-image`   | Healthd OCI image; `{version}` is replaced with the incus-compose version       |
+| `INCUS_COMPOSE_HEALTHD_BINARY`  | `--healthd-binary`  | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)  |
+| `INCUS_COMPOSE_HEALTHD_INCUS`   | `--healthd-incus`   | Incus API URL healthd connects to (default: bridge IP + client port)            |
+| `INCUS_COMPOSE_HEALTHD_NETWORK` | `--healthd-network` | Network healthd attaches to: `<project>:<network>`, a bridge, or empty (default) |
 
 ### Examples
 

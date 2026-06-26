@@ -207,18 +207,6 @@ func newRootCommand() *cli.Command {
 				Sources: cli.EnvVars("INCUS_COMPOSE_PROFILES"),
 			},
 			&cli.StringFlag{
-				Name:    "network-project",
-				Usage:   `Project to locate the network profile`,
-				Sources: cli.EnvVars("INCUS_COMPOSE_NETWORK_PROJECT"),
-				Value:   "default",
-			},
-			&cli.StringFlag{
-				Name:    "network-profile",
-				Usage:   `Profile to extract devices.eth0.network from`,
-				Sources: cli.EnvVars("INCUS_COMPOSE_NETWORK_PROFILE"),
-				Value:   "default",
-			},
-			&cli.StringFlag{
 				Name:    "project-directory",
 				Aliases: []string{"pd"},
 				Usage:   `Specify an alternate working directory (default: the path of the, first specified, Compose file)`,
@@ -322,13 +310,6 @@ func newRootCommand() *cli.Command {
 				client.ClientProvideInstanceServer(server),
 				client.ClientCacheProject(cmd.String("image-cache")),
 				client.ClientDefaultStoragePool(cmd.String("storage-pool")),
-			}
-
-			if cmd.String("network-project") != "default" || cmd.String("network-profile") != "default" {
-				opts = append(opts, client.ClientNetworkProjectProfile(
-					cmd.String("network-project"),
-					cmd.String("network-profile"),
-				))
 			}
 
 			c := client.New(ctx, opts...)

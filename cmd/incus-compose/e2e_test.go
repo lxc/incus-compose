@@ -264,6 +264,74 @@ func TestConfigFilterByService(t *testing.T) {
 	}
 }
 
+func TestUpDownUpSimpleNginx(t *testing.T) {
+	skipLocal(t)
+	t.Parallel()
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	tests := []struct {
+		name     string
+		args     []string
+		wantErr  bool
+		snapshot bool
+	}{
+		{
+			name:    "up simple-nginx",
+			args:    []string{"-f", compose, "up", "--detach"},
+			wantErr: false,
+		},
+		{
+			name:     "list up simple-nginx",
+			args:     []string{"-f", compose, "list"},
+			wantErr:  false,
+			snapshot: true,
+		},
+		{
+			name:    "down simple-nginx",
+			args:    []string{"-f", compose, "down"},
+			wantErr: false,
+		},
+		{
+			name:     "list down simple-nginx",
+			args:     []string{"-f", compose, "list"},
+			wantErr:  false,
+			snapshot: true,
+		},
+		{
+			name:    "up simple-nginx",
+			args:    []string{"-f", compose, "up", "--detach"},
+			wantErr: false,
+		},
+		{
+			name:     "list down-up simple-nginx",
+			args:     []string{"-f", compose, "list"},
+			wantErr:  false,
+			snapshot: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, _, err := runCommand(t, ctx, pn, tt.args...)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			if tt.snapshot {
+				snapshotter.SnapshotT(t, normalizeListOutput(t, stdout))
+			}
+		})
+	}
+}
+
 func TestNormalLifecycle(t *testing.T) {
 	skipLocal(t)
 	t.Parallel()

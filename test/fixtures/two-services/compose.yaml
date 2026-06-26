@@ -8,9 +8,9 @@ services:
       limits.cpu: 1
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
+      interval: 1s
       timeout: 5s
-      retries: 3
+      retries: 10
 
   web2:
     image: docker.io/nginxinc/nginx-unprivileged:alpine
@@ -21,6 +21,6 @@ services:
       limits.cpu: 1
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
-      interval: 10s
+      interval: 1s
       timeout: 5s
-      retries: 3
+      retries: 10

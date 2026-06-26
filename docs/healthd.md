@@ -133,40 +133,65 @@ set by `incus-compose stop`) are not restarted.
 
 ## Network Configuration
 
-ic-healthd needs an Incus bridge for its NIC device and uses that bridge's gateway
-IP to reach the Incus HTTPS API (`:8443`).
+ic-healthd runs in its own container and must reach the Incus HTTPS API from the
+inside. Two things are configured:
 
-### Auto-detection
+- **`network`** - the Incus network (or host bridge) healthd attaches its NIC to.
+- **`incus`** - the Incus API URL healthd connects to.
 
-When no network is specified, incus-compose probes in order:
-
-1. **`incusbr0`** - the default Incus bridge, present on most installations
-2. **The bridge of the current connection** - the network whose gateway IP matches
-   the IP incus-compose itself uses to reach the Incus API
-
-If neither matches, `up` fails; set the network explicitly.
-
-### Explicit override
-
-Set via CLI flag, environment variable, or compose-file extension.
-CLI/env takes priority over the compose file.
-
-```bash
-incus-compose up --network-project my-project --network-profile my-profile
-# or
-INCUS_COMPOSE_NETWORK_PROJECT=my-project INCUS_COMPOSE_NETWORK_PROFILE=my-profile incus-compose up
-```
+Both can be set in the compose file or overridden on the CLI. CLI flags and
+environment variables take priority over the compose file.
 
 ```yaml
+name: my-project
 x-incus-compose:
-  network:
-    project: my-project
-    profile: my-profile
+  healthd:
+    # Incus API endpoint healthd connects to.
+    # Default: the bridge IP of `network` below, with the port incus-compose
+    # itself connected on.
+    incus: https://:8443
+    # `<project>:<network>` for a managed network, or a plain bridge name.
+    # Default: the `default` network of the current project.
+    network: default:default
 ```
 
-When set explicitly, the named network must exist - incus-compose errors out if not found.
+| Flag                | Environment variable           | Compose key                       |
+| ------------------- | ------------------------------ | --------------------------------- |
+| `--healthd-incus`   | `INCUS_COMPOSE_HEALTHD_INCUS`   | `x-incus-compose.healthd.incus`   |
+| `--healthd-network` | `INCUS_COMPOSE_HEALTHD_NETWORK` | `x-incus-compose.healthd.network` |
 
-The same flag is available on `incus-compose healthd up --network`.
+`incus-compose healthd up` takes the same two options as `--incus` and `--network`.
+
+### `network`
+
+- **Empty (default)** - the `default` network of the current project. incus-compose
+  creates it if needed, so healthd can come up before the rest of the project.
+- **`<project>:<network>`** - a managed Incus network, optionally in another
+  project. It must already exist; incus-compose never creates it.
+- **A value without `:`** - a host bridge name (e.g. `incusbr0`). It must already
+  exist.
+
+The network's IPv4 gateway is used as the default Incus endpoint, so healthd can
+reach Incus over that bridge.
+
+### `incus`
+
+- **Empty (default)** - `https://<network gateway IP>:<client port>`. The port is
+  the one incus-compose used for its own connection, so Incus must be listening on
+  the bridge IP (commonly all interfaces, `core.https_address = :8443`). This
+  requires a HTTPS connection; over a unix socket there is no port to reuse, so set
+  `--healthd-incus` explicitly.
+- **An explicit URL** - used verbatim, e.g. `https://10.0.0.1:8443`. Combine with
+  `network` to pin both the bridge and the endpoint.
+
+### Combinations
+
+| `network`                    | `incus` | Behavior                                      |
+| ---------------------------- | ------- | --------------------------------------------- |
+| default                      | empty   | Project bridge IP + client port (the default) |
+| default                      | URL     | Project bridge for the NIC, pinned endpoint   |
+| bridge / `project:network`   | empty   | Different bridge, auto-detected IP            |
+| bridge / `project:network`   | URL     | Different bridge, pinned endpoint             |
 
 ## Security
 
@@ -188,7 +213,7 @@ The `healthd` command group manages the sidecar directly without touching servic
 | `up [--recreate]` | Create or recreate the sidecar                        |
 | `down`            | Stop and remove the sidecar                           |
 
-`healthd up` accepts `--image`, `--binary`, and `--network`. It refuses with an
+`healthd up` accepts `--image`, `--binary`, `--incus`, and `--network`. It refuses with an
 error when no service in the project requires healthd (no healthcheck, no restart
 policy, no `service_healthy` dependency).
 

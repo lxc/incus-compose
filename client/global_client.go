@@ -16,12 +16,6 @@ import (
 	"github.com/lxc/incus/v7/shared/cliconfig"
 )
 
-// Client defaults.
-const (
-	DefaultNetworkProject = "default"
-	DefaultNetworkProfile = "default"
-)
-
 // ClientConfig holds configuration options for the Client.
 type ClientConfig struct {
 	// URL is the Incus server URL to connect to.
@@ -45,12 +39,6 @@ type ClientConfig struct {
 	// CacheProject is the project name to use as image cache.
 	// If set, the project will be created if it doesn't exist.
 	CacheProject string
-
-	// NetworkProject defines `project` to the get the profile below from.
-	NetworkProject string
-
-	// NetworkProfile defines the `profile` to get the `network` property from a device named eth0.
-	NetworkProfile string
 }
 
 // ClientOption is a functional option for configuring the Client.
@@ -100,14 +88,6 @@ func ClientCacheProject(n string) ClientOption {
 	return func(c *ClientConfig) { c.CacheProject = n }
 }
 
-// ClientNetworkProjectProfile sets the project and profile to get the network from.
-func ClientNetworkProjectProfile(project, profile string) ClientOption {
-	return func(c *ClientConfig) {
-		c.NetworkProject = project
-		c.NetworkProfile = profile
-	}
-}
-
 // GlobalClient provides a high-level interface to Incus operations.
 type GlobalClient struct {
 	ctx    context.Context
@@ -123,10 +103,7 @@ type GlobalClient struct {
 	connected  bool
 
 	// Cache for ConnectionIP()
-	connectionIP net.IP
-
-	// Cache for DefaultNetwork()
-	defaultNetwork string
+	connectionIPs []net.IP
 
 	// hookBefore is called hookBefore any action.
 	hookBefore func(ctx context.Context, action Action, r Resource, args Options, err error) error
@@ -150,8 +127,6 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 		DefaultStoragePool: "detect",
 		NetworkPrefix:      "ic-",
 		DescriptionFormat:  "incus-compose: %s",
-		NetworkProject:     DefaultNetworkProject,
-		NetworkProfile:     DefaultNetworkProfile,
 	}
 
 	for _, o := range opts {
@@ -760,15 +735,24 @@ func (c *GlobalClient) NetworkBridgeIPs(networkName string) (ipv4 []string, ipv6
 	return ipv4, ipv6, nil
 }
 
-// ConnectionIP returns the IP of the current connection,
-// this function is cached by GlobalClient.connectionIP.
-func (c *GlobalClient) ConnectionIP() (net.IP, error) {
+// URL returns the URL of the connection.
+func (c *GlobalClient) URL() (*url.URL, error) {
 	if !c.IsRemote() {
-		return nil, errors.New("Client.ConnectionIP needs a non unix connection")
+		return nil, errors.New("GlobalClient.URL needs a non unix connection")
 	}
 
-	if c.connectionIP != nil {
-		return c.connectionIP, nil
+	return url.Parse(c.config.URL)
+}
+
+// ConnectionIPs returns the IP of the current connection,
+// this function is cached by GlobalClient.connectionIP.
+func (c *GlobalClient) ConnectionIPs() ([]net.IP, error) {
+	if !c.IsRemote() {
+		return nil, errors.New("GlobalClient.ConnectionIP needs a non unix connection")
+	}
+
+	if c.connectionIPs != nil {
+		return c.connectionIPs, nil
 	}
 
 	u, err := url.Parse(c.config.URL)
@@ -778,8 +762,8 @@ func (c *GlobalClient) ConnectionIP() (net.IP, error) {
 
 	ip := net.ParseIP(u.Hostname())
 	if ip != nil {
-		c.connectionIP = ip
-		return c.connectionIP, nil
+		c.connectionIPs = []net.IP{ip}
+		return c.connectionIPs, nil
 	}
 
 	ips, err := net.LookupIP(u.Hostname())
@@ -787,8 +771,8 @@ func (c *GlobalClient) ConnectionIP() (net.IP, error) {
 		return nil, fmt.Errorf("while looking up the IP for %q: %w", c.config.URL, err)
 	}
 
-	c.connectionIP = ips[0]
-	return c.connectionIP, nil
+	c.connectionIPs = ips
+	return c.connectionIPs, nil
 }
 
 // SameHost returns nil of the connected incus and the current host share the same ip else an error.
@@ -798,7 +782,7 @@ func (c *GlobalClient) SameHost() error {
 		return nil
 	}
 
-	ip, err := c.ConnectionIP()
+	ips, err := c.ConnectionIPs()
 	if err != nil {
 		return err
 	}
@@ -824,77 +808,13 @@ func (c *GlobalClient) SameHost() error {
 				ifaceIP = v.IP
 			}
 
-			if slices.Equal(ifaceIP, ip) {
-				return nil
+			for _, ip := range ips {
+				if slices.Equal(ifaceIP, ip) {
+					return nil
+				}
 			}
 		}
 	}
 
 	return errors.New("not on the same host")
-}
-
-// DefaultNetwork returns the network from the profile in the configured project.
-func (c *GlobalClient) DefaultNetwork() (string, error) {
-	if c.defaultNetwork != "" {
-		return c.defaultNetwork, nil
-	}
-
-	conn := c.incus
-
-	// Gets the info for the current used project, we could skip that as this is always "default".
-	info, err := conn.GetConnectionInfo()
-	if err != nil {
-		return "", err
-	}
-
-	if c.config.NetworkProject != info.Project {
-		pc, err := c.getProject(c.config.NetworkProject)
-		if err != nil {
-			return "", err
-		}
-
-		conn, err = pc.Connection()
-		if err != nil {
-			return "", err
-		}
-	}
-
-	p, _, err := conn.GetProfile("default")
-	if err != nil {
-		return "", err
-	}
-
-	eth0, ok := p.Devices["eth0"]
-	if !ok {
-		return "", ErrNotFound.WithText(fmt.Sprintf("no eth0 in profile %s", "default"))
-	}
-
-	network, ok := eth0["network"]
-	if !ok {
-		parent, ok := eth0["parent"]
-		if !ok {
-			return "", ErrNotFound.WithText(fmt.Sprintf("no parent or network in device eth0 of profile %s", "default"))
-		}
-		network = parent
-	}
-
-	c.defaultNetwork = network
-
-	return network, nil
-}
-
-// NetworkProfile sets the NetworkProject and NetworkProfile in the config.
-func (c *GlobalClient) NetworkProfile(project, profile string) error {
-	if c.config.NetworkProject != DefaultNetworkProject || c.config.NetworkProfile != DefaultNetworkProfile {
-		return errors.New("networkProfile was already set")
-	}
-
-	c.config.NetworkProject = project
-	c.config.NetworkProfile = profile
-
-	if c.defaultNetwork != "" {
-		c.defaultNetwork = ""
-	}
-
-	return nil
 }

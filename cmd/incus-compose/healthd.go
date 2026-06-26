@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,7 @@ type healthdParams struct {
 	image       string // already resolved via resolveHealthdImage
 	pull        string
 	reCreate    bool
+	incus       *url.URL
 	network     string // Incus bridge name; empty = auto-detect
 	timeout     time.Duration
 	stdout      io.Writer
@@ -205,16 +207,100 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 	return inst, []client.Resource{img, volume}, nil
 }
 
+// healthdNetworkRef describes the network ic-healthd attaches to, decoded from
+// params.network (the --healthd-network flag / x-incus-compose.healthd.network).
+type healthdNetworkRef struct {
+	project string // Incus project of a managed network; empty for a bridge or the default
+	name    string // network or bridge name
+	deflt   bool   // the project's own default network, created if missing
+}
+
+// parseHealthdNetwork decodes the healthd network selector. An empty value means
+// the project's default network. A "<project>:<network>" value references a
+// managed network that must already exist; anything else is a host bridge name.
+func parseHealthdNetwork(network string) (healthdNetworkRef, error) {
+	if network == "" {
+		return healthdNetworkRef{name: "default", deflt: true}, nil
+	}
+
+	if strings.Contains(network, ":") {
+		netProject, netName, _ := strings.Cut(network, ":")
+		if netProject == "" || netName == "" || strings.Contains(netName, ":") {
+			return healthdNetworkRef{}, errors.New("`--healthd-network` is wrong, need something like `<project>:<network>` or `<bridge>`")
+		}
+
+		return healthdNetworkRef{project: netProject, name: netName}, nil
+	}
+
+	return healthdNetworkRef{name: network}, nil
+}
+
 // healthdUp generates a restricted Incus token, writes it (and optionally a local binary)
 // into the instance via InstanceConfig.Files, ensures (creates) the instance, and starts it.
 func healthdUp(ctx context.Context, c *client.Client, inst *client.Instance, resources []client.Resource, params healthdParams) error {
-	if params.network == "" {
-		network, err := c.Global().DefaultNetwork()
+	ref, err := parseHealthdNetwork(params.network)
+	if err != nil {
+		return err
+	}
+
+	var netRes client.Resource
+	switch {
+	case ref.deflt:
+		// The project's own default network. healthd may bring it up before the
+		// rest of the project, so allow creation.
+		netRes, err = c.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{})
+	case ref.project != "" && ref.project != c.Project():
+		// A managed network in another project; must pre-exist (External).
+		var nc *client.Client
+		nc, err = c.Global().EnsureProject(ref.project)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to fetch the healthd network: %w", err)
 		}
 
-		params.network = network
+		netRes, err = nc.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{External: true})
+	default:
+		// A referenced network in this project or a host bridge; must pre-exist.
+		netRes, err = c.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{External: true})
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get a healthd network: %w", err)
+	}
+
+	err = client.RunAction(ctx, netRes, client.ActionEnsure, client.OptionCreate())
+	if err != nil {
+		return fmt.Errorf("failed to ensure network %q: %w", netRes, err)
+	}
+
+	network, ok := netRes.(*client.Network)
+	if !ok {
+		return client.ErrUnknown.WithResource(netRes).WithText("failed to cast")
+	}
+
+	var incusURL *url.URL
+	if params.incus != nil {
+		incusURL = params.incus
+	} else {
+		if !c.IsRemote() {
+			return errors.New("healthd works only with a https connection, provide one with INCUS_COMPOSE_HEALTHD_INCUS")
+		}
+
+		u, err := c.Global().URL()
+		if err != nil {
+			return fmt.Errorf("failed to get the url: %w", err)
+		}
+
+		if network.IncusNetwork.Config["ipv4.address"] == "" {
+			return fmt.Errorf("ip of network %q is empty", network.Name())
+		}
+
+		ipSplit := strings.Split(network.IncusNetwork.Config["ipv4.address"], "/")
+		ip := net.ParseIP(ipSplit[0])
+		if ip == nil {
+			return fmt.Errorf("result is nil while parsing ip '%v'", ipSplit[0])
+		}
+
+		u.Host = fmt.Sprintf("%s:%s", ip.String(), u.Port())
+		incusURL = u
 	}
 
 	token, err := healthdCreateToken(c)
@@ -235,36 +321,15 @@ func healthdUp(ctx context.Context, c *client.Client, inst *client.Instance, res
 		DirMode: 0o700,
 	}
 
-	incusAPIURL := c.Config().URL
-	if params.network != "" {
-		inst.Config.Devices = append(inst.Config.Devices, client.InstanceDevice{
-			Name: "eth0",
-			Config: client.InstanceDeviceConfig{
-				DeviceType:  client.InstanceDeviceTypeNic,
-				NetworkName: params.network,
-			},
-		})
+	inst.Config.Devices = append(inst.Config.Devices, client.InstanceDevice{
+		Name: "eth0",
+		Config: client.InstanceDeviceConfig{
+			DeviceType:  client.InstanceDeviceTypeNic,
+			NetworkName: netRes.IncusName(),
+		},
+	})
 
-		conn, err := c.Connection()
-		if err != nil {
-			return err
-		}
-
-		network, _, err := conn.GetNetwork(params.network)
-		if err != nil {
-			return fmt.Errorf("failed to fetch the network: %w", err)
-		}
-
-		ipSplit := strings.Split(network.Config["ipv4.address"], "/")
-		ip := net.ParseIP(ipSplit[0])
-		if ip == nil {
-			return fmt.Errorf("result is nil while parsing ip %q", ipSplit[0])
-		}
-
-		incusAPIURL = fmt.Sprintf("https://%s:8443", ip)
-	}
-
-	flags := []string{fmt.Sprintf(" --incus=%s --project=%s", incusAPIURL, c.IncusProject())}
+	flags := []string{fmt.Sprintf(" --incus=%s --project=%s", incusURL.String(), c.IncusProject())}
 	if c.IsDebugging() {
 		flags = append(flags, " --debug")
 	}
@@ -729,6 +794,11 @@ func newHealthdUpCommand() *cli.Command {
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_BINARY"),
 			},
 			&cli.StringFlag{
+				Name:    "incus",
+				Usage:   `Connection URL of the incus to connect to from inside the sidecar. Empty = detect the ip from the bridge we are connected too`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_INCUS"),
+			},
+			&cli.StringFlag{
 				Name:    "network",
 				Usage:   "Incus bridge for healthd to use (default: auto-detect)",
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_NETWORK"),
@@ -766,7 +836,25 @@ func newHealthdUpCommand() *cli.Command {
 			}
 
 			if !healthdInUseByProject(p) {
-				return fmt.Errorf("no service in this project declares a healthcheck")
+				globalClient.LogError("No service in this project declares a healthcheck")
+				return errLogged.Wrap(errors.New("no service"))
+			}
+
+			healthdIncus, healthdNetwork := p.HealthdConfig()
+			if cmd.String("incus") != "" {
+				healthdIncus = cmd.String("incus")
+			}
+			if cmd.String("network") != "" {
+				healthdNetwork = cmd.String("network")
+			}
+
+			var incus *url.URL
+			if healthdIncus != "" {
+				incus, err = url.Parse(healthdIncus)
+				if err != nil {
+					globalClient.LogError("Parsing the URL given with `--incus` failed", "error", err)
+					return errLogged.Wrap(errors.New("parsing error"))
+				}
 			}
 
 			params := healthdParams{
@@ -775,7 +863,8 @@ func newHealthdUpCommand() *cli.Command {
 				image:       resolveHealthdImage(cmd.String("image")),
 				pull:        cmd.String("pull"),
 				reCreate:    cmd.Bool("recreate"),
-				network:     cmd.String("network"),
+				incus:       incus,
+				network:     healthdNetwork,
 				timeout:     cmd.Duration("timeout"),
 				stdout:      cmd.Root().Writer,
 				stderr:      cmd.Root().ErrWriter,

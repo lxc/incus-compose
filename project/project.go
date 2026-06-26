@@ -134,10 +134,10 @@ type Project struct {
 
 // xICProject is the typed view of the top-level x-incus-compose extension.
 type xICProject struct {
-	Network struct {
-		Project string `mapstructure:"project"`
-		Profile string `mapstructure:"profile"`
-	} `mapstructure:"network"`
+	Healthd struct {
+		Incus   string `mapstructure:"incus"`
+		Network string `mapstructure:"network"`
+	} `mapstructure:"healthd"`
 }
 
 // New creates a new Project.
@@ -179,14 +179,14 @@ func (p *Project) Load(ctx context.Context, opts ...LoadOption) (*Project, error
 	return p, nil
 }
 
-// NetworkConfig reads the top-level x-incus-compose.network extension.
+// HealthdConfig reads the top-level x-incus-compose.healthd extension.
 // Returns empty strings when the key is absent.
-func (p *Project) NetworkConfig() (project, profile string, err error) {
+func (p *Project) HealthdConfig() (incusURL, network string) {
 	if p.xic == nil {
-		return "", "", errors.New("x-incus-compose extension not found")
+		return "", ""
 	}
 
-	return p.xic.Network.Project, p.xic.Network.Profile, nil
+	return p.xic.Healthd.Incus, p.xic.Healthd.Network
 }
 
 // ProjectConfig reads `x-incus` extensions from the project and returns that.

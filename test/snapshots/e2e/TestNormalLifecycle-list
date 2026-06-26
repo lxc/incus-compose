@@ -1,5 +1,5 @@
-KIND      NAME     INCUSNAME      IMAGE                                         STATUS              ADDRESSES
-network   default  ic-a4wnsiuviy                                                Exists              
-instance  web1     web1-1         docker.io/nginxinc/nginx-unprivileged:alpine  Running / Starting  
-instance  web2     web2-1         docker.io/nginxinc/nginx-unprivileged:alpine  Running / Starting  
+KIND      NAME     INCUSNAME      IMAGE                                         STATUS   HEALTH   ADDRESSES
+network   default  ic-a4wnsiuviy                                                Exists            
+instance  web1     web1-1         docker.io/nginxinc/nginx-unprivileged:alpine  Running  Healthy  
+instance  web2     web2-1         docker.io/nginxinc/nginx-unprivileged:alpine  Running  Healthy  
 

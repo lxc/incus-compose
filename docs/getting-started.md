@@ -12,8 +12,9 @@ incus-compose lets you run your existing `compose.yaml` files directly on Incus 
 
 Switch to a https remote (required for healthchecking).
 
-incus-compose auto-detects the bridge healthd should use by the default profile's eth0.
-Use `--network-project` and `--network-profile` if your setup differs — see [Network Configuration](healthd.md#network-configuration).
+By default healthd uses the project's own network and reaches Incus over that
+bridge. Use `--healthd-network` / `--healthd-incus` if your setup differs — see
+[Network Configuration](healthd.md#network-configuration).
 
 1.) Get the IP address of your main bridge (incusbr0 or the one in the default profile).
 
