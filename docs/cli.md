@@ -13,6 +13,8 @@
 | `--remote`             | Incus remote (`INCUS_REMOTE`)                                                                                                                               |
 | `--ansi`               | Color output: never/always/auto (`INCUS_COMPOSE_ANSI`)                                                                                                      |
 | `--image-cache`        | Incus project used as image cache (`INCUS_COMPOSE_IMAGE_CACHE`, default: `default`), see [Environment Variables](environment-variables.md#incus-connection) |
+| `--storage-pool`       | Default storage pool for volumes (`INCUS_COMPOSE_STORAGE_POOL`, default: `detect` for auto-detection)                                                       |
+| `--workers`            | Number of concurrent workers (`INCUS_COMPOSE_WORKERS`, default: `10`)                                                                                       |
 | `--debug`              | Debug logging                                                                                                                                               |
 
 Supports [no-color.org](https://no-color.org/) via `NO_COLOR` env var.
@@ -34,7 +36,8 @@ incus-compose up [SERVICE...]
 | `--build`           | Rebuild build-configured service images before starting containers                                                                |
 | `--no-build`        | Do not build images; fail if a required built image is missing                                                                    |
 | `--no-deps`         | Don't start linked services (depends_on)                                                                                          |
-| `--timeout`         | Stop/start timeout seconds (default: 10)                                                                                          |
+| `--timeout`         | Stop/start timeout (default: 1m)                                                                                                  |
+| `--dependency-timeout` | Max time to wait for `service_healthy` depends_on (default: 5m; `0` = no limit)                                                |
 | `--scale`           | Scale service: `web=3` (repeatable)                                                                                               |
 | `--no-healthd`      | Don't create healthd sidecar for healthchecks                                                                                     |
 | `--healthd-image`   | Healthd OCI image (`INCUS_COMPOSE_HEALTHD_IMAGE`); `{version}` is replaced with the incus-compose version                          |
@@ -75,9 +78,10 @@ incus-compose down [SERVICE...]
 | Option         | Description                                                              |
 | -------------- | ------------------------------------------------------------------------ |
 | `--project`    | Remove the project (and volumes)                                         |
+| `--volumes`    | Alias for `--project` (docker compose compat)                            |
 | `--rmi`        | Remove images used by services: `local` or `all` (docker compose compat) |
 | `--images`     | Remove known images from the project (equivalent to `--rmi local`)       |
-| `--timeout`    | Stop timeout seconds (default: 10)                                       |
+| `--timeout`    | Stop timeout (default: 10s)                                              |
 | `--no-deps`    | Don't stop linked services (depends_on)                                  |
 | `--no-healthd` | Don't stop/remove healthd sidecar                                        |
 
@@ -91,7 +95,7 @@ incus-compose start [SERVICE...]
 
 | Option         | Description                                                       |
 | -------------- | ----------------------------------------------------------------- |
-| `--timeout`    | Start timeout seconds (default: 10)                               |
+| `--timeout`    | Start timeout (default: 1m)                                       |
 | `--with-deps`  | Also start linked services (depends_on) — incus-compose extension |
 | `--no-healthd` | Don't start healthd sidecar                                       |
 
@@ -105,7 +109,7 @@ incus-compose stop [SERVICE...]
 
 | Option         | Description                                                      |
 | -------------- | ---------------------------------------------------------------- |
-| `--timeout`    | Stop timeout seconds (default: 10)                               |
+| `--timeout`    | Stop timeout (default: 10s)                                      |
 | `--with-deps`  | Also stop linked services (depends_on) — incus-compose extension |
 | `--no-healthd` | Don't stop healthd sidecar                                       |
 
@@ -119,7 +123,7 @@ incus-compose restart [SERVICE...]
 
 | Option         | Description                                                         |
 | -------------- | ------------------------------------------------------------------- |
-| `--timeout`    | Stop/start timeout seconds (default: 10)                            |
+| `--timeout`    | Stop/start timeout (default: 1m)                                    |
 | `--with-deps`  | Also restart linked services (depends_on) — incus-compose extension |
 | `--no-healthd` | Don't stop/start healthd sidecar                                    |
 
@@ -282,3 +286,29 @@ This command is only available when both conditions are met:
 2. The binary file is writable by the current user
 
 When available, `self-update` checks the [lxc/incus-compose](https://github.com/lxc/incus-compose) GitHub releases for a newer version matching the current OS and architecture. If a newer version is found, the binary is replaced in-place. If you are already on the latest version, no action is taken.
+
+## Docker Compose command parity
+
+Most `docker compose` verbs map directly. Anything without a dedicated command is
+reachable through the `incus-compose incus` passthrough, which runs any `incus`
+command scoped to the current project.
+
+| `docker compose` | incus-compose                            | Notes                                          |
+| ---------------- | ---------------------------------------- | ---------------------------------------------- |
+| `up`             | `up`                                     |                                                |
+| `down`           | `down`                                   |                                                |
+| `start` / `stop` / `restart` | `start` / `stop` / `restart` |                                                |
+| `ps`             | `ps`                                     |                                                |
+| `logs`           | `logs`                                   |                                                |
+| `exec`           | `exec`                                   |                                                |
+| `build`          | `build`                                  |                                                |
+| `config`         | `config`                                 |                                                |
+| `pull`           | `up --pull always`                       | No standalone pull; refreshes from registry.   |
+| `images`         | `config --images`                        | Or `incus-compose incus image list`.           |
+| `cp`             | `incus-compose incus file push` / `pull` |                                                |
+| `top`            | `incus-compose incus top`                |                                                |
+| `events`         | `incus-compose incus monitor`            |                                                |
+| `kill`           | `stop --timeout 0`                       | Forces an immediate stop.                      |
+| `run`            | not implemented                          | Use `up` then `exec`.                          |
+| `pause` / `unpause` | not implemented                       | Use the `incus-compose incus` passthrough.     |
+| `port`           | not implemented                          | Published ports are shown in `config` / `ps`.  |

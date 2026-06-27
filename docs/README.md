@@ -16,3 +16,4 @@
 - [Architecture](architecture.md) - Resource-first design, layers, x-incus extensions
 - [Client Package](architecture/client/README.md) - Resources, Stack, WorkerPool, hooks
 - [Testing](architecture/testing.md) - just commands, test patterns, fixtures
+- [GitHub Actions Runner](github-runner.md) - Set up a self-hosted runner for the test suite

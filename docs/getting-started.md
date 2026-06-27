@@ -8,21 +8,36 @@ incus-compose lets you run your existing `compose.yaml` files directly on Incus 
 - Access to an Incus server (local or remote)
 - `podman` or `docker` for image building (see [Builds](build.md))
 
-### HTTPS Remote
+### Incus must listen on the network (required)
 
-Switch to a https remote (required for healthchecking).
-
-By default healthd uses the project's own network and reaches Incus over that
-bridge. Use `--healthd-network` / `--healthd-incus` if your setup differs — see
-[Network Configuration](healthd.md#network-configuration).
-
-1.) Either set incus to listen on all interfaces on port `8443`
+incus-compose requires the Incus server to listen on the network. Set
+`core.https_address`:
 
 ```bash
 incus config set core.https_address=:8443
 ```
 
-2.) Generate a cert and add it to the trust store as admin cert
+This is **not optional**, even for a local Incus reached over the Unix socket.
+incus-compose caches images in a separate Incus project and copies each one into
+your project on `up`. That cross-project copy uses Incus pull mode, which needs
+the server to be reachable over the network — the same daemon pulls the image
+from itself. Without `core.https_address` set, `up` fails with
+`The source server isn't listening on the network`, and health checks are
+silently skipped.
+
+Only the server setting matters here; the client connection itself can stay on
+the Unix socket (bind mounts still work that way — see
+[Compose Compatibility](compose-compatibility.md#local-vs-remote-incus)).
+
+### HTTPS Remote (for remote servers and health checks)
+
+Connect the client over HTTPS when Incus runs on another host, or when you use
+health checks — the `ic-healthd` sidecar reaches Incus over HTTPS. By default
+healthd uses the project's own network and reaches Incus over that bridge; use
+`--healthd-network` / `--healthd-incus` if your setup differs, see
+[Network Configuration](healthd.md#network-configuration).
+
+1. Generate a cert and add it to the trust store as admin cert
 
 ```bash
 # Generate and trust a certificate
@@ -30,7 +45,7 @@ incus remote generate-certificate
 incus config trust add-certificate ~/.config/incus/client.crt
 ```
 
-3.) Add it as remote and set it as default remote
+2. Add it as remote and set it as default remote
 
 ```bash
 incus remote add local-https <a-ip-of-your-host>
@@ -41,12 +56,15 @@ incus remote switch local-https
 
 #### Listen on a specific IP Address
 
-If you dont want to listen all interfaces you have to set the `INCUS_COMPOSE_HEALTHD_INCUS` environment variable or call up with `--healthd-incus`,
-see [doc](healthd.md#network-configuration)
+If you don't want to listen on all interfaces, set the
+`INCUS_COMPOSE_HEALTHD_INCUS` environment variable or call up with
+`--healthd-incus` — see [Network Configuration](healthd.md#network-configuration).
 
 ### OCI Image Remotes
 
-Add OCI image remotes to Incus, read [OCI Registry Cache](../oci-registry-cache/README.md) first as you wish.
+To pull images from a registry, add it as an Incus remote first. See
+[OCI Registry Cache](../examples/oci-registry-cache/README.md) for a caching
+mirror setup.
 
 ```bash
 incus remote add --protocol oci docker.io https://docker.io
@@ -234,10 +252,12 @@ API_PORT=3000
 
 ```yaml
 services:
-  web:
-    image: docker.io/nginx:alpine
+  api:
+    image: docker.io/myapp/api:latest
+    environment:
+      DATABASE_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "8080:80"
+      - "${API_PORT}:3000"
 ```
 
 Only variables defined in `.env` are available (not your shell environment).
@@ -327,7 +347,7 @@ This means:
 - No Docker Hub rate limits after initial pull
 - `incus-compose down` only removes project images, cache persists
 
-For a technical background about images see [architecture/client/image.md](docs/architecture/client/image.md)
+For a technical background about images see [architecture/client/image.md](architecture/client/image.md)
 
 The cache project is created automatically on first use.
 

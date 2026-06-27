@@ -4,7 +4,7 @@ The Image resource handles OCI image pulling and caching in Incus.
 
 ## 3-Stage Image Flow
 
-Images go through two stages:
+Images go through three stages:
 
 1. **Remote** - OCI registry (docker.io, ghcr.io)
 2. **Cache** - Local image store (the `default` project unless overridden via `--image-cache`)

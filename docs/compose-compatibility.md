@@ -96,7 +96,7 @@ Configure the ic-healthd sidecar's network and Incus endpoint with the top-level
 x-incus-compose:
   healthd:
     incus: https://:8443
-    network: default:default
+    network: :default
 
 services:
   web:
@@ -291,7 +291,7 @@ incus-compose incus storage volume move default/vol-library ext/vol-library
 incus-compose start
 ```
 
-Then update `x-incus-compose.pool` in your compose file and run `incus-compose up` to reattach.
+Then update `x-incus-compose.pool` in your compose file and run `incus-compose up --recreate` to reattach.
 
 Volumes are stored with a `vol-` prefix. Long names are hashed, so `my-very-long-volume-name` may become `vol-a1b2c3d4...`. Use `incus storage volume list` to find the actual name before moving:
 
@@ -299,7 +299,7 @@ Volumes are stored with a `vol-` prefix. Long names are hashed, so `my-very-long
 incus-compose incus storage volume list default
 ```
 
-Then update `x-incus-compose.pool` in your compose file and run `incus-compose up` to reattach.
+Then update `x-incus-compose.pool` in your compose file and run `incus-compose up --recreate` to reattach.
 
 ### Environment
 
@@ -403,27 +403,47 @@ Not supported:
 - `links` - Legacy linking (use networks)
 - `external_links` - Cross-project links
 
+## Local vs Remote Incus
+
+> **The Incus server must have `core.https_address` set in all cases** — even for
+> a local Unix-socket client. Image caching copies images between Incus projects
+> using pull mode, which requires the server to be reachable over the network.
+> Without it, `up` fails with `The source server isn't listening on the network`.
+> See [Getting Started](getting-started.md#incus-must-listen-on-the-network-required).
+
+With that in place, a few behaviors still depend on whether incus-compose talks
+to a local Incus over the Unix socket or to a remote daemon over HTTPS:
+
+| Feature              | Local (Unix socket)              | Remote (HTTPS)                                   |
+| -------------------- | -------------------------------- | ------------------------------------------------ |
+| Bind mounts          | Supported                        | Not supported — use named volumes                |
+| Health checks        | Set `--healthd-incus` explicitly | Auto (reuses the connection's port and bridge IP) |
+
+Bind mounts read the host filesystem the daemon runs on, so they only work when
+that host is your machine. For health checks, ic-healthd reaches Incus over
+HTTPS; over a Unix socket there is no port to reuse, so the endpoint must be set
+explicitly — see [Network Configuration](healthd.md#network-configuration).
+
 ## Behavioral Differences
 
 ### Images
 
-**Registry prefix required:**
+**Registries must be Incus remotes:**
 
-Docker allows short image names, incus-compose requires the registry:
-
-```yaml
-# Docker Compose
-image: nginx:alpine
-
-# incus-compose
-image: docker.io/nginx:alpine
-```
-
-Registries must be configured as Incus remotes first:
+Image names work just like Docker — a bare `nginx:alpine` resolves to
+`docker.io/library/nginx:alpine`, and an explicit registry prefix
+(`ghcr.io/...`) is honored as-is. The difference is that the registry must be
+configured as an Incus remote first:
 
 ```bash
 incus remote add --protocol oci docker.io https://docker.io
 incus remote add --protocol oci ghcr.io https://ghcr.io
+```
+
+```yaml
+# Both work, identical to Docker Compose
+image: nginx:alpine            # resolves to docker.io/library/nginx:alpine
+image: ghcr.io/myorg/app:v1    # explicit registry
 ```
 
 **Global cache:**

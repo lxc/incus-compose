@@ -119,6 +119,11 @@ var (
 	// ErrConnectionFailed indicates a connection attempt failed.
 	ErrConnectionFailed = NewError("connection failed")
 
+	// ErrServerNotListening indicates the Incus server has no core.https_address
+	// set. incus-compose copies cached images between projects using pull mode,
+	// which needs the server reachable over the network.
+	ErrServerNotListening = NewError("the incus server is not listening on the network (core.https_address is not set); incus-compose needs it for image caching, set it with `incus config set core.https_address=:8443`, see https://github.com/lxc/incus-compose/blob/main/docs/getting-started.md")
+
 	// ErrAborted indicates an operation was aborted (e.g., by BeforeAny hook).
 	ErrAborted = NewError("operation aborted")
 

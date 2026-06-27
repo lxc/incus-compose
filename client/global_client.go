@@ -353,6 +353,18 @@ func (c *GlobalClient) Connect() error {
 
 	c.logger.Debug("Connected", "url", c.config.URL)
 
+	// Image caching copies images between Incus projects using pull mode, which
+	// needs the server reachable over the network. Fail early with a clear
+	// message instead of a cryptic copy error later.
+	server, _, err := c.incus.GetServer()
+	if err != nil {
+		return ErrConnectionFailed.Wrap(err)
+	}
+
+	if server.Config["core.https_address"] == "" {
+		return ErrServerNotListening
+	}
+
 	if c.config.DefaultStoragePool == "detect" {
 		if err = c.detectStoragePool(); err != nil {
 			return err
@@ -817,4 +829,23 @@ func (c *GlobalClient) SameHost() error {
 	}
 
 	return errors.New("not on the same host")
+}
+
+// HTTPSAddress returns the core.https_address of the incus server.
+func (c *GlobalClient) HTTPSAddress() (string, error) {
+	if !c.connected {
+		return "", ErrDisconnected
+	}
+
+	server, _, err := c.incus.GetServer()
+	if err != nil {
+		return "", ErrConnectionFailed.Wrap(err)
+	}
+
+	a, ok := server.Config["core.https_address"]
+	if ok && a != "" {
+		return a, nil
+	}
+
+	return "", NewError("core.https_address is not set on the server")
 }

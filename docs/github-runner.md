@@ -17,8 +17,8 @@ registration token from GitHub.
 ## 1. Create the runner container — _host_
 
 ```bash
-incus --project=ic-gitlab-runner launch images:debian/trixie runner-local -c security.privileged=true -c security.nesting=true
-incus --project=ic-gitlab-runner exec runner-local /bin/bash
+incus --project=ic-github-runner launch images:debian/trixie runner-local -c security.privileged=true -c security.nesting=true
+incus --project=ic-github-runner exec runner-local /bin/bash
 ```
 
 The `exec` drops you into a root shell inside the container; the next steps run

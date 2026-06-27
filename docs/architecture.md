@@ -74,15 +74,16 @@ GlobalClient
               └── PostDevices (post-creation)
 ```
 
-## Image Caching (2-Stage Flow)
+## Image Caching (3-Stage Flow)
 
-Images go through two stages:
+Images go through three stages:
 
 1. **Remote** - OCI registry (docker.io, ghcr.io)
 2. **Cache** - Incus `default` project (configurable via `INCUS_COMPOSE_IMAGE_CACHE`)
+3. **Project** - per-project copy used by the instance
 
 ```
-Registry ──pull──> Cache ──use──> Instance
+Registry ──pull──> Cache ──copy──> Project ──use──> Instance
            (slow)
 ```
 
@@ -184,7 +185,7 @@ Compose-specific transformations and conveniences handled by incus-compose:
 x-incus-compose:
   healthd:
     incus: https://:8443
-    network: default:default
+    network: :default
 
 services:
   app:
@@ -265,5 +266,5 @@ See the [docs index](README.md) for all user and contributor docs. Closely relat
 
 ## Need Help?
 
-- **Bugs/Features**: Open an issue on GitLab
+- **Bugs/Features**: Open an issue on [GitHub](https://github.com/lxc/incus-compose/issues)
 - **Questions**: Check the docs above or open a discussion
