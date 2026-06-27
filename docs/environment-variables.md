@@ -84,21 +84,21 @@ Every global flag can be set via an environment variable. Flags given on the com
 
 ### Project and Files
 
-| Variable                          | Flag                         | Description                                                  |
-| --------------------------------- | ---------------------------- | ------------------------------------------------------------ |
-| `INCUS_COMPOSE_FILE`              | `--file`, `-f`               | Compose configuration files (comma-separated for multiple)   |
-| `INCUS_COMPOSE_PROJECT_NAME`      | `--project-name`, `-p`       | Project name                                                 |
-| `INCUS_COMPOSE_PROJECT_DIRECTORY` | `--project-directory`, `-pd` | Alternate working directory                                  |
-| `INCUS_COMPOSE_ENV_FILE`          | `--env-file`                 | Alternative environment files (comma-separated for multiple) |
-| `INCUS_COMPOSE_PROFILES`          | `--profile`                  | Profiles to enable (comma-separated for multiple)            |
+| Variable                          | Flag                        | Description                                                  |
+| --------------------------------- | --------------------------- | ------------------------------------------------------------ |
+| `INCUS_COMPOSE_FILE`              | `--file`, `-f`              | Compose configuration files (comma-separated for multiple)   |
+| `INCUS_COMPOSE_PROJECT_NAME`      | `--project-name`, `-p`      | Project name                                                 |
+| `INCUS_COMPOSE_PROJECT_DIRECTORY` | `--project-directory`, `-P` | Working directory                                            |
+| `INCUS_COMPOSE_ENV_FILE`          | `--env-file`                | Alternative environment files (comma-separated for multiple) |
+| `INCUS_COMPOSE_PROFILES`          | `--profile`                 | Profiles to enable (comma-separated for multiple)            |
 
 ### Incus Connection
 
-| Variable                        | Flag                | Description                                                       |
-| ------------------------------- | ------------------- | ----------------------------------------------------------------- |
-| `INCUS_REMOTE`                  | `--remote`          | Incus remote name from CLI config (e.g., `local`, `myserver`)     |
-| `INCUS_COMPOSE_IMAGE_CACHE`     | `--image-cache`     | Incus project for image cache (default: `default`)                |
-| `INCUS_COMPOSE_STORAGE_POOL`    | `--storage-pool`    | Default storage pool (default: `detect`)                          |
+| Variable                     | Flag             | Description                                                   |
+| ---------------------------- | ---------------- | ------------------------------------------------------------- |
+| `INCUS_REMOTE`               | `--remote`       | Incus remote name from CLI config (e.g., `local`, `myserver`) |
+| `INCUS_COMPOSE_IMAGE_CACHE`  | `--image-cache`  | Incus project for image cache (default: `default`)            |
+| `INCUS_COMPOSE_STORAGE_POOL` | `--storage-pool` | Default storage pool (default: `detect`)                      |
 
 ### Display and Debugging
 
@@ -111,11 +111,11 @@ Every global flag can be set via an environment variable. Flags given on the com
 
 ### Healthd
 
-| Variable                        | Flag                | Description                                                                       |
+| Variable                        | Flag                | Description                                                                      |
 | ------------------------------- | ------------------- | -------------------------------------------------------------------------------- |
-| `INCUS_COMPOSE_HEALTHD_IMAGE`   | `--healthd-image`   | Healthd OCI image; `{version}` is replaced with the incus-compose version       |
-| `INCUS_COMPOSE_HEALTHD_BINARY`  | `--healthd-binary`  | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)  |
-| `INCUS_COMPOSE_HEALTHD_INCUS`   | `--healthd-incus`   | Incus API URL healthd connects to (default: bridge IP + client port)            |
+| `INCUS_COMPOSE_HEALTHD_IMAGE`   | `--healthd-image`   | Healthd OCI image; `{version}` is replaced with the incus-compose version        |
+| `INCUS_COMPOSE_HEALTHD_BINARY`  | `--healthd-binary`  | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)   |
+| `INCUS_COMPOSE_HEALTHD_INCUS`   | `--healthd-incus`   | Incus API URL healthd connects to (default: bridge IP + client port)             |
 | `INCUS_COMPOSE_HEALTHD_NETWORK` | `--healthd-network` | Network healthd attaches to: `<project>:<network>`, a bridge, or empty (default) |
 
 ### Examples
