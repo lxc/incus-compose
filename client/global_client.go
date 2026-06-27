@@ -818,3 +818,22 @@ func (c *GlobalClient) SameHost() error {
 
 	return errors.New("not on the same host")
 }
+
+// HTTPSAddress returns the core.https_address of the incus server.
+func (c *GlobalClient) HTTPSAddress() (string, error) {
+	if !c.connected {
+		return "", ErrDisconnected
+	}
+
+	server, _, err := c.incus.GetServer()
+	if err != nil {
+		return "", ErrConnectionFailed.Wrap(err)
+	}
+
+	a, ok := server.Config["core.https_address"]
+	if ok && a != "" {
+		return a, nil
+	}
+
+	return "", NewError("core.https_address is not set on the server")
+}

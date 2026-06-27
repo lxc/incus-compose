@@ -116,24 +116,39 @@ func healthdRevokeCert(c *client.Client) error {
 
 // healthdInUseByProject reports whether any service in the project requires ic-healthd:
 // a declared healthcheck, a non-default restart policy, or a service_healthy depends_on.
-func healthdInUseByProject(p *project.Project) bool {
+func healthdInUseByProject(gc *client.GlobalClient, p *project.Project) bool {
+	inUse := false
+
+SERVICES_LOOP:
 	for _, svc := range p.Services {
 		// https://github.com/compose-spec/compose-spec/blob/main/05-services.md#restart
 		if svc.Restart != "" && svc.Restart != "no" {
-			return true
+			inUse = true
+			break SERVICES_LOOP
 		}
 
 		if svc.HealthCheck != nil {
-			return true
+			inUse = true
+			break SERVICES_LOOP
 		}
 
 		for _, dep := range svc.DependsOn {
 			if dep.Condition == types.ServiceConditionHealthy {
-				return true
+				inUse = true
+				break SERVICES_LOOP
 			}
 		}
 	}
-	return false
+
+	if inUse {
+		_, err := gc.HTTPSAddress()
+		if err != nil {
+			gc.LogWarn("Your incus isn't listening on the network, skipping healthd support, see: https://github.com/lxc/incus-compose/blob/main/docs/getting-started.md")
+			inUse = false
+		}
+	}
+
+	return inUse
 }
 
 // healthdGetResources creates the image and volume resources for healthd and returns a
@@ -838,7 +853,7 @@ func newHealthdUpCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			if !healthdInUseByProject(p) {
+			if !healthdInUseByProject(globalClient, p) {
 				globalClient.LogError("No service in this project declares a healthcheck")
 				return errLogged.Wrap(errors.New("no service"))
 			}

@@ -142,7 +142,7 @@ func newUpCommand() *cli.Command {
 			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
 
 			usesHealthd := !cmd.Bool("no-healthd")
-			if !healthdInUseByProject(p) {
+			if usesHealthd && !healthdInUseByProject(globalClient, p) {
 				usesHealthd = false
 			}
 
