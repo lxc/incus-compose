@@ -213,7 +213,7 @@ func newRootCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:    "project-directory",
-				Aliases: []string{"pd"},
+				Aliases: []string{"P"},
 				Usage:   `Specify an alternate working directory (default: the path of the, first specified, Compose file)`,
 				Sources: cli.EnvVars("INCUS_COMPOSE_PROJECT_DIRECTORY"),
 			},
