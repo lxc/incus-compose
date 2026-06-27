@@ -1,0 +1,7 @@
+name: with-bind-mounts
+
+services:
+  web:
+    image: docker.io/library/caddy:2.11.4-alpine
+    volumes:
+      - ./caddy:/etc/caddy:ro

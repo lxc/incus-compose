@@ -93,7 +93,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		ServiceName:      service.Name,
 		Full:             options.Full,
 		Resources:        slices.Clone(resources),
-		Config:           config,
+		Extensions:       config,
 		Devices:          devices,
 		PostStartDevices: postStartDevices,
 		Secrets:          secrets,
@@ -481,14 +481,33 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 			}
 		}
 
+		extensions := volumeXIncusExtensions(p.Volumes[cVol.Source].Extensions)
+
+		// Inline x-incus on the volume entry takes precedence over the named
+		// volume definition (this is the only place binds can set it).
+		for k, v := range volumeXIncusExtensions(cVol.Extensions) {
+			if extensions == nil {
+				extensions = map[string]string{}
+			}
+			extensions[k] = v
+		}
+
+		shifted := true
+		es, ok := extensions["security.shifted"]
+		if ok && es != "true" {
+			shifted = false
+		}
+
+		c.LogDebug("Shifted is", "shifted", shifted, "extensions", extensions)
+
 		switch cVol.Type {
 		case "volume":
 			volDef := p.Volumes[cVol.Source]
 			volConfig := &client.StorageVolumeConfig{
-				Shifted:       true,
+				Shifted:       shifted,
 				ImageResource: image,
 				Pool:          volumeXIncusComposePool(volDef),
-				ExtraConfig:   volumeXIncusExtensions(volDef),
+				Extensions:    extensions,
 			}
 
 			v, err := c.Resource(client.KindStorageVolume, cVol.Source, volConfig)
@@ -508,7 +527,7 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 					StorageVolumeConfig: volConfig,
 					Source:              v.IncusName(),
 					Path:                cVol.Target,
-					Shift:               true,
+					Shift:               shifted,
 				},
 			}
 
@@ -538,7 +557,7 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 					devName := "bind-seed-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-10)
 
 					volConfig := &client.StorageVolumeConfig{
-						Shifted:       true,
+						Shifted:       shifted,
 						ImageResource: image,
 						HostPath:      cVol.Source,
 					}
@@ -559,7 +578,7 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 							StorageVolumeConfig: volConfig,
 							Source:              v.IncusName(),
 							Path:                cVol.Target,
-							Shift:               true,
+							Shift:               shifted,
 						},
 					}
 
@@ -588,7 +607,7 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 					Disk: client.InstanceDeviceDiskConfig{
 						Source: cVol.Source,
 						Path:   cVol.Target,
-						Shift:  true,
+						Shift:  shifted,
 					},
 				}
 
@@ -849,12 +868,13 @@ func networkExtensions(networkDef types.NetworkConfig) map[string]string {
 	return result
 }
 
-// volumeXIncusExtensions extracts the x-incus extension map from a compose volume
-// definition and returns it as a flat map[string]string for use as Incus volume
-// config. Keys and values are taken verbatim from the x-incus YAML block.
-func volumeXIncusExtensions(volDef types.VolumeConfig) map[string]string {
+// volumeXIncusExtensions extracts the x-incus extension map from a compose
+// volume definition or inline volume entry and returns it as a flat
+// map[string]string for use as Incus volume config. Keys and values are taken
+// verbatim from the x-incus YAML block.
+func volumeXIncusExtensions(ext types.Extensions) map[string]string {
 	var raw map[string]any
-	ok, err := volDef.Extensions.Get("x-incus", &raw)
+	ok, err := ext.Get("x-incus", &raw)
 	if !ok || err != nil || len(raw) == 0 {
 		return nil
 	}

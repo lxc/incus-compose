@@ -172,7 +172,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 	instanceConfig := &client.InstanceConfig{
 		Image: imgRes.IncusName(),
 		Type:  incusApi.InstanceTypeContainer,
-		Config: map[string]string{
+		Extensions: map[string]string{
 			"limits.cpu":                      defaultHealthdCPULimit,
 			"limits.memory":                   defaultHealthdMemoryLimit,
 			client.HealthKeyPrefix + "test":   "[\"NONE\"]",
@@ -277,7 +277,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			incusURL = u
 		}
 
-		inst.Config.Config["user.healthd.incusurl"] = incusURL.String()
+		inst.Config.Extensions["user.healthd.incusurl"] = incusURL.String()
 
 		token, err := healthdCreateToken(c)
 		if err != nil {
@@ -325,7 +325,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			}
 		} else {
 			// c.LogDebug("Setting entrypoint")
-			inst.Config.Config["oci.entrypoint"] = "/usr/local/bin/ic-healthd run" + strings.Join(flags, " ")
+			inst.Config.Extensions["oci.entrypoint"] = "/usr/local/bin/ic-healthd run" + strings.Join(flags, " ")
 		}
 
 		return err
@@ -337,7 +337,7 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 		}
 
 		if params.binary != "" {
-			flags := []string{fmt.Sprintf(" --incus=%s --project=%s", inst.Config.Config["user.healthd.incusurl"], c.IncusProject())}
+			flags := []string{fmt.Sprintf(" --incus=%s --project=%s", inst.Config.Extensions["user.healthd.incusurl"], c.IncusProject())}
 			if c.IsDebugging() {
 				flags = append(flags, " --debug")
 			}

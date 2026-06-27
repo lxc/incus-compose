@@ -477,6 +477,55 @@ func TestInstanceVolumeDevices(t *testing.T) {
 		assert.Len(t, resources, 1)
 	})
 
+	t.Run("named volume with x-incus extensions", func(t *testing.T) {
+		t.Parallel()
+		p := &types.Project{Volumes: types.Volumes{"data": {
+			Extensions: types.Extensions{"x-incus": map[string]any{"size": "5GiB"}},
+		}}}
+		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
+			{Type: "volume", Source: "data", Target: "/data"},
+		}}
+
+		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, opts)
+		require.NoError(t, err)
+		require.Len(t, devices, 1)
+		require.Len(t, resources, 1)
+		require.NotNil(t, devices[0].Config.Disk.StorageVolumeConfig)
+		assert.Equal(t, "5GiB", devices[0].Config.Disk.StorageVolumeConfig.Extensions["size"])
+	})
+
+	t.Run("named volume with security.shifted=false", func(t *testing.T) {
+		t.Parallel()
+		p := &types.Project{Volumes: types.Volumes{"data": {
+			Extensions: types.Extensions{"x-incus": map[string]any{"security.shifted": "false"}},
+		}}}
+		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
+			{Type: "volume", Source: "data", Target: "/data"},
+		}}
+
+		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, opts)
+		require.NoError(t, err)
+		require.Len(t, devices, 1)
+		require.Len(t, resources, 1)
+		require.NotNil(t, devices[0].Config.Disk.StorageVolumeConfig)
+		assert.False(t, devices[0].Config.Disk.StorageVolumeConfig.Shifted)
+		assert.Equal(t, "false", devices[0].Config.Disk.StorageVolumeConfig.Extensions["security.shifted"])
+	})
+
+	t.Run("bind mount with security.shifted=false", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
+			{Type: "bind", Source: dir, Target: "/mnt", Extensions: types.Extensions{"x-incus": map[string]any{"security.shifted": "false"}}},
+		}}
+
+		devices, _, _, err := instanceVolumeDevices(c, &types.Project{}, service, nil, opts)
+		require.NoError(t, err)
+		require.Len(t, devices, 1)
+		assert.Equal(t, client.InstanceDeviceTypeDisk, devices[0].Config.DeviceType)
+		assert.False(t, devices[0].Config.Disk.Shift)
+	})
+
 	t.Run("tmpfs", func(t *testing.T) {
 		t.Parallel()
 		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
