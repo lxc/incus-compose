@@ -1,0 +1,15 @@
+services:
+  web:
+    x-incus:
+      limits.cpu: 1
+      raw.lxc: |-
+        lxc.mount.entry = /run/media/r3j0/Ventoy data/ none rbind,create=dir,idmap=container 0 0
+
+    networks:
+      default:
+        ipv4_address: 10.135.32.17
+
+networks:
+  default:
+    x-incus:
+      ipv4.address: 10.135.32.1/24

@@ -1,0 +1,4 @@
+10.135.32.17:80 {
+  root /data
+  file_server browse
+}
