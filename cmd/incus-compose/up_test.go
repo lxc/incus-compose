@@ -29,7 +29,7 @@ func TestResolveHealthdImage(t *testing.T) {
 	defer func() { version.Version = oldVersion }()
 
 	assert.Equal(t,
-		"ghcr.io/lxc/incus-compose/ic-healthd:v1.2.3",
+		"ghcr.io/lxc/incus-compose/ic-healthd:1.2.3",
 		resolveHealthdImage("ghcr.io/lxc/incus-compose/ic-healthd:{version}"),
 	)
 	assert.Equal(t, "custom:latest", resolveHealthdImage("custom:latest"))
