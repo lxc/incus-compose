@@ -18,7 +18,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	incus "github.com/lxc/incus/v7/client"
@@ -32,8 +31,7 @@ type Runner struct {
 	config *Config
 	conn   incus.InstanceServer
 
-	knownMu       sync.Mutex
-	knownCheckers map[string]struct{}
+	running []context.CancelFunc
 }
 
 // NewRunner creates a new runner with the given configuration.
@@ -43,8 +41,8 @@ func NewRunner(cfg *Config) (*Runner, error) {
 	}
 
 	return &Runner{
-		config:        cfg,
-		knownCheckers: map[string]struct{}{},
+		config:  cfg,
+		running: []context.CancelFunc{},
 	}, nil
 }
 
@@ -65,6 +63,7 @@ func (r *Runner) Run(ctx context.Context, reload <-chan struct{}) error {
 
 	for {
 		r.startCheckers(ctx)
+		slog.Info("health daemon running", "instances", len(r.running))
 
 		select {
 		case <-ctx.Done():
@@ -126,30 +125,19 @@ func (r *Runner) startCheckers(ctx context.Context) {
 		slog.Warn("instance discovery had errors", "error", err)
 	}
 
-	for name, inst := range instances {
-		r.knownMu.Lock()
-		_, known := r.knownCheckers[name]
-		if !known {
-			r.knownCheckers[name] = struct{}{}
-		}
-		r.knownMu.Unlock()
-
-		if known {
-			continue
-		}
-
-		checker := NewChecker(r.conn, name, inst)
-		go func() {
-			defer func() {
-				r.knownMu.Lock()
-				delete(r.knownCheckers, name)
-				r.knownMu.Unlock()
-			}()
-			checker.Run(ctx, true, false)
-		}()
+	for _, cancel := range r.running {
+		cancel()
 	}
 
-	slog.Info("health daemon running", "instances", len(instances))
+	for name, inst := range instances {
+		chkCtx, cancel := context.WithCancel(ctx)
+		checker := NewChecker(r.conn, name, inst)
+		go func() {
+			checker.Run(chkCtx, true, false)
+		}()
+
+		r.running = append(r.running, cancel)
+	}
 }
 
 // connect returns an authenticated Incus client.
