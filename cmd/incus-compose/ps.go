@@ -205,7 +205,7 @@ func newPsCommand() *cli.Command {
 					name := inst.Name
 					status := "Unknown"
 
-					if inst.Config["user.internal"] == "true" {
+					if inst.Config[client.HealthKeyPrefix+"daemon"] == "true" {
 						continue
 					}
 
