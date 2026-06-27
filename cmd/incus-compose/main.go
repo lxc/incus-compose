@@ -119,12 +119,12 @@ func initLogger(debug bool, noColor bool) {
 type clientKey struct{}
 
 func resolveHealthdImage(image string) string {
-	version := version.Current()
-	if version[0] == 'v' {
-		version = version[1:]
+	v := version.Current()
+	if v[0] == 'v' {
+		v = v[1:]
 	}
 
-	return strings.ReplaceAll(image, "{version}", version)
+	return strings.ReplaceAll(image, "{version}", v)
 }
 
 func clientFromContext(ctx context.Context) (*client.GlobalClient, error) {
