@@ -110,10 +110,48 @@ func TestSeededBindMounts(t *testing.T) {
 	})
 }
 
+func TestBindMountNoShift(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+
+	pn := t.Name()
+	compose := "../../test/fixtures/with-bind-mount-no-shift/compose.yaml"
+	ctx := context.Background()
+
+	gc, err := client.NewTestClient(ctx)
+	if err != nil {
+		t.Skip(err.Error())
+	}
+
+	skipNotSameHost(t, gc)
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	c, err := gc.EnsureProject(pn)
+	require.NoError(t, err)
+
+	// With security.shifted=false the bind mount is not id-shifted, so the host
+	// file shows up as nobody (65534) inside the unprivileged container.
+	err = pollContainerExec(c, "web-1",
+		[]string{"ls", "-ln", "/usr/share/nginx/html/index.html"}, "65534", 60*time.Second)
+	require.NoError(t, err)
+}
+
 // pollContainerHTTP execs wget inside the named instance until the response
-// body contains want or timeout elapses. Checks before sleeping so the last
-// attempt is never skipped.
+// body contains want or timeout elapses.
 func pollContainerHTTP(c *client.Client, instance, want string, timeout time.Duration) error {
+	return pollContainerExec(c, instance, []string{"wget", "-q", "-O", "-", "http://127.0.0.1:8080/"}, want, timeout)
+}
+
+// pollContainerExec runs cmd inside the named instance until stdout contains
+// want or timeout elapses. Checks before sleeping so the last attempt is never
+// skipped.
+func pollContainerExec(c *client.Client, instance string, cmd []string, want string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	var lastOut string
 	var lastErr error
@@ -123,7 +161,7 @@ func pollContainerHTTP(c *client.Client, instance, want string, timeout time.Dur
 		if err != nil {
 			return err
 		}
-		out, err := containerGet(conn, instance, "http://127.0.0.1:8080/")
+		out, err := containerExec(conn, instance, cmd)
 		if err == nil && strings.Contains(out, want) {
 			return nil
 		}
@@ -138,10 +176,10 @@ func pollContainerHTTP(c *client.Client, instance, want string, timeout time.Dur
 	return fmt.Errorf("timed out after %s: last output=%q: %w", timeout, lastOut, lastErr)
 }
 
-// containerGet runs wget inside the container and returns stdout.
-func containerGet(conn *incusClient.ProtocolIncus, instance, url string) (string, error) {
+// containerExec runs cmd inside the container and returns stdout.
+func containerExec(conn *incusClient.ProtocolIncus, instance string, cmd []string) (string, error) {
 	req := incusApi.InstanceExecPost{
-		Command:     []string{"wget", "-q", "-O", "-", url},
+		Command:     cmd,
 		WaitForWS:   true,
 		Interactive: false,
 	}

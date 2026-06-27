@@ -34,8 +34,8 @@ type StorageVolumeConfig struct {
 	// HostPath, when set, seeds the volume with the local directory contents on first creation.
 	HostPath string
 
-	// ExtraConfig contains additional volume configuration options.
-	ExtraConfig map[string]string
+	// Extensions contains additional volume configuration options.
+	Extensions map[string]string
 }
 
 // GetConfig returns the configuration.
@@ -80,6 +80,11 @@ func newStorageVolume(c *Client, name string, configGetter Config) (*StorageVolu
 	// Set defaults
 	if config.Pool == "" {
 		config.Pool = c.Config().DefaultStoragePool
+	}
+
+	shifted, ok := config.Extensions["security.shifted"]
+	if ok && shifted != "true" {
+		config.Shifted = false
 	}
 
 	vol := &StorageVolume{
@@ -206,13 +211,7 @@ func (r *StorageVolume) Start(_ context.Context, _ ...Option) error {
 }
 
 func (r *StorageVolume) create() error {
-	var config map[string]string
-
-	if r.Config.ExtraConfig != nil {
-		config = maps.Clone(r.Config.ExtraConfig)
-	} else {
-		config = map[string]string{}
-	}
+	config := map[string]string{}
 
 	if r.Config.Shifted {
 		if r.Config.ImageResource != nil {
@@ -238,6 +237,11 @@ func (r *StorageVolume) create() error {
 			Description: fmt.Sprintf(r.client.Config().DescriptionFormat, r.Name()),
 			Config:      config,
 		},
+	}
+
+	// Set users config afterwards this allows them to override the above.
+	if r.Config.Extensions != nil {
+		maps.Copy(config, r.Config.Extensions)
 	}
 
 	// r.client.LogDebug("creating volume", "pool", r.Config.Pool, "volume", r.incusName)

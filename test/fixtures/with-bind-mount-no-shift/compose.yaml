@@ -1,0 +1,14 @@
+services:
+  web:
+    image: docker.io/nginxinc/nginx-unprivileged:alpine-slim
+    environment:
+      NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE: 1
+    x-incus:
+      limits.cpu: 1
+    volumes:
+      - type: bind
+        source: ./html
+        target: /usr/share/nginx/html
+        read_only: true
+        x-incus:
+          security.shifted: "false"

@@ -73,8 +73,8 @@ type InstanceConfig struct {
 	// Map key is the target path in the instance.
 	Files map[string]InstanceFile
 
-	// Config contains Incus instance configuration options.
-	Config map[string]string
+	// Extensions contains Incus instance configuration options.
+	Extensions map[string]string
 
 	// ExtraDevices contains additional raw device configurations.
 	ExtraDevices map[string]map[string]string
@@ -145,8 +145,8 @@ func newInstance(c *Client, name string, configGetter Config) (*Instance, error)
 	if config.Type == "" {
 		config.Type = incusApi.InstanceTypeContainer
 	}
-	if config.Config == nil {
-		config.Config = make(map[string]string)
+	if config.Extensions == nil {
+		config.Extensions = make(map[string]string)
 	}
 
 	inst := &Instance{
@@ -372,15 +372,15 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 		return ErrNotFound.WithText("getting image").Wrap(err)
 	}
 
-	postConfig := make(map[string]string, len(r.Config.Config))
-	maps.Copy(postConfig, r.Config.Config)
+	config := make(map[string]string, len(r.Config.Extensions))
+	maps.Copy(config, r.Config.Extensions)
 
 	// Store the image name
-	postConfig["user.image_alias"] = image.IncusName()
+	config["user.image_alias"] = image.IncusName()
 
 	if options.Healthd {
 		// Healthd should wait until we allow it to work with it.
-		postConfig[HealthStoppedKey] = "true"
+		config[HealthStoppedKey] = "true"
 	}
 
 	// Create instance request
@@ -393,7 +393,7 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 		},
 		InstancePut: incusApi.InstancePut{
 			Description: fmt.Sprintf(r.client.Config().DescriptionFormat, r.Name()),
-			Config:      postConfig,
+			Config:      config,
 			Devices:     devices,
 		},
 	}

@@ -125,7 +125,7 @@ func TestStorageVolumeEnsure(t *testing.T) {
 		{
 			name:   "extra config",
 			volume: "test-extra",
-			config: &StorageVolumeConfig{ExtraConfig: map[string]string{"size": "5GiB"}},
+			config: &StorageVolumeConfig{Extensions: map[string]string{"size": "5GiB"}},
 			opts:   []Option{OptionCreate()},
 			validate: func(t *testing.T, r Resource) {
 				t.Helper()

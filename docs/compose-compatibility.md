@@ -249,6 +249,23 @@ volumes:
 
 Any [Incus storage volume option](https://linuxcontainers.org/incus/docs/main/reference/storage_volumes/) is accepted.
 
+The `x-incus` block also works inline on a volume entry, which is the only way to
+set options on a **bind mount** (a bind's source is a path, not a named volume):
+
+```yaml
+services:
+  web:
+    volumes:
+      - type: bind
+        source: ./html
+        target: /usr/share/nginx/html
+        x-incus:
+          security.shifted: "false"
+```
+
+An inline `x-incus` block takes precedence over the matching named volume
+definition. See [Volume Permissions](#volume-permissions) for `security.shifted`.
+
 #### x-incus-compose Volume Pool
 
 Set `x-incus-compose.pool` on a named volume to place it in a specific Incus storage pool. Without this the client's default storage pool is used.
@@ -505,6 +522,34 @@ Network names are limited to 13 chars for dhclient compatibility.
 - Volumes automatically shifted to match container's UID/GID
 - Reads `oci.uid` and `oci.gid` from image
 - Files appear with correct ownership inside container
+
+**Disabling shifting (`security.shifted: "false"`):**
+
+Shifting maps host files to the container's UID/GID so they appear correctly
+owned. Set `security.shifted: "false"` via `x-incus` to turn it off, e.g. for a
+read-only bind mount you don't want re-owned. Without shifting, the host file
+keeps its raw host UID/GID inside the container, which for an unprivileged
+container outside the idmap range shows up as `nobody` (65534):
+
+```yaml
+services:
+  web:
+    volumes:
+      - type: bind
+        source: ./html
+        target: /usr/share/nginx/html
+        read_only: true
+        x-incus:
+          security.shifted: "false"
+```
+
+```console
+$ ls -ln /usr/share/nginx/html/index.html
+-rw-r--r-- 1 65534 65534 18 ... index.html
+```
+
+For a bind mount this must be set inline on the volume entry (see
+[x-incus Volume Extensions](#x-incus-volume-extensions)).
 
 ### Instance Naming
 
