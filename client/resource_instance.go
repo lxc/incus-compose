@@ -772,7 +772,7 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 	err := retry.New(
 		retry.Context(ctx),
 		retry.Attempts(6),
-		retry.Delay(500*time.Millisecond),
+		retry.Delay(2*time.Second),
 	).Do(func() error {
 		err := r.fetch()
 		if err != nil {
@@ -1034,7 +1034,7 @@ func (r *Instance) stop(ctx context.Context, options Options) error {
 	err := retry.New(
 		retry.Context(ctx),
 		retry.Attempts(6),
-		retry.Delay(500*time.Millisecond),
+		retry.Delay(2*time.Second),
 	).Do(func() error {
 		err := r.fetch()
 		if err != nil {
