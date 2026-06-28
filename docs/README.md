@@ -3,6 +3,7 @@
 ## Using incus-compose
 
 - [Getting Started](getting-started.md) - Install and run your first compose project
+- [Terminology](terms.md) - Compose vs Incus vs incus-compose terms (service vs instance, ...)
 - [CLI Reference](cli.md) - All commands and options
 - [Compose Compatibility](compose-compatibility.md) - Supported features and differences
 - [Builds](build.md) - Build service images from Compose `build:` definitions

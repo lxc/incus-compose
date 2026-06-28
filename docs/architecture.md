@@ -31,7 +31,7 @@ incus-compose/
 - Resources: Profile, Image, Network, StorageVolume, Instance
 - Stack for task collection and ordering
 - WorkerPool for parallel execution
-- Hooks for action interception
+- [Hooks](architecture/client/hooks.md) for action interception
 
 **project/**
 
@@ -175,7 +175,7 @@ networks:
       ipv4.nat: "true"
 ```
 
-All key-value pairs are passed verbatim to Incus. See the [Incus instance options reference](https://linuxcontainers.org/incus/docs/main/reference/instance_options/) for available options.
+All key-value pairs are passed verbatim to Incus. See the [Incus instance options reference](https://linuxcontainers.org/incus/docs/main/reference/instance_options/) for available options, and [Compose Compatibility](compose-compatibility.md#x-incus-instance-extensions) for the per-resource (instance, network, volume) `x-incus` reference.
 
 ### x-incus-compose (Compose-Specific Features)
 

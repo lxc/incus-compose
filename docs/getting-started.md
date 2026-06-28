@@ -359,6 +359,7 @@ The cache project is created automatically on first use.
 
 ## Next Steps
 
+- [Terminology](terms.md) - Compose vs Incus vs incus-compose terms
 - [CLI Reference](cli.md)
 - [Builds](build.md)
 - [Compose Compatibility](compose-compatibility.md) - What features are supported
