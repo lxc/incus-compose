@@ -14,6 +14,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/avast/retry-go/v5"
 	"github.com/gorilla/websocket"
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
@@ -581,15 +582,20 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 		return r.client.hookAfter(ctx, ActionStart, r, options, nil)
 	}
 
-	err := r.start(ctx, options)
+	startCtx, cancel := context.WithTimeout(ctx, options.Timeout)
+	defer cancel()
+
+	err := r.start(startCtx, options)
 	if err != nil {
 		return r.client.hookAfter(ctx, ActionStart, r, options, err)
 	}
 
 	if options.Healthd {
 		// Wait for the healthcheck to success if a test is defined.
-		_, ok := r.IncusInstance.Config[HealthKeyPrefix+"test"]
-		if ok {
+		_, hasTest := r.IncusInstance.Config[HealthKeyPrefix+"test"]
+		_, isHealthd := r.IncusInstance.Config[HealthKeyPrefix+"daemon"]
+
+		if hasTest && !isHealthd {
 			err = r.waitForHealthCheck(ctx, ActionStart, options)
 			if err != nil {
 				return r.client.hookAfter(ctx, ActionStart, r, options, err)
@@ -613,8 +619,36 @@ func (r *Instance) waitForHealthCheck(ctx context.Context, action Action, option
 	var cancel context.CancelFunc
 	if options.Timeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, options.Timeout)
+		defer cancel()
 	} else {
 		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+	}
+
+	// Wait for healthd to be available for 3 seconds.
+	err := retry.New(
+		retry.Context(ctx),
+		retry.Attempts(6),
+		retry.Delay(500*time.Millisecond),
+	).Do(func() error {
+		healthd, err := r.client.FindHealthd()
+		if err != nil {
+			return err
+		}
+
+		hInstState, _, err := r.conn.GetInstanceState(healthd)
+		if err != nil {
+			return fmt.Errorf("failed to get the healthd '%v' instance state: %w", healthd, err)
+		}
+
+		if hInstState.StatusCode != incusApi.Running {
+			return fmt.Errorf("healthd '%v' not running cannot wait for it to check dependencies", healthd)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -625,7 +659,6 @@ func (r *Instance) waitForHealthCheck(ctx context.Context, action Action, option
 		if err == nil && r.IncusInstance.Config[HealthStatusKey] == HealthStatusHealthy {
 			r.client.LogDebug("Ready", "resource", r)
 
-			cancel()
 			return nil
 		}
 
@@ -638,7 +671,6 @@ func (r *Instance) waitForHealthCheck(ctx context.Context, action Action, option
 		case <-ticker.C:
 			r.client.LogDebug("Waiting for the healthcheck", "resource", r)
 		case <-ctx.Done():
-			cancel()
 			return fmt.Errorf("did not reach status %q within %s", HealthStatusHealthy, options.Timeout)
 		}
 	}
@@ -649,6 +681,32 @@ func (r *Instance) waitForHealthCheck(ctx context.Context, action Action, option
 func (r *Instance) waitForDependencies(ctx context.Context, action Action, options Options) error {
 	if len(r.Config.Dependencies) == 0 {
 		return nil
+	}
+
+	// Wait for healthd to be available for 3 seconds.
+	err := retry.New(
+		retry.Context(ctx),
+		retry.Attempts(6),
+		retry.Delay(500*time.Millisecond),
+	).Do(func() error {
+		healthd, err := r.client.FindHealthd()
+		if err != nil {
+			return err
+		}
+
+		hInstState, _, err := r.conn.GetInstanceState(healthd)
+		if err != nil {
+			return fmt.Errorf("failed to get the healthd '%v' instance state: %w", healthd, err)
+		}
+
+		if hInstState.StatusCode != incusApi.Running {
+			return fmt.Errorf("healthd '%v' not running cannot wait for it to check dependencies", healthd)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	timeout := options.DependencyTimeout
@@ -702,57 +760,73 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 	}
 
 	if options.Healthd {
-		if err := r.waitForDependencies(ctx, ActionStart, options); err != nil {
-			return err
+		_, isHealthd := r.IncusInstance.Config[HealthKeyPrefix+"daemon"]
+		if !isHealthd {
+			if err := r.waitForDependencies(ctx, ActionStart, options); err != nil {
+				return err
+			}
 		}
 	}
 
-	if err := r.fetch(); err != nil {
-		return err
-	}
+	// Starting can fail transiently, so retry.
+	err := retry.New(
+		retry.Context(ctx),
+		retry.Attempts(6),
+		retry.Delay(500*time.Millisecond),
+	).Do(func() error {
+		err := r.fetch()
+		if err != nil {
+			return err
+		}
 
-	if r.Running() {
-		return nil
-	}
+		if r.Running() {
+			return nil
+		}
 
-	op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
-		Action:  "start",
-		Timeout: options.incusTimeout(),
-	}, r.ETag)
+		op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
+			Action:  "start",
+			Timeout: options.incusTimeout(),
+		}, r.ETag)
+		if err != nil {
+			return ErrOperation.WithText("starting instance").Wrap(err)
+		}
+
+		// The operation completes once the instance is running or failed to start.
+		err = r.client.hookOperation(ctx, ActionStart, r, options, op, err)
+		if err != nil {
+			return err
+		}
+
+		return r.fetch()
+	})
 	if err != nil {
-		return ErrOperation.WithText("starting instance").Wrap(err)
-	}
-
-	// The operation completes once the instance is running or failed to start.
-	if err := r.client.hookOperation(ctx, ActionStart, r, options, op, err); err != nil {
-		return err
-	}
-
-	if err := r.fetch(); err != nil {
-		return err
+		return fmt.Errorf("start with retry: %w", err)
 	}
 
 	if r.created {
-		if err := r.PushFiles(); err != nil {
+		if err := r.PushFiles(ctx); err != nil {
 			return err
 		}
 
 		// Push secrets after instance is running
 		if len(r.Config.Secrets) > 0 {
-			if err := r.PushSecrets(); err != nil {
+			err := r.PushSecrets(ctx)
+			if err != nil {
 				return err
 			}
 		}
 	}
 
 	if r.created && len(r.Config.PostStartDevices) > 0 {
-		if err := r.attachPostStartDevices(ctx); err != nil {
+		err := r.attachPostStartDevices(ctx)
+		if err != nil {
 			return err
 		}
 	}
 
 	if options.Healthd {
-		return r.setHealthCheckingStopped(false)
+		err = r.setHealthCheckingStopped(false)
+		return err
 	}
 
 	return nil
@@ -760,7 +834,7 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 
 // PushSecrets pushes secrets into the running instance.
 // Secrets are only pushed if they don't already exist with the same content.
-func (r *Instance) PushSecrets() error {
+func (r *Instance) PushSecrets(ctx context.Context) error {
 	if !r.IsEnsured() {
 		return ErrNotEnsured
 	}
@@ -782,7 +856,7 @@ func (r *Instance) PushSecrets() error {
 		}
 
 		// Create parent directories recursively
-		if err := r.mkdirP(path.Dir(target), 0o700); err != nil {
+		if err := r.mkdirP(ctx, path.Dir(target), 0o700); err != nil {
 			return ErrCreate.WithText("creating secret directory").Wrap(err)
 		}
 
@@ -802,7 +876,7 @@ func (r *Instance) PushSecrets() error {
 }
 
 // PushFiles pushes files into the instance.
-func (r *Instance) PushFiles() error {
+func (r *Instance) PushFiles(ctx context.Context) error {
 	if !r.IsEnsured() {
 		return ErrNotEnsured
 	}
@@ -810,7 +884,7 @@ func (r *Instance) PushFiles() error {
 	for target, file := range r.Config.Files {
 		// Create parent directories recursively
 		if !file.NoMKDir {
-			if err := r.mkdirP(path.Dir(target), file.DirMode); err != nil {
+			if err := r.mkdirP(ctx, path.Dir(target), file.DirMode); err != nil {
 				return ErrCreate.WithText("creating directory for " + target).Wrap(err)
 			}
 		}
@@ -856,7 +930,7 @@ func (r *Instance) PushFiles() error {
 // mkdirP creates a directory and all parent directories inside the container.
 // Directories are owned by oci.UID/oci.GID to match the container user.
 // Uses slash-separated paths so it works regardless of host OS.
-func (r *Instance) mkdirP(dirPath string, mode int) error {
+func (r *Instance) mkdirP(ctx context.Context, dirPath string, mode int) error {
 	r.client.LogDebug("Creating directories", "resource", r, "dir", dirPath)
 
 	dirs := []string{}
@@ -874,16 +948,29 @@ func (r *Instance) mkdirP(dirPath string, mode int) error {
 	slices.Reverse(dirs)
 
 	for _, dir := range dirs {
-		err := r.conn.CreateInstanceFile(r.incusName, dir, incusClient.InstanceFileArgs{
-			Type: "directory",
-			Mode: mode,
-			UID:  int64(r.UID),
-			GID:  int64(r.GID),
+		// Retry 3 times.
+		err := retry.New(
+			retry.Context(ctx),
+			retry.Attempts(3),
+			retry.Delay(1*time.Second),
+		).Do(func() error {
+			err := r.conn.CreateInstanceFile(r.incusName, dir, incusClient.InstanceFileArgs{
+				Type: "directory",
+				Mode: mode,
+				UID:  int64(r.UID),
+				GID:  int64(r.GID),
+			})
+			if err != nil {
+				return err
+			}
+
+			return nil
 		})
 		if err != nil {
 			if os.IsExist(err) {
 				continue
 			}
+
 			return fmt.Errorf("mkdirP failed on %q for %q: %w", dir, dirPath, err)
 		}
 	}
@@ -923,7 +1010,12 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 		return r.client.hookAfter(ctx, ActionStop, r, options, nil)
 	}
 
-	return r.client.hookAfter(ctx, ActionStop, r, options, r.stop(ctx, options))
+	stopCtx, cancel := context.WithTimeout(ctx, options.Timeout)
+	defer cancel()
+
+	err := r.stop(stopCtx, options)
+
+	return r.client.hookAfter(ctx, ActionStop, r, options, err)
 }
 
 func (r *Instance) stop(ctx context.Context, options Options) error {
@@ -938,18 +1030,40 @@ func (r *Instance) stop(ctx context.Context, options Options) error {
 		return nil
 	}
 
-	op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
-		Action:  "stop",
-		Force:   options.Force,
-		Timeout: options.incusTimeout(),
-	}, r.ETag)
-	if err != nil {
-		return ErrOperation.WithText("stopping instance").Wrap(err)
-	}
+	// Stopping can fail transiently, so retry.
+	err := retry.New(
+		retry.Context(ctx),
+		retry.Attempts(6),
+		retry.Delay(500*time.Millisecond),
+	).Do(func() error {
+		err := r.fetch()
+		if err != nil {
+			return err
+		}
 
-	// The operation completes once the instance is stopped or failed to stop.
-	if err := r.client.hookOperation(ctx, ActionStop, r, options, op, err); err != nil {
-		return err
+		if !r.Running() {
+			return nil
+		}
+
+		op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
+			Action:  "stop",
+			Force:   options.Force,
+			Timeout: options.incusTimeout(),
+		}, r.ETag)
+		if err != nil {
+			return ErrOperation.WithText("stopping instance").Wrap(err)
+		}
+
+		// The operation completes once the instance is stopped or failed to stop.
+		err = r.client.hookOperation(ctx, ActionStop, r, options, op, err)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("stop with retry: %w", err)
 	}
 
 	return r.fetch()

@@ -3,6 +3,7 @@ module github.com/lxc/incus-compose
 go 1.26.4
 
 require (
+	github.com/avast/retry-go/v5 v5.0.0
 	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
 	github.com/creativeprojects/go-selfupdate v1.5.2
 	github.com/distribution/reference v0.6.0

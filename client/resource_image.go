@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/avast/retry-go/v5"
 	"github.com/distribution/reference"
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
@@ -370,11 +372,11 @@ func (r *Image) create(ctx context.Context, args Options) error {
 
 		// Wait for copy to complete
 		if err = r.client.hookRemoteOperation(ctx, ActionEnsure, r, args, op, err); err != nil {
-			return ErrCreate.WithText("caching image").Wrap(err)
+			return ErrCreate.WithText("downloading the image to the cache").Wrap(err)
 		}
 
 		if err := extractAndStoreOCIConfig(ctx, r.cache, sourceAlias.Target, r.client.Config().DefaultStoragePool); err != nil {
-			return ErrCreate.WithText("extracting OCI config from image").Wrap(err)
+			return ErrCreate.WithText("extracting OCI config from the image").Wrap(err)
 		}
 
 		cacheAlias = &incusApi.ImageAliasesEntry{
@@ -422,41 +424,11 @@ func (r *Image) create(ctx context.Context, args Options) error {
 	return r.get()
 }
 
-func waitInstance(ctx context.Context, server incusClient.InstanceServer, name string, inErr error) error {
-	var outErr error
-	if inErr != nil {
-		outErr = inErr
-	}
-
-	if _, _, err := server.GetInstance(name); err != nil {
-		return fmt.Errorf("getting the temp instance after create: %w", outErr)
-	}
-
-	ticker := time.NewTicker(100 * time.Millisecond)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return errors.New("failed to wait for a temp instance")
-
-		case <-ticker.C:
-			// A concurrent process may be running the same extraction; check if the
-			// instance already exists and read from it below without deleting it.
-			if _, _, err := server.GetInstance(name); err != nil {
-				return nil
-			}
-		}
-	}
-}
-
 // extractAndStoreOCIConfig creates a temporary stopped container from this image,
 // reads oci.uid/oci.gid/oci.entrypoint/oci.cwd from its config, stores them as
 // image properties, then deletes the container.
-// If a concurrent process already created the temp instance, it reads from that
-// instance instead (and skips deletion).
-// Non-fatal: callers should log and continue on error.
 func extractAndStoreOCIConfig(ctx context.Context, server incusClient.InstanceServer, fingerprint string, pool string) error {
-	tempName := SanitizeIncusName("ic-uid-"+fingerprint, MaxIncusNameLen-7)
+	tempName := "ic-uid-" + SanitizeIncusName(RandString(16), MaxIncusNameLen-7)
 
 	req := incusApi.InstancesPost{
 		Name: tempName,
@@ -476,34 +448,44 @@ func extractAndStoreOCIConfig(ctx context.Context, server incusClient.InstanceSe
 		},
 	}
 
+	// Create
 	op, err := server.CreateInstance(req)
-	if err != nil {
-		waitCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
-
-		err = waitInstance(waitCtx, server, tempName, err)
-		cancel()
-		return err
+	if err == nil {
+		// Execute create, ignore error.
+		err = op.WaitContext(ctx)
+		if err == nil {
+			defer func() {
+				if deleteOp, err := server.DeleteInstance(tempName); err == nil {
+					_ = deleteOp.Wait()
+				}
+			}()
+		} else {
+			slog.Warn("Failed to create a temp instance for an image (OP)", "fingerprint", fingerprint[16:])
+		}
+	} else {
+		slog.Warn("Failed to create a temp instance for an image (Create)", "fingerprint", fingerprint[16:])
 	}
 
-	err = op.WaitContext(ctx)
-	if err != nil {
-		waitCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+	// fetch
+	rCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
 
-		err = waitInstance(waitCtx, server, tempName, err)
-		cancel()
-		return err
-	}
+	instance, err := retry.NewWithData[*incusApi.Instance](
+		retry.Context(rCtx),
+		retry.Attempts(3),
+		retry.Delay(500*time.Millisecond), // 10 seconds total.
+	).Do(func() (*incusApi.Instance, error) {
+		var err error
+		instance, _, err := server.GetInstance(tempName)
+		if err != nil {
+			return nil, err
+		}
 
-	instance, _, err := server.GetInstance(tempName)
+		return instance, nil
+	})
 	if err != nil {
 		return fmt.Errorf("getting the temp instance after create: %w", err)
 	}
-
-	defer func() {
-		if deleteOp, err := server.DeleteInstance(tempName); err == nil {
-			_ = deleteOp.Wait()
-		}
-	}()
 
 	uid, gid, err := extractUIDGID(instance)
 	if err != nil {
