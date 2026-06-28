@@ -669,7 +669,7 @@ func (r *Instance) waitForHealthCheck(ctx context.Context, action Action, option
 
 		select {
 		case <-ticker.C:
-			r.client.LogDebug("Waiting for the healthcheck", "resource", r)
+			// r.client.LogDebug("Waiting for the healthcheck", "resource", r)
 		case <-ctx.Done():
 			return fmt.Errorf("did not reach status %q within %s", HealthStatusHealthy, options.Timeout)
 		}
@@ -742,7 +742,7 @@ func (r *Instance) waitForDependencies(ctx context.Context, action Action, optio
 
 			select {
 			case <-ticker.C:
-				r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthStatusKey])
+				// r.client.LogDebug("Dependency not ready", "dep", depName, "requiredStatus", requiredStatus, "status", inst.Config[HealthStatusKey])
 			case <-ctx.Done():
 				cancel()
 				return fmt.Errorf("dependency %q did not reach status %q within %s", depName, requiredStatus, timeout)
