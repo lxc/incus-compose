@@ -140,9 +140,11 @@ func OptionNoHealthd() Option {
 // NewOptions makes a ActionArgs struct from ActionO* options.
 func NewOptions(opts ...Option) Options {
 	args := Options{
-		Stdout:  io.Discard,
-		Stderr:  io.Discard,
-		Healthd: true,
+		Stdout:            io.Discard,
+		Stderr:            io.Discard,
+		Healthd:           true,
+		Timeout:           2 * time.Minute,
+		DependencyTimeout: 5 * time.Minute,
 	}
 
 	for _, o := range opts {
