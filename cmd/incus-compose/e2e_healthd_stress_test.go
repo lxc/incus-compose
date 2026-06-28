@@ -30,9 +30,9 @@ func stressIterations(t *testing.T) int {
 // operation" race (recreate path) and the "forkfile.sock: connection reset by peer"
 // token-push race. The tight scheduling, not any single run, is what surfaces them.
 func TestStressHealthdDownUp(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	iter := stressIterations(t)
 	if iter < 0 {

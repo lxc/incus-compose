@@ -13,9 +13,9 @@ import (
 // It runs `hostname` in each service of a multi-service project and asserts
 // the output matches the expected Incus instance name.
 func TestExecSelectsCorrectInstance(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()

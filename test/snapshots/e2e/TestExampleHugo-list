@@ -3,7 +3,7 @@
     "kind": "network",
     "name": "default",
     "description": "",
-    "incus_name": "ic-sufmndewuo",
+    "incus_name": "ic-ftzfzyeys6",
     "image": "",
     "status": "Exists",
     "health": "",
@@ -11,12 +11,12 @@
   },
   {
     "kind": "instance",
-    "name": "web",
-    "description": "incus-compose: testupdownupsimplenginx:web-1",
-    "incus_name": "web-1",
-    "image": "docker.io/library/nginx:alpine",
+    "name": "blog",
+    "description": "incus-compose: testexamplehugo:blog-1",
+    "incus_name": "blog-1",
+    "image": "local/blog:latest",
     "status": "Running",
-    "health": "Unknown",
+    "health": "Healthy",
     "addresses": [
       ""
     ]

@@ -266,12 +266,12 @@ func TestInstanceDependencyWaits(t *testing.T) {
 		service := types.ServiceConfig{Name: "web", DependsOn: types.DependsOnConfig{
 			"db": {Condition: types.ServiceConditionStarted},
 		}}
-		assert.Nil(t, instanceDependencyWaits(p, service, &ToStackOptions{}))
+		assert.Empty(t, instanceDependencyWaits(p, service, &ToStackOptions{}))
 	})
 
 	t.Run("no dependencies", func(t *testing.T) {
 		t.Parallel()
-		assert.Nil(t, instanceDependencyWaits(&types.Project{}, types.ServiceConfig{Name: "web"}, &ToStackOptions{}))
+		assert.Empty(t, instanceDependencyWaits(&types.Project{}, types.ServiceConfig{Name: "web"}, &ToStackOptions{}))
 	})
 }
 
@@ -518,8 +518,10 @@ func TestInstanceVolumeDevices(t *testing.T) {
 			Extensions: types.Extensions{"x-incus": map[string]any{"security.shifted": "true"}},
 		}}}
 		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{Type: "volume", Source: "data", Target: "/data",
-				Extensions: types.Extensions{"x-incus": map[string]any{"security.shifted": "false"}}},
+			{
+				Type: "volume", Source: "data", Target: "/data",
+				Extensions: types.Extensions{"x-incus": map[string]any{"security.shifted": "false"}},
+			},
 		}}
 
 		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, opts)
@@ -554,8 +556,10 @@ func TestInstanceVolumeDevices(t *testing.T) {
 		file := filepath.Join(t.TempDir(), "seed.conf")
 		require.NoError(t, os.WriteFile(file, []byte("hello"), 0o644))
 		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{Type: "bind", Source: file, Target: "/etc/app.conf",
-				Extensions: types.Extensions{"x-incus-compose": map[string]any{"seed": true}}},
+			{
+				Type: "bind", Source: file, Target: "/etc/app.conf",
+				Extensions: types.Extensions{"x-incus-compose": map[string]any{"seed": true}},
+			},
 		}}
 
 		devices, files, resources, err := instanceVolumeDevices(c, &types.Project{}, service, nil, opts)
@@ -570,8 +574,10 @@ func TestInstanceVolumeDevices(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{Type: "bind", Source: dir, Target: "/mnt",
-				Extensions: types.Extensions{"x-incus-compose": map[string]any{"seed": true}}},
+			{
+				Type: "bind", Source: dir, Target: "/mnt",
+				Extensions: types.Extensions{"x-incus-compose": map[string]any{"seed": true}},
+			},
 		}}
 
 		devices, files, resources, err := instanceVolumeDevices(c, &types.Project{}, service, nil, opts)

@@ -498,8 +498,6 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 			shifted = false
 		}
 
-		c.LogDebug("Shifted is", "shifted", shifted, "extensions", extensions)
-
 		switch cVol.Type {
 		case "volume":
 			volDef := p.Volumes[cVol.Source]
@@ -696,7 +694,7 @@ func instanceSecrets(p *types.Project, service types.ServiceConfig) ([]client.In
 // instanceDependencyWaits builds the health-wait map for depends_on entries with
 // condition: service_healthy, keyed by the dependency's sanitized instance names.
 func instanceDependencyWaits(p *types.Project, service types.ServiceConfig, options *ToStackOptions) map[string]string {
-	var deps map[string]string
+	deps := map[string]string{}
 	for depName, dep := range service.DependsOn {
 		if dep.Condition != types.ServiceConditionHealthy {
 			continue
@@ -708,9 +706,6 @@ func instanceDependencyWaits(p *types.Project, service types.ServiceConfig, opti
 		} else if depSvc.Deploy != nil && depSvc.Deploy.Replicas != nil {
 			depScale = int(*depSvc.Deploy.Replicas)
 		}
-		if deps == nil {
-			deps = make(map[string]string)
-		}
 		if depSvc.ContainerName != "" {
 			deps[client.SanitizeIncusName(depSvc.ContainerName, client.MaxIncusNameLen)] = client.HealthStatusHealthy
 		} else {
@@ -719,6 +714,7 @@ func instanceDependencyWaits(p *types.Project, service types.ServiceConfig, opti
 			}
 		}
 	}
+
 	return deps
 }
 

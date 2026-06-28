@@ -61,12 +61,15 @@ jobs:
           - name: custom-network
             runs-on: [self-hosted, incus-compose, custom-network]
     runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 120
     permissions:
       contents: read
       checks: write # publish JUnit results as a check run
     env:
       INCUS_REMOTE: local-https
+      INCUS_COMPOSE_IMAGE_CACHE: incus-compose-tests-cache
       NO_COLOR: 1
+      TEST_PROCS: 1
     steps:
       - uses: actions/checkout@v6
         with:
@@ -85,7 +88,7 @@ jobs:
           gotestsum --rerun-fails \
             --packages="./..." \
             --junitfile "$REPORTS_DIR/junit.xml" \
-            -- -count=1 -parallel=2 -v 2>&1 \
+            -- -count=1 -parallel="$TEST_PROCS" -v 2>&1
 
       - name: Publish test results
         if: always()

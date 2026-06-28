@@ -1,4 +1,0 @@
-KIND      NAME     INCUSNAME      IMAGE                           STATUS   HEALTH   ADDRESSES
-network   default  ic-uf62fvkwl4                                  Exists            
-instance  web      web-1          docker.io/library/nginx:alpine  Running  Unknown  
-

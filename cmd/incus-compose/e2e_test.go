@@ -20,13 +20,15 @@ import (
 var snapshotter = cupaloy.New(cupaloy.SnapshotSubdirectory(filepath.Join("..", "..", "test", "snapshots", "e2e")))
 
 func skipLocal(t *testing.T) {
-	if os.Getenv("INCUS_COMPOSE_TEST_LOCAL") != "" {
+	_, ok := os.LookupEnv("INCUS_COMPOSE_TEST_LOCAL")
+	if ok {
 		t.Skip("Skipping: env INCUS_COMPOSE_TEST_LOCAL is set, run `just test` for this test")
 	}
 }
 
 func skipSlow(t *testing.T) {
-	if os.Getenv("INCUS_COMPOSE_TEST_SLOW") == "" {
+	_, ok := os.LookupEnv("INCUS_COMPOSE_TEST_SLOW")
+	if !ok {
 		t.Skip("Skipping: env INCUS_COMPOSE_TEST_SLOW is not set, run `just test-slow` for this test")
 	}
 }
@@ -289,7 +291,7 @@ func TestUpDownUpSimpleNginx(t *testing.T) {
 		},
 		{
 			name:     "list up simple-nginx",
-			args:     []string{"-f", compose, "list"},
+			args:     []string{"-f", compose, "list", "--format", "json"},
 			wantErr:  false,
 			snapshot: true,
 		},
@@ -300,7 +302,7 @@ func TestUpDownUpSimpleNginx(t *testing.T) {
 		},
 		{
 			name:     "list down simple-nginx",
-			args:     []string{"-f", compose, "list"},
+			args:     []string{"-f", compose, "list", "--format", "json"},
 			wantErr:  false,
 			snapshot: true,
 		},
@@ -311,7 +313,7 @@ func TestUpDownUpSimpleNginx(t *testing.T) {
 		},
 		{
 			name:     "list down-up simple-nginx",
-			args:     []string{"-f", compose, "list"},
+			args:     []string{"-f", compose, "list", "--format", "json"},
 			wantErr:  false,
 			snapshot: true,
 		},

@@ -31,8 +31,8 @@ func newUpCommand() *cli.Command {
 			},
 			&cli.DurationFlag{
 				Name:  "timeout",
-				Usage: "Timeout for stopping/starting",
-				Value: 1 * time.Minute,
+				Usage: "Timeout for stopping/starting a service",
+				Value: 5 * time.Minute,
 			},
 			&cli.DurationFlag{
 				Name:  "dependency-timeout",
@@ -189,10 +189,7 @@ func newUpCommand() *cli.Command {
 
 				// Do not recreate networks.
 				recreateFilter := func(r client.Resource) bool {
-					if r.Kind() == client.KindNetwork {
-						return false
-					}
-					return true
+					return r.Kind() != client.KindNetwork
 				}
 
 				// Ensure without create for "recreate" (resolution only, no progress).

@@ -9,10 +9,12 @@ services:
       limits.cpu: 1
     ports: !reset []
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080"]
+      interval: 5s
+      timeout: 5s
       retries: 3
+      start_period: 30s
+      start_interval: 1s
     networks:
       default:
         ipv4_address: 10.134.32.17

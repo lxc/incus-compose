@@ -3,7 +3,7 @@ services:
     x-incus:
       limits.cpu: 1
       raw.lxc: |-
-        lxc.mount.entry = /run/media/r3j0/Ventoy data/ none rbind,create=dir,idmap=container 0 0
+        lxc.mount.entry = ${PWD}/../../ data/ none rbind,create=dir,idmap=container 0 0
 
     networks:
       default:

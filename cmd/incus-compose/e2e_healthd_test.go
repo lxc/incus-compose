@@ -10,9 +10,9 @@ import (
 )
 
 func TestLifecycleHealthd(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()

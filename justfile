@@ -12,15 +12,16 @@
 set dotenv-load
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
-v_test_procs := env("TEST_PROCS", `expr $(nproc) / 2`)
+v_test_procs := env("TEST_PROCS", "2")
 
 [private]
 default:
     @just --list
 
 # Run tests against nested Incus, includes direct incus tests.
+[env("INCUS_COMPOSE_IMAGE_CACHE", "incus-compose-tests-cache")]
 test folder="./..." *args:
-    gotestsum --rerun-fails --hide-summary=skipped --jsonfile=test/logs/`date +%Y%m%d-%H%M%S`.json --packages={{ folder }} -- -parallel {{ v_test_procs }} -coverprofile=coverage.out -covermode=atomic -v {{ args }}
+    gotestsum --hide-summary=skipped --jsonfile=test/logs/`date +%Y%m%d-%H%M%S`.json --packages={{ folder }} -- -parallel {{ v_test_procs }} -timeout 20m -covermode=atomic -v {{ args }}
 
 # Run local unit-tests, incus-facing tests are skipped.
 [env("INCUS_COMPOSE_TEST_LOCAL", "1")]
@@ -32,20 +33,31 @@ test-local folder="./..." *args:
 test-slow folder="./..." *args:
     @just test {{ folder }} {{ args }}
 
+# Run all tests against nested Incus, includes direct incus, slow and examples tests.
+[env("INCUS_COMPOSE_TEST_EXAMPLES", "1")]
+test-examples folder="./..." *args:
+    @just test {{ folder }} {{ args }}
+
 # Run the tests with a race detector.
 test-race folder="./..." *args:
-  gotestsum --hide-summary=skipped --jsonfile=test/logs/`date +%Y%m%d-%H%M%S`.json --packages={{ folder }} -- -parallel {{ v_test_procs }} -race -v {{ args }}
+    gotestsum --hide-summary=skipped --jsonfile=test/logs/`date +%Y%m%d-%H%M%S`.json --packages={{ folder }} -- -parallel {{ v_test_procs }} -timeout 20m -race -v {{ args }}
 
 # Update snapshots for long running tests.
 [env("INCUS_COMPOSE_TEST_SLOW", "1")]
 [env("UPDATE_SNAPSHOTS", "1")]
 update-slow-snapshots folder="./..." *args:
-  @just test {{ folder }} {{ args }}
+    @just test {{ folder }} {{ args }}
+
+# Update snapshots for examples.
+[env("INCUS_COMPOSE_TEST_EXAMPLES", "1")]
+[env("UPDATE_SNAPSHOTS", "1")]
+update-examples-snapshots folder="./..." *args:
+    @just test {{ folder }} {{ args }}
 
 # Update snapshot test files that require a remote
 [env("UPDATE_SNAPSHOTS", "1")]
 update-snapshots folder="./..." *args:
-  @just test {{ folder }} {{ args }}
+    @just test {{ folder }} {{ args }}
 
 [private]
 log-run logfile="" cmd="":
@@ -64,6 +76,7 @@ fix folder="./...":
 
 # Dev install creates your dev environment: `just dev-install [container] [listen] [project] [image]`
 dev-install container_name="local:ict" listen='127.0.0.1:1443' project='default' image='images:debian/trixie' storagepool='default':
+    go install gotest.tools/gotestsum@latest
     @just make-nested "{{ container_name }}" "{{ image }}" "{{ listen }}" "{{ project }}" "{{ storagepool }}"
 
 # Run commands in the nested incus.
@@ -91,6 +104,7 @@ build-healthd-image tag="ghcr.io/lxc/incus-compose/ic-healthd:latest":
 
 # Build ic-healthd container image
 release-healthd-image tag="ghcr.io/lxc/incus-compose/ic-healthd:latest": build-healthd-image
+    echo "${GITHUB_TOKEN}" | podman login --username "${GITHUB_USERNAME}" --password-stdin ghcr.io
     podman push {{ tag }}
 
 # Release incus-compose
@@ -111,10 +125,6 @@ run-healthd compose="examples/immich/compose.yaml" name="immich": build-healthd
 # Usage: just run -f test/fixtures/simple-nginx/compose.yaml config
 run *args:
     @go run ./cmd/incus-compose {{ args }}
-
-# Usage: just run-debug -f test/fixtures/simple-nginx/compose.yaml config
-run-debug *args:
-    @go run ./cmd/incus-compose --debug {{ args }}
 
 # Purge all dangling networks (managed and 0 users) from the configured remote
 purge-networks:
@@ -152,7 +162,7 @@ purge-images *args:
     echo "Deleting images on remote '${remote}':"
     while IFS= read -r image; do
         echo "  Deleting: ${image}"
-        incus image delete "${remote}:${image}"
+        incus image delete {{ args }} "${remote}:${image}"
     done <<< "${images}"
     echo "Done."
 

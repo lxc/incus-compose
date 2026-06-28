@@ -54,6 +54,12 @@ incus remote add local-https <a-ip-of-your-host>
 incus remote switch local-https
 ```
 
+3. Test your new remote
+
+```bash
+incus list --all-projects
+```
+
 #### Listen on a specific IP Address
 
 If you don't want to listen on all interfaces, set the

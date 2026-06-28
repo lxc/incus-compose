@@ -1,5 +1,10 @@
 name: many-dependencies
 
+x-incus-compose:
+  healthd:
+    # This is needed cause this project has no "default" network.
+    network: :internal
+
 x-service-templates:
   nginx: &nginx
     image: docker.io/nginxinc/nginx-unprivileged:alpine
@@ -19,8 +24,6 @@ x-service-templates:
 services:
   gateway:
     <<: *nginx
-    ports:
-      - "8080:8080"
     depends_on:
       api:
         condition: service_healthy

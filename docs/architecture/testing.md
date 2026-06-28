@@ -25,7 +25,6 @@ Use `just --list` to see all available commands. Below is the complete reference
 | ----------------------- | -------------------------------------------- |
 | `just build`            | Build the binary                             |
 | `just run <args>`       | Run incus-compose via `go run` (uses `.env`) |
-| `just run-debug <args>` | Run with debug output enabled                |
 | `just run-local <args>` | Run against local Incus (ignores `.env`)     |
 | `just incus <args>`     | Run commands in the nested Incus container   |
 

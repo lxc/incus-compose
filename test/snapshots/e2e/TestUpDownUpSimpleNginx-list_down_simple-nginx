@@ -1,4 +1,23 @@
-KIND      NAME     INCUSNAME      IMAGE  STATUS   HEALTH  ADDRESSES
-network   default  ic-sufmndewuo         Unknown          
-instance  web-1    web-1                 Unknown          
+[
+  {
+    "kind": "network",
+    "name": "default",
+    "description": "",
+    "incus_name": "ic-sufmndewuo",
+    "image": "",
+    "status": "Unknown",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "instance",
+    "name": "web-1",
+    "description": "",
+    "incus_name": "web-1",
+    "image": "",
+    "status": "Unknown",
+    "health": "",
+    "addresses": []
+  }
+]
 

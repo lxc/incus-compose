@@ -24,6 +24,11 @@ services:
   machine-learning:
     healthcheck:
       test: ["CMD", "python3", "/usr/src/healthcheck.py"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_interval: 10s
+      start_period: 5m
 
   redis:
     healthcheck:

@@ -1,0 +1,323 @@
+[
+  {
+    "kind": "network",
+    "name": "search-net",
+    "description": "",
+    "incus_name": "ic-6uknhvmglk",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "network",
+    "name": "users-net",
+    "description": "",
+    "incus_name": "ic-7qdpozqqam",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "network",
+    "name": "products-net",
+    "description": "",
+    "incus_name": "ic-7wqylzrm6u",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "network",
+    "name": "public",
+    "description": "",
+    "incus_name": "ic-jq4zgrlvqr",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "network",
+    "name": "auth-net",
+    "description": "",
+    "incus_name": "ic-q7sylxdhuz",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "network",
+    "name": "orders-net",
+    "description": "",
+    "incus_name": "ic-qdngahggxb",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "network",
+    "name": "internal",
+    "description": "",
+    "incus_name": "ic-z4vmx2jk4d",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "instance",
+    "name": "api",
+    "description": "incus-compose: testexamplemanydependencies:api-1",
+    "incus_name": "api-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "",
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "auth",
+    "description": "incus-compose: testexamplemanydependencies:auth-1",
+    "incus_name": "auth-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "",
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "auth-db",
+    "description": "incus-compose: testexamplemanydependencies:auth-db-1",
+    "incus_name": "auth-db-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "cache",
+    "description": "incus-compose: testexamplemanydependencies:cache-1",
+    "incus_name": "cache-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "frontend",
+    "description": "incus-compose: testexamplemanydependencies:frontend-1",
+    "incus_name": "frontend-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "",
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "gateway",
+    "description": "incus-compose: testexamplemanydependencies:gateway-1",
+    "incus_name": "gateway-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "mailer",
+    "description": "incus-compose: testexamplemanydependencies:mailer-1",
+    "incus_name": "mailer-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "notifications",
+    "description": "incus-compose: testexamplemanydependencies:notifications-1",
+    "incus_name": "notifications-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "orders",
+    "description": "incus-compose: testexamplemanydependencies:orders-1",
+    "incus_name": "orders-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "",
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "orders-db",
+    "description": "incus-compose: testexamplemanydependencies:orders-db-1",
+    "incus_name": "orders-db-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "products",
+    "description": "incus-compose: testexamplemanydependencies:products-1",
+    "incus_name": "products-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "",
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "products-db",
+    "description": "incus-compose: testexamplemanydependencies:products-db-1",
+    "incus_name": "products-db-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "queue",
+    "description": "incus-compose: testexamplemanydependencies:queue-1",
+    "incus_name": "queue-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "search",
+    "description": "incus-compose: testexamplemanydependencies:search-1",
+    "incus_name": "search-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "",
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "search-db",
+    "description": "incus-compose: testexamplemanydependencies:search-db-1",
+    "incus_name": "search-db-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "users",
+    "description": "incus-compose: testexamplemanydependencies:users-1",
+    "incus_name": "users-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "",
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "users-db",
+    "description": "incus-compose: testexamplemanydependencies:users-db-1",
+    "incus_name": "users-db-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "worker",
+    "description": "incus-compose: testexamplemanydependencies:worker-1",
+    "incus_name": "worker-1",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "",
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "worker",
+    "description": "incus-compose: testexamplemanydependencies:worker-2",
+    "incus_name": "worker-2",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "",
+      ""
+    ]
+  },
+  {
+    "kind": "instance",
+    "name": "worker",
+    "description": "incus-compose: testexamplemanydependencies:worker-3",
+    "incus_name": "worker-3",
+    "image": "docker.io/nginxinc/nginx-unprivileged:alpine",
+    "status": "Running",
+    "health": "Healthy",
+    "addresses": [
+      "",
+      ""
+    ]
+  }
+]
+

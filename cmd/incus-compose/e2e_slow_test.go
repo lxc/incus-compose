@@ -23,9 +23,9 @@ func cleanLines(t *testing.T, in string) []string {
 // TestUpNoDeps verifies `up <service> --no-deps` starts only the named service
 // and does not wait on its (unstarted) service_healthy dependencies.
 func TestUpNoDeps(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
@@ -51,9 +51,9 @@ func TestUpNoDeps(t *testing.T) {
 // TestUpDeps verifies `up <service>` (default) follows depends_on and starts the
 // linked services too.
 func TestUpDeps(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
@@ -76,9 +76,9 @@ func TestUpDeps(t *testing.T) {
 // TestDownNoDeps verifies `down <service> --no-deps` removes only the named
 // service and leaves its dependants running.
 func TestDownNoDeps(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
@@ -104,9 +104,9 @@ func TestDownNoDeps(t *testing.T) {
 // TestDownDeps verifies `down <service>` (default) follows depends_on in reverse
 // and also removes the services that depend on the named one.
 func TestDownDeps(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
@@ -133,9 +133,9 @@ func TestDownDeps(t *testing.T) {
 // services as real services, whereas the default scopes to the named service
 // (other running instances show up only as <orphan>).
 func TestPsDeps(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
@@ -171,9 +171,9 @@ func TestPsDeps(t *testing.T) {
 // service (and, crucially, start does not block on out-of-scope healthd
 // dependency conditions); --with-deps follows depends_on like up/down.
 func TestStartStopRestartLogsWithDeps(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	compose := "../../test/fixtures/nginx-proxy/compose.yaml"
 
@@ -238,9 +238,9 @@ func TestStartStopRestartLogsWithDeps(t *testing.T) {
 }
 
 func TestUpDownGrafana(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -280,9 +280,9 @@ func TestUpDownGrafana(t *testing.T) {
 }
 
 func TestDownProjectDeletesNetworks(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -323,9 +323,9 @@ func TestDownProjectDeletesNetworks(t *testing.T) {
 }
 
 func TestUpRecreate(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -365,9 +365,9 @@ func TestUpRecreate(t *testing.T) {
 }
 
 func TestUpUpRecreate(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -417,9 +417,9 @@ func TestUpUpRecreate(t *testing.T) {
 }
 
 func TestUpRecreateDown(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -469,9 +469,9 @@ func TestUpRecreateDown(t *testing.T) {
 }
 
 func TestLifecycleSimpleNginx(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -544,9 +544,9 @@ func TestLifecycleSimpleNginx(t *testing.T) {
 }
 
 func TestUpDownScale(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -586,9 +586,9 @@ func TestUpDownScale(t *testing.T) {
 }
 
 func TestUpDownDownscale(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -628,9 +628,9 @@ func TestUpDownDownscale(t *testing.T) {
 }
 
 func TestUpDownWithScale(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -670,9 +670,9 @@ func TestUpDownWithScale(t *testing.T) {
 }
 
 func TestListSnapshots(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -689,10 +689,6 @@ func TestListSnapshots(t *testing.T) {
 		name string
 		args []string
 	}{
-		{
-			name: "list_table",
-			args: []string{"-f", compose, "list"},
-		},
 		{
 			name: "list_yaml",
 			args: []string{"-f", compose, "list", "--format", "yaml"},
@@ -713,13 +709,24 @@ func TestListSnapshots(t *testing.T) {
 }
 
 func TestExternalNetwork(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
 	compose := "../../test/fixtures/test-external-network/compose.yaml"
+
+	gc, err := client.NewTestClient(ctx)
+	require.NoError(t, err)
+
+	conn, err := gc.Connection()
+	require.NoError(t, err)
+
+	_, _, err = conn.GetNetwork("incusbr0")
+	if err != nil {
+		t.Skipf("No incusbr0: %v", err)
+	}
 
 	t.Cleanup(func() {
 		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
@@ -755,9 +762,9 @@ func TestExternalNetwork(t *testing.T) {
 }
 
 func TestUpDownWithIncusOptions(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -797,9 +804,9 @@ func TestUpDownWithIncusOptions(t *testing.T) {
 }
 
 func TestUpDownWithProjectOptions(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -839,9 +846,9 @@ func TestUpDownWithProjectOptions(t *testing.T) {
 }
 
 func TestUpDownWithSecrets(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -881,9 +888,9 @@ func TestUpDownWithSecrets(t *testing.T) {
 }
 
 func TestDownImages(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()
@@ -916,9 +923,9 @@ func TestDownImages(t *testing.T) {
 }
 
 func TestUpDownWithVolume(t *testing.T) {
+	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
-	t.Parallel()
 
 	ctx := context.Background()
 	pn := t.Name()

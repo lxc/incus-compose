@@ -1,4 +1,4 @@
-name: Test slow
+name: Test examples
 
 on:
   workflow_dispatch:
@@ -34,6 +34,7 @@ jobs:
       INCUS_COMPOSE_IMAGE_CACHE: incus-compose-tests-cache
       NO_COLOR: 1
       INCUS_COMPOSE_TEST_SLOW: 1
+      INCUS_COMPOSE_TEST_EXAMPLES: 1
       TEST_PROCS: 1
     steps:
       - uses: actions/checkout@v6
