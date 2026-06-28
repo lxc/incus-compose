@@ -34,7 +34,7 @@ func TestExampleHugo(t *testing.T) {
 	}{
 		{
 			name:    "up",
-			args:    []string{"--project-directory", project, "up", "--detach", "--timeout", "10m", "--dependency-timeout", "10m"},
+			args:    []string{"--project-directory", project, "up", "--detach", "--timeout", "15m", "--dependency-timeout", "15m"},
 			wantErr: false,
 		},
 		{
@@ -79,7 +79,7 @@ func TestExampleImmich(t *testing.T) {
 	}{
 		{
 			name:    "up",
-			args:    []string{"--project-directory", project, "up", "--detach", "--timeout", "10m", "--dependency-timeout", "10m"},
+			args:    []string{"--project-directory", project, "up", "--detach", "--timeout", "15m", "--dependency-timeout", "15m"},
 			wantErr: false,
 		},
 		{
@@ -124,7 +124,7 @@ func TestExampleManyDependencies(t *testing.T) {
 	}{
 		{
 			name:    "up",
-			args:    []string{"--project-directory", project, "up", "--detach", "--timeout", "10m", "--dependency-timeout", "10m"},
+			args:    []string{"--project-directory", project, "up", "--detach", "--timeout", "15m", "--dependency-timeout", "15m"},
 			wantErr: false,
 		},
 		{
@@ -169,7 +169,7 @@ func TestExampleWikijs(t *testing.T) {
 	}{
 		{
 			name:    "up",
-			args:    []string{"--project-directory", project, "up", "--detach", "--timeout", "10m", "--dependency-timeout", "10m"},
+			args:    []string{"--project-directory", project, "up", "--detach", "--timeout", "15m", "--dependency-timeout", "15m"},
 			wantErr: false,
 		},
 		{

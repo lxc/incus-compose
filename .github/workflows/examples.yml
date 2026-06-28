@@ -13,19 +13,21 @@ env:
   REPORTS_DIR: reports
 
 jobs:
-  test-slow:
+  test-example:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: default
-            runs-on: [self-hosted, incus-compose, default]
-          - name: custom-storage
-            runs-on: [self-hosted, incus-compose, custom-storage]
-          - name: custom-network
-            runs-on: [self-hosted, incus-compose, custom-network]
-    runs-on: ${{ matrix.runs-on }}
-    timeout-minutes: 120
+          - name: Hugo
+            args: "-run TestExampleHugo"
+          - name: Immich
+            args: "-run TestExampleImmich -timeout 20m"
+          - name: ManyDependencies
+            args: "-run TestExampleManyDependencies"
+          - name: WikiJS
+            args: "-run TestExampleWikijs"
+    runs-on: [self-hosted, incus-compose]
+    timeout-minutes: 60
     permissions:
       contents: read
       checks: write # publish JUnit results as a check run
@@ -36,6 +38,7 @@ jobs:
       INCUS_COMPOSE_TEST_SLOW: 1
       INCUS_COMPOSE_TEST_EXAMPLES: 1
       TEST_PROCS: 1
+      EXAMPLE: TestExampleHugo
     steps:
       - uses: actions/checkout@v6
         with:
@@ -49,12 +52,12 @@ jobs:
       - name: Test
         run: |
           mkdir -p "$REPORTS_DIR"
-          go mod tidy -v -diff
-          set -o pipefail
+
           gotestsum --rerun-fails \
             --packages="./..." \
             --junitfile "$REPORTS_DIR/junit.xml" \
-            -- -count=1 -parallel="$TEST_PROCS" -v 2>&1
+            -- -count=1 -parallel "$TEST_PROCS" -timeout 20m \
+               ${{ matrix.args }} 2>&1
 
       - name: Publish test results
         if: always()

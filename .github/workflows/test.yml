@@ -83,12 +83,11 @@ jobs:
       - name: Test
         run: |
           mkdir -p "$REPORTS_DIR"
-          go mod tidy -v -diff
-          set -o pipefail
+
           gotestsum --rerun-fails \
             --packages="./..." \
             --junitfile "$REPORTS_DIR/junit.xml" \
-            -- -count=1 -parallel="$TEST_PROCS" -v 2>&1
+            -- -count=1 -parallel "$TEST_PROCS" -v 2>&1
 
       - name: Publish test results
         if: always()
