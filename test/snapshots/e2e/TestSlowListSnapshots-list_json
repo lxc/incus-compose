@@ -3,7 +3,7 @@
     "kind": "network",
     "name": "default",
     "description": "",
-    "incus_name": "ic-uf62fvkwl4",
+    "incus_name": "ic-ydehq3ockv",
     "image": "",
     "status": "Exists",
     "health": "",
@@ -12,7 +12,7 @@
   {
     "kind": "instance",
     "name": "web",
-    "description": "incus-compose: testlistsnapshots:web-1",
+    "description": "incus-compose: testslowlistsnapshots:web-1",
     "incus_name": "web-1",
     "image": "docker.io/library/nginx:alpine",
     "status": "Running",
