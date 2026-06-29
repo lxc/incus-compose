@@ -1,5 +1,6 @@
 services:
   server:
+    command: /bin/bash -c "/bin/sleep 2; /usr/src/app/server/bin/start.sh"
     ports: !reset []
     healthcheck:
       test: ["CMD", "/usr/src/app/server/bin/immich-healthcheck"]
@@ -13,6 +14,7 @@ services:
         ipv4_address: 10.131.32.17
 
   microservices:
+    command: /bin/bash -c "/bin/sleep 2; /usr/src/app/server/bin/start.sh"
     healthcheck:
       test: ["CMD", "/usr/src/app/server/bin/immich-healthcheck"]
       interval: 10s
