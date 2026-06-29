@@ -211,7 +211,7 @@ func (r *Instance) WaitIPs(ctx context.Context, timeout time.Duration) (ips []In
 		select {
 		case <-deadline.Done():
 			cancel()
-			return nil, NewError("WaitIPs").Wrap(deadline.Err())
+			return nil, NewError("WaitIPs").WithText(fmt.Sprintf("timeout after: %v", timeout))
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
@@ -768,39 +768,32 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 		}
 	}
 
-	// Starting can fail transiently, so retry.
-	err := retry.New(
-		retry.Context(ctx),
-		retry.Attempts(6),
-		retry.Delay(2*time.Second),
-	).Do(func() error {
-		err := r.fetch()
-		if err != nil {
-			return err
-		}
-
-		if r.Running() {
-			return nil
-		}
-
-		op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
-			Action:  "start",
-			Timeout: options.incusTimeout(),
-		}, r.ETag)
-		if err != nil {
-			return ErrOperation.WithText("starting instance").Wrap(err)
-		}
-
-		// The operation completes once the instance is running or failed to start.
-		err = r.client.hookOperation(ctx, ActionStart, r, options, op, err)
-		if err != nil {
-			return err
-		}
-
-		return r.fetch()
-	})
+	err := r.fetch()
 	if err != nil {
-		return fmt.Errorf("start with retry: %w", err)
+		return err
+	}
+
+	if r.Running() {
+		return nil
+	}
+
+	op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
+		Action:  "start",
+		Timeout: options.incusTimeout(),
+	}, "")
+	if err != nil {
+		return ErrOperation.WithText("starting instance").Wrap(err)
+	}
+
+	// The operation completes once the instance is running or failed to start.
+	err = r.client.hookOperation(ctx, ActionStart, r, options, op, err)
+	if err != nil {
+		return err
+	}
+
+	err = r.fetch()
+	if err != nil {
+		return err
 	}
 
 	if r.created {
@@ -1025,45 +1018,23 @@ func (r *Instance) stop(ctx context.Context, options Options) error {
 		}
 	}
 
-	// setHealthCheckingStopped refetched the instance; it may have stopped meanwhile.
 	if !r.Running() {
 		return nil
 	}
 
-	// Stopping can fail transiently, so retry.
-	err := retry.New(
-		retry.Context(ctx),
-		retry.Attempts(6),
-		retry.Delay(2*time.Second),
-	).Do(func() error {
-		err := r.fetch()
-		if err != nil {
-			return err
-		}
-
-		if !r.Running() {
-			return nil
-		}
-
-		op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
-			Action:  "stop",
-			Force:   options.Force,
-			Timeout: options.incusTimeout(),
-		}, r.ETag)
-		if err != nil {
-			return ErrOperation.WithText("stopping instance").Wrap(err)
-		}
-
-		// The operation completes once the instance is stopped or failed to stop.
-		err = r.client.hookOperation(ctx, ActionStop, r, options, op, err)
-		if err != nil {
-			return err
-		}
-
-		return nil
-	})
+	op, err := r.conn.UpdateInstanceState(r.incusName, incusApi.InstanceStatePut{
+		Action:  "stop",
+		Force:   options.Force,
+		Timeout: options.incusTimeout(),
+	}, "")
 	if err != nil {
-		return fmt.Errorf("stop with retry: %w", err)
+		return ErrOperation.WithText("stopping instance").Wrap(err)
+	}
+
+	// The operation completes once the instance is stopped or failed to stop.
+	err = r.client.hookOperation(ctx, ActionStop, r, options, op, err)
+	if err != nil {
+		return err
 	}
 
 	return r.fetch()

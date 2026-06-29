@@ -338,12 +338,13 @@ func (r *Network) Delete(ctx context.Context, opts ...Option) error {
 		return err
 	}
 
-	err := r.client.hookAfter(
+	err := r.conn.DeleteNetwork(r.incusName)
+	err = r.client.hookAfter(
 		ctx,
 		ActionDelete,
 		r,
 		options,
-		r.conn.DeleteNetwork(r.incusName),
+		err,
 	)
 	if err != nil {
 		r.IncusNetwork = nil

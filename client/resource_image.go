@@ -8,9 +8,7 @@ import (
 	"maps"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/avast/retry-go/v5"
 	"github.com/distribution/reference"
 	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
@@ -467,24 +465,9 @@ func extractAndStoreOCIConfig(ctx context.Context, server incusClient.InstanceSe
 	}
 
 	// fetch
-	rCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	instance, err := retry.NewWithData[*incusApi.Instance](
-		retry.Context(rCtx),
-		retry.Attempts(3),
-		retry.Delay(500*time.Millisecond), // 10 seconds total.
-	).Do(func() (*incusApi.Instance, error) {
-		var err error
-		instance, _, err := server.GetInstance(tempName)
-		if err != nil {
-			return nil, err
-		}
-
-		return instance, nil
-	})
+	instance, _, err := server.GetInstance(tempName)
 	if err != nil {
-		return fmt.Errorf("getting the temp instance after create: %w", err)
+		return err
 	}
 
 	uid, gid, err := extractUIDGID(instance)
