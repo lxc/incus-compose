@@ -179,6 +179,28 @@ func (p *Project) Load(ctx context.Context, opts ...LoadOption) (*Project, error
 	return p, nil
 }
 
+// InstanceNames returns the Incus instance names for all services.
+func (p *Project) InstanceNames() []string {
+	var names []string
+	for _, svcName := range p.ServiceNames() {
+		service, err := p.GetService(svcName)
+		if err != nil {
+			continue
+		}
+
+		replicas := 1
+		if service.Deploy != nil && service.Deploy.Replicas != nil {
+			replicas = int(*service.Deploy.Replicas)
+		}
+
+		for i := 1; i <= replicas; i++ {
+			names = append(names, instanceName(service, i, replicas))
+		}
+	}
+
+	return names
+}
+
 // HealthdConfig reads the top-level x-incus-compose.healthd extension.
 // Returns empty strings when the key is absent.
 func (p *Project) HealthdConfig() (incusURL, network string) {

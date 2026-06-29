@@ -679,6 +679,32 @@ func TestContainerNameUsedAsInstanceName(t *testing.T) {
 	assert.Equal(t, "my-nginx", instanceName, "container_name should be used as instance name")
 }
 
+func TestInstanceNames(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	t.Run("simple", func(t *testing.T) {
+		t.Parallel()
+		p, err := project.New().Load(ctx, project.LoadWorkingDir(fixturePath("simple-nginx")))
+		require.NoError(t, err)
+		assert.Equal(t, []string{"web-1"}, p.InstanceNames())
+	})
+
+	t.Run("container_name", func(t *testing.T) {
+		t.Parallel()
+		p, err := project.New().Load(ctx, project.LoadWorkingDir(fixturePath("with-container-name")))
+		require.NoError(t, err)
+		assert.Equal(t, []string{"my-nginx"}, p.InstanceNames())
+	})
+
+	t.Run("replicas", func(t *testing.T) {
+		t.Parallel()
+		p, err := project.New().Load(ctx, project.LoadWorkingDir(fixturePath("nginx-scale")))
+		require.NoError(t, err)
+		assert.Equal(t, []string{"web-1", "web-2", "web2-1"}, p.InstanceNames())
+	})
+}
+
 // TestOnlyServicesStopDoesNotCascadeToDependencies verifies that stop web does not pull in database.
 func TestOnlyServicesStopDoesNotCascadeToDependencies(t *testing.T) {
 	t.Parallel()

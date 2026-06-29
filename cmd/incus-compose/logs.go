@@ -29,8 +29,8 @@ var logColors = []string{
 	"34;1", // intense blue
 }
 
-// logFormatter handles formatting and output of log lines from multiple services.
-type logFormatter struct {
+// logHandler handles formatting, output of log lines, and per-instance log goroutine tracking.
+type logHandler struct {
 	mu         sync.Mutex
 	out        io.Writer
 	colors     map[string]string // resource name -> color code
@@ -38,21 +38,21 @@ type logFormatter struct {
 	maxWidth   int
 	noColor    bool
 	buffers    map[string]*bytes.Buffer // resource name -> line buffer
+	cancels    sync.Map                 // incus name -> context.CancelFunc
 }
 
 // newLogFormatter creates a new log formatter.
-func newLogFormatter(out io.Writer, noColor bool) *logFormatter {
-	return &logFormatter{
-		out:      out,
-		colors:   make(map[string]string),
-		buffers:  make(map[string]*bytes.Buffer),
-		noColor:  noColor,
-		maxWidth: 0,
+func newLogFormatter(out io.Writer, noColor bool) *logHandler {
+	return &logHandler{
+		out:     out,
+		colors:  make(map[string]string),
+		buffers: make(map[string]*bytes.Buffer),
+		noColor: noColor,
 	}
 }
 
 // registerService registers a service and assigns it a color.
-func (f *logFormatter) registerService(name string) {
+func (f *logHandler) registerService(name string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -70,13 +70,12 @@ func (f *logFormatter) registerService(name string) {
 }
 
 // write handles incoming log data from a resource.
-func (f *logFormatter) write(action client.Action, r client.Resource, data []byte) {
+func (f *logHandler) write(_ client.Action, r client.Resource, data []byte) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	name := r.Name()
 
-	// Ensure service is registered
 	if _, ok := f.colors[name]; !ok {
 		f.colors[name] = logColors[f.colorIndex%len(logColors)]
 		f.colorIndex++
@@ -89,41 +88,36 @@ func (f *logFormatter) write(action client.Action, r client.Resource, data []byt
 	buf := f.buffers[name]
 	buf.Write(data)
 
-	// Process complete lines
 	for {
 		line, err := buf.ReadBytes('\n')
 		if err != nil {
-			// No complete line yet, put back unprocessed data
 			buf.Write(line)
 			break
 		}
 
-		// Output the line with prefix
 		f.writeLine(name, line)
 	}
 }
 
 // writeLine outputs a single line with prefix and color.
-func (f *logFormatter) writeLine(name string, line []byte) {
+func (f *logHandler) writeLine(name string, line []byte) {
 	prefix := fmt.Sprintf("%-*s | ", f.maxWidth, name)
 
 	if f.noColor {
 		_, _ = fmt.Fprintf(f.out, "%s%s", prefix, line)
 	} else {
 		color := f.colors[name]
-		// Color the prefix, not the log content
 		_, _ = fmt.Fprintf(f.out, "\033[%sm%s\033[0m%s", color, prefix, line)
 	}
 }
 
 // flush outputs any remaining buffered data.
-func (f *logFormatter) flush() {
+func (f *logHandler) flush() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	for name, buf := range f.buffers {
 		if buf.Len() > 0 {
-			// Output remaining data even if no newline
 			line := buf.Bytes()
 			f.writeLine(name, append(line, '\n'))
 			buf.Reset()
@@ -131,64 +125,41 @@ func (f *logFormatter) flush() {
 	}
 }
 
-// logTracker manages per-instance log goroutines for follow mode.
-type logTracker struct {
-	mu        sync.Mutex
-	cancels   map[string]context.CancelFunc
-	formatter *logFormatter
-}
-
-func newLogTracker(formatter *logFormatter) *logTracker {
-	return &logTracker{
-		cancels:   make(map[string]context.CancelFunc),
-		formatter: formatter,
-	}
-}
-
-func (lt *logTracker) start(ctx context.Context, inst *client.Instance) {
-	lt.mu.Lock()
-	defer lt.mu.Unlock()
-
+// startStream begins streaming logs for an instance in a background goroutine.
+func (f *logHandler) startStream(ctx context.Context, inst *client.Instance) {
 	name := inst.IncusName()
-	if _, running := lt.cancels[name]; running {
+	if _, running := f.cancels.Load(name); running {
 		return
 	}
 
-	lt.formatter.registerService(inst.Name())
+	f.registerService(inst.Name())
 
 	logCtx, cancel := context.WithCancel(ctx)
-	lt.cancels[name] = cancel
+	f.cancels.Store(name, cancel)
 
 	go func() {
 		_ = client.RunAction(logCtx, inst, client.ActionLog, client.OptionFollow())
-
-		lt.mu.Lock()
-		delete(lt.cancels, name)
-		lt.mu.Unlock()
+		f.cancels.Delete(name)
 	}()
 }
 
-func (lt *logTracker) stop(incusName string) {
-	lt.mu.Lock()
-	defer lt.mu.Unlock()
-
-	cancel, ok := lt.cancels[incusName]
+// stopStream cancels the log goroutine for the named instance.
+func (f *logHandler) stopStream(incusName string) {
+	v, ok := f.cancels.LoadAndDelete(incusName)
 	if !ok {
 		return
 	}
 
-	cancel()
-	delete(lt.cancels, incusName)
+	v.(context.CancelFunc)()
 }
 
-func (lt *logTracker) stopAll() {
-	lt.mu.Lock()
-	defer lt.mu.Unlock()
-
-	for name, cancel := range lt.cancels {
-		cancel()
-		delete(lt.cancels, name)
-	}
+// stopStreams cancels all running log goroutines.
+func (f *logHandler) stopStreams() {
+	f.cancels.Range(func(key, value any) bool {
+		value.(context.CancelFunc)()
+		f.cancels.Delete(key)
+		return true
+	})
 }
 
 func newLogsCommand() *cli.Command {
@@ -235,44 +206,30 @@ func newLogsCommand() *cli.Command {
 			formatter := newLogFormatter(cmd.Root().Writer, noColor)
 			globalClient.SetOutputHandler(formatter.write)
 
-			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice())}
+			knownNames := p.InstanceNames()
+			knownInstances := make(map[string]*client.Instance, len(knownNames))
+			for _, name := range knownNames {
+				r, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{})
+				if err != nil {
+					continue
+				}
 
-			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
-			if err := p.ToStack(c, stack, stackOpts...); err != nil {
-				c.LogError(err.Error())
-				return errLogged.Wrap(err)
-			}
+				inst, ok := r.(*client.Instance)
+				if !ok {
+					continue
+				}
 
-			isInstance := func(r client.Resource) bool {
-				return r.Kind() == client.KindInstance
-			}
-
-			instanceStack := stack.ForActionF(client.ActionLog, isInstance)
-
-			instances, err := client.ByKind[*client.Instance](instanceStack.All(), client.KindInstance)
-			if err != nil {
-				c.LogError("Filtering instances", "error", err)
-				return errLogged.Wrap(err)
+				knownInstances[inst.IncusName()] = inst
 			}
 
 			if !cmd.Bool("follow") {
-				for _, inst := range instances {
+				for _, inst := range knownInstances {
 					formatter.registerService(inst.Name())
-				}
-
-				if err := instanceStack.Run(ctx, client.ActionLog, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
-					c.LogError("Getting logs", "error", err)
-					return errLogged.Wrap(err)
+					_ = inst.Log(ctx)
 				}
 
 				formatter.flush()
 				return nil
-			}
-
-			// Follow mode: watch events, stream dynamically.
-			knownInstances := make(map[string]*client.Instance, len(instances))
-			for _, inst := range instances {
-				knownInstances[inst.IncusName()] = inst
 			}
 
 			conn, err := c.Connection()
@@ -288,12 +245,19 @@ func newLogsCommand() *cli.Command {
 			}
 			defer listener.Disconnect()
 
-			tracker := newLogTracker(formatter)
-			defer tracker.stopAll()
+			defer formatter.stopStreams()
+
+			projectGone := make(chan struct{})
+			incusProject := c.IncusProject()
 
 			_, err = listener.AddHandler([]string{incusApi.EventTypeLifecycle}, func(event incusApi.Event) {
 				var lifecycle incusApi.EventLifecycle
 				if err := json.Unmarshal(event.Metadata, &lifecycle); err != nil {
+					return
+				}
+
+				if lifecycle.Action == incusApi.EventLifecycleProjectDeleted && lifecycle.Name == incusProject {
+					close(projectGone)
 					return
 				}
 
@@ -304,9 +268,9 @@ func newLogsCommand() *cli.Command {
 
 				switch lifecycle.Action {
 				case incusApi.EventLifecycleInstanceStarted:
-					tracker.start(ctx, inst)
+					formatter.startStream(ctx, inst)
 				case incusApi.EventLifecycleInstanceStopped, incusApi.EventLifecycleInstanceDeleted, incusApi.EventLifecycleInstanceShutdown:
-					tracker.stop(lifecycle.Name)
+					formatter.stopStream(lifecycle.Name)
 				}
 			})
 			if err != nil {
@@ -315,12 +279,17 @@ func newLogsCommand() *cli.Command {
 			}
 
 			for _, inst := range knownInstances {
-				if inst.Running() {
-					tracker.start(ctx, inst)
-				}
+				formatter.startStream(ctx, inst)
 			}
 
-			<-ctx.Done()
+			select {
+			case <-ctx.Done():
+			case <-projectGone:
+				c.LogError("Project deleted")
+				formatter.flush()
+				return errLogged
+			}
+
 			formatter.flush()
 			return nil
 		},
