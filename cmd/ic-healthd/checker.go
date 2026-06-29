@@ -122,10 +122,10 @@ func (c *Checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 	phaseCtx, cancel := context.WithCancel(ctx)
 	if inStart {
 		interval = c.config.StartInterval
-		retries = 1
-		if c.config.StartInterval > 0 {
-			retries = max(1, int(c.config.StartPeriod/c.config.StartInterval))
-		}
+		// retries = 1
+		// if c.config.StartInterval > 0 {
+		// 	retries = max(1, int(c.config.StartPeriod/c.config.StartInterval))
+		// }
 		phaseCtx, cancel = context.WithTimeout(ctx, c.config.StartPeriod)
 	}
 	defer cancel()
@@ -330,6 +330,10 @@ func (c *Checker) writeStatus(status string) error {
 			// We already wrote that.
 			return nil
 		}
+	}
+
+	if inst.Config[client.HealthStatusKey] == status {
+		return nil
 	}
 
 	slog.Debug("Writing status", "instance", c.name, "status", status, "old-status", inst.Config[client.HealthStatusKey])
