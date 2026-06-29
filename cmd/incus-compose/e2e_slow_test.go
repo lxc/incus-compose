@@ -20,9 +20,9 @@ func cleanLines(t *testing.T, in string) []string {
 	return out
 }
 
-// TestUpNoDeps verifies `up <service> --no-deps` starts only the named service
+// TestSlowUpNoDeps verifies `up <service> --no-deps` starts only the named service
 // and does not wait on its (unstarted) service_healthy dependencies.
-func TestUpNoDeps(t *testing.T) {
+func TestSlowUpNoDeps(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -48,9 +48,9 @@ func TestUpNoDeps(t *testing.T) {
 	require.Error(t, ensureInstance(t, ctx, c, "backend2-1"))
 }
 
-// TestUpDeps verifies `up <service>` (default) follows depends_on and starts the
+// TestSlowUpDeps verifies `up <service>` (default) follows depends_on and starts the
 // linked services too.
-func TestUpDeps(t *testing.T) {
+func TestSlowUpDeps(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -73,9 +73,9 @@ func TestUpDeps(t *testing.T) {
 	require.NoError(t, ensureInstance(t, ctx, c, "backend2-1"))
 }
 
-// TestDownNoDeps verifies `down <service> --no-deps` removes only the named
+// TestSlowDownNoDeps verifies `down <service> --no-deps` removes only the named
 // service and leaves its dependants running.
-func TestDownNoDeps(t *testing.T) {
+func TestSlowDownNoDeps(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -101,9 +101,9 @@ func TestDownNoDeps(t *testing.T) {
 	require.Error(t, ensureInstance(t, ctx, c, "backend1-1"))
 }
 
-// TestDownDeps verifies `down <service>` (default) follows depends_on in reverse
+// TestSlowDownDeps verifies `down <service>` (default) follows depends_on in reverse
 // and also removes the services that depend on the named one.
-func TestDownDeps(t *testing.T) {
+func TestSlowDownDeps(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -129,10 +129,10 @@ func TestDownDeps(t *testing.T) {
 	require.Error(t, ensureInstance(t, ctx, c, "backend1-1"))
 }
 
-// TestPsDeps verifies that `ps <service> --with-deps` includes the linked
+// TestSlowPsDeps verifies that `ps <service> --with-deps` includes the linked
 // services as real services, whereas the default scopes to the named service
 // (other running instances show up only as <orphan>).
-func TestPsDeps(t *testing.T) {
+func TestSlowPsDeps(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -166,11 +166,11 @@ func TestPsDeps(t *testing.T) {
 	require.Contains(t, withDeps, "backend2")
 }
 
-// TestStartStopRestartLogsWithDeps exercises start/stop/restart/logs with and
+// TestSlowStartStopRestartLogsWithDeps exercises start/stop/restart/logs with and
 // without --with-deps. The default keeps each command scoped to the named
 // service (and, crucially, start does not block on out-of-scope healthd
 // dependency conditions); --with-deps follows depends_on like up/down.
-func TestStartStopRestartLogsWithDeps(t *testing.T) {
+func TestSlowStartStopRestartLogsWithDeps(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -237,7 +237,7 @@ func TestStartStopRestartLogsWithDeps(t *testing.T) {
 	require.NotContains(t, names, "backend1-1")
 }
 
-func TestUpDownGrafana(t *testing.T) {
+func TestSlowUpDownGrafana(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -279,7 +279,7 @@ func TestUpDownGrafana(t *testing.T) {
 	}
 }
 
-func TestDownProjectDeletesNetworks(t *testing.T) {
+func TestSlowDownProjectDeletesNetworks(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -322,7 +322,7 @@ func TestDownProjectDeletesNetworks(t *testing.T) {
 	}
 }
 
-func TestUpRecreate(t *testing.T) {
+func TestSlowUpRecreate(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -364,7 +364,7 @@ func TestUpRecreate(t *testing.T) {
 	}
 }
 
-func TestUpUpRecreate(t *testing.T) {
+func TestSlowUpUpRecreate(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -416,7 +416,7 @@ func TestUpUpRecreate(t *testing.T) {
 	}
 }
 
-func TestUpRecreateDown(t *testing.T) {
+func TestSlowUpRecreateDown(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -468,7 +468,7 @@ func TestUpRecreateDown(t *testing.T) {
 	}
 }
 
-func TestLifecycleSimpleNginx(t *testing.T) {
+func TestSlowLifecycleSimpleNginx(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -543,7 +543,7 @@ func TestLifecycleSimpleNginx(t *testing.T) {
 	}
 }
 
-func TestUpDownScale(t *testing.T) {
+func TestSlowUpDownScale(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -585,7 +585,7 @@ func TestUpDownScale(t *testing.T) {
 	}
 }
 
-func TestUpDownDownscale(t *testing.T) {
+func TestSlowUpDownDownscale(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -627,7 +627,7 @@ func TestUpDownDownscale(t *testing.T) {
 	}
 }
 
-func TestUpDownWithScale(t *testing.T) {
+func TestSlowUpDownWithScale(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -669,7 +669,7 @@ func TestUpDownWithScale(t *testing.T) {
 	}
 }
 
-func TestListSnapshots(t *testing.T) {
+func TestSlowListSnapshots(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -708,7 +708,7 @@ func TestListSnapshots(t *testing.T) {
 	}
 }
 
-func TestExternalNetwork(t *testing.T) {
+func TestSlowExternalNetwork(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -761,7 +761,7 @@ func TestExternalNetwork(t *testing.T) {
 	}
 }
 
-func TestUpDownWithIncusOptions(t *testing.T) {
+func TestSlowUpDownWithIncusOptions(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -803,7 +803,7 @@ func TestUpDownWithIncusOptions(t *testing.T) {
 	}
 }
 
-func TestUpDownWithProjectOptions(t *testing.T) {
+func TestSlowUpDownWithProjectOptions(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -845,7 +845,7 @@ func TestUpDownWithProjectOptions(t *testing.T) {
 	}
 }
 
-func TestUpDownWithSecrets(t *testing.T) {
+func TestSlowUpDownWithSecrets(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -887,7 +887,7 @@ func TestUpDownWithSecrets(t *testing.T) {
 	}
 }
 
-func TestDownImages(t *testing.T) {
+func TestSlowDownImages(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -922,7 +922,7 @@ func TestDownImages(t *testing.T) {
 	require.Error(t, client.RunAction(ctx, r, client.ActionEnsure), "image should be removed by down --images")
 }
 
-func TestUpDownWithVolume(t *testing.T) {
+func TestSlowUpDownWithVolume(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
