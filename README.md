@@ -12,6 +12,10 @@ https://github.com/user-attachments/assets/f4a82695-9d4f-4ee4-9376-562c48c87575
 
 [Incus](https://linuxcontainers.org/incus/) provides powerful system containers and virtual machines with superior security and isolation, but lacks the declarative multi-container orchestration that Docker Compose offers. This tool bridges that gap:
 
+[![asciicast](https://asciinema.org/a/1259458.svg)](https://asciinema.org/a/1259458)
+
+https://github.com/user-attachments/assets/d4e0a3b1-6b9e-4b43-8b4e-deb7b6d07f39
+
 - Use existing `docker-compose.yml` files with Incus containers
 - Leverage Incus's native OCI registry support for image pulling
 - Run Docker/OCI images directly from registries
