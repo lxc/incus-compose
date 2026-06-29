@@ -77,7 +77,10 @@ func newDownCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			finish := startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			finish := func(success bool) {}
+			if !cmd.Root().Bool("debug") {
+				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
+			}
 
 			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackReverse()}
 			if !cmd.Bool("no-deps") {
@@ -100,8 +103,35 @@ func newDownCommand() *cli.Command {
 				return errLogged
 			}
 
+			if healthdInUseByProject(globalClient, p) {
+				h, err := healthdResolve(c)
+				if err == nil {
+					stack.Add(h)
+				}
+			}
+
 			if err := stack.Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
 				c.LogWarn("Getting resources", "error", err)
+			}
+
+			runOpts := []client.Option{
+				client.OptionForce(),
+				client.OptionTimeout(cmd.Duration("timeout")),
+			}
+
+			// Networks are handled by the GlobalClient.
+			downFilter := func(r client.Resource) bool {
+				return r.Kind() != client.KindNetwork
+			}
+
+			errStop := stack.ForActionF(client.ActionStop, downFilter).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, runOpts...)
+			if errStop != nil {
+				c.LogWarn("Stopping resources", "error", errStop)
+			}
+
+			errDel := stack.ForActionF(client.ActionDelete, downFilter).Run(ctx, client.ActionDelete, cmd.Root().Writer, cmd.Root().ErrWriter, runOpts...)
+			if errDel != nil {
+				c.LogWarn("Deleting resources", "error", errDel)
 			}
 
 			if cmd.Bool("project") {
@@ -111,23 +141,6 @@ func newDownCommand() *cli.Command {
 					c.LogError("Deleting the project", "error", err)
 					return errLogged.Wrap(err)
 				}
-
-				return nil
-			}
-
-			runOpts := []client.Option{
-				client.OptionForce(),
-				client.OptionTimeout(cmd.Duration("timeout")),
-			}
-
-			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, runOpts...)
-			if errStop != nil {
-				c.LogWarn("Stopping resources", "error", errStop)
-			}
-
-			errDel := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, cmd.Root().Writer, cmd.Root().ErrWriter, runOpts...)
-			if errDel != nil {
-				c.LogWarn("Deleting resources", "error", errDel)
 			}
 
 			finish(err == nil)
