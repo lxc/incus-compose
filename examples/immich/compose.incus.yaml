@@ -1,7 +1,5 @@
 services:
   server:
-    # skipping "tini" seems to fix dns start issues
-    command: /usr/bin/bash -c "/bin/sleep 2; start.sh"
     ports: !reset []
     healthcheck:
       test: ["CMD", "/usr/src/app/server/bin/immich-healthcheck"]
@@ -15,8 +13,6 @@ services:
         ipv4_address: 10.131.32.17
 
   microservices:
-    # skipping "tini" seems to fix dns start issues
-    command: /usr/bin/bash -c "/bin/sleep 2; start.sh"
     healthcheck:
       test: ["CMD", "/usr/src/app/server/bin/immich-healthcheck"]
       interval: 10s

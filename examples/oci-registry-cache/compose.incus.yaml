@@ -1,21 +1,15 @@
 services:
   docker-registry:
-    # This is required as long `registry serve` spawns without networking beeing ready.
-    command: /bin/sh -c "/bin/sleep 10s; registry serve /etc/distribution/config.yml"
     networks:
       default:
         ipv4_address: 10.132.32.17
 
   ghcr-registry:
-    # This is required as long `registry serve` spawns without networking beeing ready.
-    command: /bin/sh -c "/bin/sleep 10s; registry serve /etc/distribution/config.yml"
     networks:
       default:
         ipv4_address: 10.132.32.18
 
   gitlab-registry:
-    # This is required as long `registry serve` spawns without networking beeing ready.
-    command: /bin/sh -c "/bin/sleep 10s; registry serve /etc/distribution/config.yml"
     networks:
       default:
         ipv4_address: 10.132.32.19

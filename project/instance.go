@@ -189,6 +189,17 @@ func instanceConfig(service types.ServiceConfig) (map[string]string, error) {
 		}
 	}
 
+	// Ensure the network interface is up before the container's init starts.
+	// Append lxc.start.delay only if the user hasn't already set it via x-incus.
+	_, ok := config["raw.lxc"]
+	if !ok {
+		config["raw.lxc"] = "lxc.start.delay = 1\n"
+	} else {
+		if !strings.Contains(config["raw.lxc"], "lxc.start.delay") {
+			config["raw.lxc"] += "lxc.start.delay = 1\n"
+		}
+	}
+
 	return config, nil
 }
 

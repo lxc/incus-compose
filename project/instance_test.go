@@ -203,7 +203,7 @@ func TestInstanceConfigMinimal(t *testing.T) {
 	config, err := instanceConfig(types.ServiceConfig{Name: "web"})
 	require.NoError(t, err)
 	// Only the default restart policy is applied.
-	assert.Equal(t, map[string]string{"boot.autostart": "false", client.HealthStatusKey: client.HealthStatusUnknown}, config)
+	assert.Equal(t, map[string]string{"boot.autostart": "false", client.HealthStatusKey: client.HealthStatusUnknown, "raw.lxc": "lxc.start.delay = 1\n"}, config)
 }
 
 func TestInstanceConfigXIncusOverrides(t *testing.T) {
