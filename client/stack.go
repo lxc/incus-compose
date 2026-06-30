@@ -67,7 +67,7 @@ func NewStack(c *Client, opts ...StackOption) *Stack {
 // Add appends resources to the stack, skipping nil and already-added pointers.
 // Since Client.Resource() deduplicates by IncusName, pointer identity is the
 // right key: the same resource object must not run twice in parallel.
-func (s *Stack) Add(resources ...Resource) *Stack {
+func (s *Stack) Add(resources ...Resource) {
 	for _, r := range resources {
 		if r == nil {
 			continue
@@ -78,8 +78,18 @@ func (s *Stack) Add(resources ...Resource) *Stack {
 		s.seen[r] = struct{}{}
 		s.resources = append(s.resources, r)
 	}
+}
 
-	return s
+// AddOrdered adds resources in the given order.
+func (s *Stack) AddOrdered(order []string, resources map[string][]Resource) {
+	for _, k := range order {
+		res, ok := resources[k]
+		if !ok {
+			continue
+		}
+
+		s.Add(res...)
+	}
 }
 
 // All returns all tasks in the stack.
