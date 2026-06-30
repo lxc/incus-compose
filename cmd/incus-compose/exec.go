@@ -110,33 +110,36 @@ func newExecCommand() *cli.Command {
 			}
 			defer func() { _ = c.Done() }()
 
-			// Build stack with the requested service and its dependencies
-			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
-			err = p.ToStack(c, stack, project.ToStackFull(), project.ToStackOnlyServices([]string{service}), project.ToStackInstancesOnly())
+			allResources, err := p.Resources(c, project.ResourcesFull())
 			if err != nil {
-				c.LogError(err.Error())
+				c.LogError("Getting project resources in reCreate", "error", err)
 				return errLogged.Wrap(err)
 			}
 
-			err = stack.Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter)
-			if err != nil {
-				c.LogError(err.Error())
-				return errLogged.Wrap(err)
+			resources, ok := allResources[service]
+			if !ok {
+				c.LogError("No service", "service", service)
+				return errLogged.Wrap(client.ErrNotFound.WithText("service not found"))
 			}
 
 			var inst *client.Instance
-			for _, rr := range stack.All() {
-				if rr.Kind() == client.KindInstance && rr.IsEnsured() {
-					if ri, ok := rr.(*client.Instance); ok && ri.ServiceName() == service {
-						inst = ri
+			for _, r := range resources {
+				if r.Kind() == client.KindInstance {
+					i, ok := r.(*client.Instance)
+					if !ok {
+						continue
+					}
+
+					if i.ServiceName() == service {
+						inst = i
 						break
 					}
 				}
 			}
 
 			if inst == nil {
-				c.LogError("No service", "service", service)
-				return errLogged.Wrap(client.ErrNotFound.WithText("service not found"))
+				c.LogError("No instance for service", "service", service)
+				return errLogged.Wrap(client.ErrNotFound.WithText("service instance not found"))
 			}
 
 			// Make sure we have full instance details

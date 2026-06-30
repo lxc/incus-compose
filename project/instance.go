@@ -35,7 +35,7 @@ func buildPlatform(service types.ServiceConfig) (string, error) {
 // serviceToInstance translates a compose service to an Incus instance.
 // Environment vars become instance config, labels become user metadata.
 // Volumes default to bind mounts for paths starting with / or ., otherwise named volumes.
-func serviceToInstance(c *client.Client, p *types.Project, serviceName string, options *ToStackOptions, index, scale int) (*client.Instance, []client.Resource, error) {
+func serviceToInstance(c *client.Client, p *types.Project, serviceName string, options *ResourcesOptions, index, scale int) (*client.Instance, []client.Resource, error) {
 	service, ok := p.Services[serviceName]
 	if !ok {
 		return nil, nil, fmt.Errorf("service %q not found", serviceName)
@@ -49,17 +49,14 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		errs = errors.Join(errs, err)
 	}
 
-	var image client.Resource
-	if !options.NoImages {
-		image, err = instanceImage(c, service)
-		if err != nil {
-			errs = errors.Join(errs, err)
-		}
-		if image == nil {
-			return nil, nil, errs
-		}
-		resources = append(resources, image)
+	image, err := instanceImage(c, service)
+	if err != nil {
+		errs = errors.Join(errs, err)
 	}
+	if image == nil {
+		return nil, nil, errs
+	}
+	resources = append(resources, image)
 
 	devices, networks, err := instanceNetworkDevices(c, p, service)
 	if err != nil {
@@ -462,7 +459,7 @@ func instanceProxyDevices(c *client.Client, service types.ServiceConfig, nicDevi
 // instanceVolumeDevices builds disk, bind, and tmpfs devices for a service's
 // volumes plus the shm_size tmpfs. It returns any storage volume resources
 // (when options.StorageVolumes is set) and the files map for single-file binds.
-func instanceVolumeDevices(c *client.Client, p *types.Project, service types.ServiceConfig, image client.Resource, options *ToStackOptions) ([]client.InstanceDevice, map[string]client.InstanceFile, []client.Resource, error) {
+func instanceVolumeDevices(c *client.Client, p *types.Project, service types.ServiceConfig, image client.Resource, options *ResourcesOptions) ([]client.InstanceDevice, map[string]client.InstanceFile, []client.Resource, error) {
 	var errs error
 	devices := []client.InstanceDevice{}
 	resources := []client.Resource{}
@@ -525,9 +522,7 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 				continue
 			}
 
-			if options.StorageVolumes {
-				resources = append(resources, v)
-			}
+			resources = append(resources, v)
 
 			devName := "vol-" + client.SanitizeIncusName(cVol.Source, client.MaxIncusNameLen-4)
 			devConfig := client.InstanceDeviceConfig{
@@ -577,9 +572,7 @@ func instanceVolumeDevices(c *client.Client, p *types.Project, service types.Ser
 						continue
 					}
 
-					if options.StorageVolumes {
-						resources = append(resources, v)
-					}
+					resources = append(resources, v)
 
 					devConfig := client.InstanceDeviceConfig{
 						DeviceType: client.InstanceDeviceTypeDisk,
@@ -704,7 +697,7 @@ func instanceSecrets(p *types.Project, service types.ServiceConfig) ([]client.In
 
 // instanceDependencyWaits builds the health-wait map for depends_on entries with
 // condition: service_healthy, keyed by the dependency's sanitized instance names.
-func instanceDependencyWaits(p *types.Project, service types.ServiceConfig, options *ToStackOptions) map[string]string {
+func instanceDependencyWaits(p *types.Project, service types.ServiceConfig, options *ResourcesOptions) map[string]string {
 	deps := map[string]string{}
 	for depName, dep := range service.DependsOn {
 		if dep.Condition != types.ServiceConditionHealthy {

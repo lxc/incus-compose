@@ -228,7 +228,7 @@ func TestInstanceDependencyWaits(t *testing.T) {
 		service := types.ServiceConfig{Name: "web", DependsOn: types.DependsOnConfig{
 			"db": {Condition: types.ServiceConditionHealthy},
 		}}
-		deps := instanceDependencyWaits(p, service, &ToStackOptions{Scale: map[string]int{"db": 2}})
+		deps := instanceDependencyWaits(p, service, &ResourcesOptions{Scale: map[string]int{"db": 2}})
 		assert.Equal(t, map[string]string{
 			"db-1": client.HealthStatusHealthy,
 			"db-2": client.HealthStatusHealthy,
@@ -242,7 +242,7 @@ func TestInstanceDependencyWaits(t *testing.T) {
 		service := types.ServiceConfig{Name: "web", DependsOn: types.DependsOnConfig{
 			"db": {Condition: types.ServiceConditionHealthy},
 		}}
-		deps := instanceDependencyWaits(p, service, &ToStackOptions{})
+		deps := instanceDependencyWaits(p, service, &ResourcesOptions{})
 		assert.Equal(t, map[string]string{
 			"db-1": client.HealthStatusHealthy,
 			"db-2": client.HealthStatusHealthy,
@@ -256,7 +256,7 @@ func TestInstanceDependencyWaits(t *testing.T) {
 		service := types.ServiceConfig{Name: "web", DependsOn: types.DependsOnConfig{
 			"db": {Condition: types.ServiceConditionHealthy},
 		}}
-		deps := instanceDependencyWaits(p, service, &ToStackOptions{})
+		deps := instanceDependencyWaits(p, service, &ResourcesOptions{})
 		assert.Equal(t, map[string]string{"mydb": client.HealthStatusHealthy}, deps)
 	})
 
@@ -266,12 +266,12 @@ func TestInstanceDependencyWaits(t *testing.T) {
 		service := types.ServiceConfig{Name: "web", DependsOn: types.DependsOnConfig{
 			"db": {Condition: types.ServiceConditionStarted},
 		}}
-		assert.Empty(t, instanceDependencyWaits(p, service, &ToStackOptions{}))
+		assert.Empty(t, instanceDependencyWaits(p, service, &ResourcesOptions{}))
 	})
 
 	t.Run("no dependencies", func(t *testing.T) {
 		t.Parallel()
-		assert.Empty(t, instanceDependencyWaits(&types.Project{}, types.ServiceConfig{Name: "web"}, &ToStackOptions{}))
+		assert.Empty(t, instanceDependencyWaits(&types.Project{}, types.ServiceConfig{Name: "web"}, &ResourcesOptions{}))
 	})
 }
 
@@ -459,7 +459,7 @@ func TestInstanceVolumeDevices(t *testing.T) {
 	t.Parallel()
 
 	c := client.NewOfflineClient(context.Background(), "test")
-	opts := &ToStackOptions{StorageVolumes: true}
+	opts := &ResourcesOptions{}
 
 	t.Run("named volume", func(t *testing.T) {
 		t.Parallel()

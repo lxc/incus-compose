@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/urfave/cli/v3"
 
@@ -63,35 +64,46 @@ func newBuildCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
-			err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackImagesOnly())
+			allResources, err := p.Resources(c)
 			if err != nil {
-				c.LogError("Creating the stack", "error", err)
+				c.LogError("Getting project resources in reCreate", "error", err)
 				return errLogged.Wrap(err)
 			}
 
 			noCache := cmd.Bool("no-cache")
 			pull := cmd.String("pull")
+			services := cmd.Args().Slice()
 
-			images := []*client.Image{}
-			for _, r := range stack.All() {
-				img, ok := r.(*client.Image)
-				if !ok {
+			stack := client.NewStack(c, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
+
+			for service, resources := range allResources {
+				if len(services) > 0 && !slices.Contains(services, service) {
 					continue
 				}
 
-				if img.Config.Build == nil {
-					continue
-				}
+				for _, r := range resources {
+					if r.Kind() != client.KindImage {
+						continue
+					}
 
-				if noCache {
-					img.Config.Build.NoCache = noCache
-				}
+					img, ok := r.(*client.Image)
+					if !ok {
+						continue
+					}
 
-				images = append(images, img)
+					if img.Config.Build == nil {
+						continue
+					}
+
+					if noCache {
+						img.Config.Build.NoCache = noCache
+					}
+
+					stack.Add(img)
+				}
 			}
 
-			if len(images) < 1 {
+			if len(stack.All()) < 1 {
 				if cmd.Args().Len() > 0 {
 					err = errors.New("no build-configured services matched the filter")
 					c.LogError(err.Error())

@@ -79,17 +79,20 @@ func newPsCommand() *cli.Command {
 			}
 			defer func() { _ = c.Done() }()
 
-			// Build stack for the services we're interested in (only services).
-			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackFull(), project.ToStackNoImages()}
-			if cmd.Bool("with-deps") {
-				stackOpts = append(stackOpts, project.ToStackWithDeps())
-			}
-
-			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
-			if err := p.ToStack(c, stack, stackOpts...); err != nil {
-				c.LogError(err.Error())
+			resources, err := p.Resources(c, project.ResourcesFull())
+			if err != nil {
+				c.LogError("Getting project resources in reCreate", "error", err)
 				return errLogged.Wrap(err)
 			}
+
+			args := filterResourcesArgs{
+				OnlyServices:     cmd.Args().Slice(),
+				WithDependencies: cmd.Bool("with-deps"),
+			}
+			myResources := filterResources(p, resources, args)
+
+			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
+			stack.Add(flattenResources(myResources)...)
 
 			// Run ensure (without create) to populate resource metadata/state where possible.
 			if err := stack.Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {

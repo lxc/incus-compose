@@ -66,19 +66,20 @@ func newStartCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice())}
-			if withDeps {
-				stackOpts = append(stackOpts, project.ToStackWithDeps())
-			} else {
-				stackOpts = append(stackOpts, project.ToStackInstancesOnly())
+			resources, err := p.Resources(c)
+			if err != nil {
+				c.LogError("Getting project resources in reCreate", "error", err)
+				return errLogged.Wrap(err)
 			}
 
-			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
-			err = p.ToStack(c, stack, stackOpts...)
-			if err != nil {
-				c.LogError("Adding the project to a stack", "error", err)
-				return errLogged
+			args := filterResourcesArgs{
+				OnlyServices:     cmd.Args().Slice(),
+				WithDependencies: cmd.Bool("with-deps"),
 			}
+			myResources := filterResources(p, resources, args)
+
+			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
+			stack.Add(flattenResources(myResources)...)
 
 			var errs error
 			if err := stack.ForAction(client.ActionEnsure).Run(
@@ -106,7 +107,9 @@ func newStartCommand() *cli.Command {
 			if !cmd.Root().Bool("debug") {
 				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
 			}
-			errStart := stack.ForAction(client.ActionStart).Run(ctx, client.ActionStart, cmd.Root().Writer, cmd.Root().ErrWriter, startOpts...)
+
+			filter := func(r client.Resource) bool { return r.IsEnsured() }
+			errStart := stack.ForActionF(client.ActionStart, filter).Run(ctx, client.ActionStart, cmd.Root().Writer, cmd.Root().ErrWriter, startOpts...)
 			finish(errStart == nil)
 			if errStart != nil {
 				c.LogError("Starting resources", "error", errStart)

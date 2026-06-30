@@ -73,17 +73,19 @@ func plannedNetworkNames(t *testing.T, ctx context.Context, projectName, compose
 
 	projectName = strings.ToLower(strings.ReplaceAll(projectName, "/", "-"))
 
-	proj, err := project.New().Load(ctx, project.LoadFiles([]string{compose}))
+	p, err := project.New().Load(ctx, project.LoadFiles([]string{compose}))
 	require.NoError(t, err)
 
 	c := client.NewOfflineClient(ctx, projectName)
-	stack := client.NewStack(c)
-	require.NoError(t, proj.ToStack(c, stack))
+	allResources, err := p.Resources(c)
+	require.NoError(t, err)
 
 	names := []string{}
-	for _, r := range stack.All() {
-		if r.Kind() == client.KindNetwork {
-			names = append(names, r.IncusName())
+	for _, res := range allResources {
+		for _, r := range res {
+			if r.Kind() == client.KindNetwork {
+				names = append(names, r.IncusName())
+			}
 		}
 	}
 	return names

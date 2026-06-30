@@ -23,7 +23,7 @@ func newUpCommand() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
 				Name:  "recreate",
-				Usage: "Recreate containers even if they exist",
+				Usage: "Recreate containers by deleting them first",
 			},
 			&cli.BoolFlag{
 				Name:  "no-start",
@@ -168,44 +168,39 @@ func newUpCommand() *cli.Command {
 			}
 
 			if cmd.Bool("recreate") {
-				stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
-				toStackOpts := []project.ToStackOption{}
-				toStackOpts = append(toStackOpts, project.ToStackNoImages(), project.ToStackReverse(), project.ToStackOnlyServices(cmd.Args().Slice()))
-				if !cmd.Bool("no-deps") {
-					toStackOpts = append(toStackOpts, project.ToStackWithDeps())
-				}
-
 				scale := parseScale(cmd.StringSlice("scale"))
-				if len(scale) > 0 {
-					toStackOpts = append(toStackOpts, project.ToStackScale(scale))
-				}
-				err := p.ToStack(c, stack, toStackOpts...)
+				resources, err := p.Resources(c, project.ResourcesReverse(), project.ResourcesScale(scale))
 				if err != nil {
-					c.LogError("Creating the stack in reCreate", "error", err)
+					c.LogError("Getting project resources in reCreate", "error", err)
 					return errLogged.Wrap(err)
 				}
+
+				args := filterResourcesArgs{
+					OnlyServices:     cmd.Args().Slice(),
+					WithDependencies: !cmd.Bool("no-deps"),
+					ExcludeKinds:     []client.Kind{client.KindImage, client.KindNetwork, client.KindStorageVolume},
+				}
+				myResources := filterResources(p, resources, args)
+
+				stack := client.NewStack(c, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
+				stack.Add(flattenResources(myResources)...)
 
 				c.LogDebug("Ensure", "resources", stack.All())
 
 				recreateOptions := append(runOptions, client.OptionForce())
 
-				// Do not recreate networks.
-				recreateFilter := func(r client.Resource) bool {
-					return r.Kind() != client.KindNetwork
-				}
-
 				// Ensure without create for "recreate" (resolution only, no progress).
-				if err := stack.ForActionF(client.ActionEnsure, recreateFilter).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
+				if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
 					c.LogDebug("Ensuring for reCreate", "error", err)
 				} else {
 					// Stop
-					errStop := stack.ForActionF(client.ActionStop, recreateFilter).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, recreateOptions...)
+					errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, recreateOptions...)
 					if errStop != nil {
 						c.LogDebug("Stopping resources", "error", errStop)
 					}
 
 					// Delete
-					deleteStack := stack.ForActionF(client.ActionDelete, recreateFilter)
+					deleteStack := stack.ForAction(client.ActionDelete)
 					c.LogDebug("Recreate delete", "resources", deleteStack.All())
 					errDel := deleteStack.Run(ctx, client.ActionDelete, cmd.Root().Writer, cmd.Root().ErrWriter, recreateOptions...)
 					if errDel != nil {
@@ -217,21 +212,21 @@ func newUpCommand() *cli.Command {
 				c.ResetResources()
 			}
 
-			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
-			toStackOpts := []project.ToStackOption{}
-			toStackOpts = append(toStackOpts, project.ToStackStorageVolumes(), project.ToStackOnlyServices(cmd.Args().Slice()))
-			if !cmd.Bool("no-deps") {
-				toStackOpts = append(toStackOpts, project.ToStackWithDeps())
-			}
 			scale := parseScale(cmd.StringSlice("scale"))
-			if len(scale) > 0 {
-				toStackOpts = append(toStackOpts, project.ToStackScale(scale))
-			}
-			err = p.ToStack(c, stack, toStackOpts...)
+			resources, err := p.Resources(c, project.ResourcesScale(scale))
 			if err != nil {
-				c.LogError("Adding the project to a stack", "error", err)
+				c.LogError("Getting project resources in reCreate", "error", err)
 				return errLogged.Wrap(err)
 			}
+
+			args := filterResourcesArgs{
+				OnlyServices:     cmd.Args().Slice(),
+				WithDependencies: !cmd.Bool("no-deps"),
+			}
+			myResources := filterResources(p, resources, args)
+
+			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
+			stack.Add(flattenResources(myResources)...)
 
 			if usesHealthd {
 				healthdIncus, healthdNetwork := p.HealthdConfig()

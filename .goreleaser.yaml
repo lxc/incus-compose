@@ -21,16 +21,16 @@ changelog:
       - "^docs:"
       - "^test:"
 
-nfpms:
-  - maintainer: "Rene Jochum <rene@jochum.dev>"
-    description: Bring the familiar Docker Compose workflow to Incus containers.
-    homepage: https://github.com/lxc/incus-compose
-    license: APACHE-2.0
-    # file_name_template: "{{ .ConventionalFileName }}" # optional, better file names
-    formats:
-      - deb
-      - apk
-      - rpm
+# nfpms:
+#   - maintainer: "Rene Jochum <rene@jochum.dev>"
+#     description: Bring the familiar Docker Compose workflow to Incus containers.
+#     homepage: https://github.com/lxc/incus-compose
+#     license: APACHE-2.0
+#     # file_name_template: "{{ .ConventionalFileName }}" # optional, better file names
+#     formats:
+#       - deb
+#       - apk
+#       - rpm
 
 release:
   footer: >-

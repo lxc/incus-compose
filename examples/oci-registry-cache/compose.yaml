@@ -10,6 +10,13 @@ services:
     volumes:
       - docker:/var/lib/registry
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5000"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+      start_interval: 1s
 
   ghcr-registry:
     image: direct-docker.io/library/registry:${VERSION:-3}
@@ -22,6 +29,13 @@ services:
     volumes:
       - ghcr:/var/lib/registry
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5000"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+      start_interval: 1s
 
   gitlab-registry:
     image: direct-docker.io/library/registry:${VERSION:-3}
@@ -34,6 +48,13 @@ services:
     volumes:
       - gitlab:/var/lib/registry
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5000"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+      start_interval: 1s
 
 volumes:
   docker:

@@ -158,12 +158,20 @@ func newListCommand() *cli.Command {
 			}
 			defer func() { _ = c.Done() }()
 
-			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
-			err = p.ToStack(c, stack, project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackFull(), project.ToStackNoImages())
+			resources, err := p.Resources(c, project.ResourcesFull())
 			if err != nil {
-				c.LogError(err.Error())
+				c.LogError("Getting project resources in reCreate", "error", err)
 				return errLogged.Wrap(err)
 			}
+
+			args := filterResourcesArgs{
+				OnlyServices:     cmd.Args().Slice(),
+				WithDependencies: cmd.Bool("with-deps"),
+			}
+			myResources := filterResources(p, resources, args)
+
+			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
+			stack.Add(flattenResources(myResources)...)
 
 			if cmd.Bool("healthd") {
 				if name, err := c.FindHealthd(); err == nil {

@@ -82,26 +82,26 @@ func newDownCommand() *cli.Command {
 				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
 			}
 
-			stackOpts := []project.ToStackOption{project.ToStackOnlyServices(cmd.Args().Slice()), project.ToStackReverse()}
-			if !cmd.Bool("no-deps") {
-				if cmd.Args().Len() > 0 {
-					stackOpts = append(stackOpts, project.ToStackInstancesOnly())
-				} else {
-					stackOpts = append(stackOpts, project.ToStackWithDeps())
-				}
-			} else {
-				stackOpts = append(stackOpts, project.ToStackInstancesOnly())
+			resources, err := p.Resources(c, project.ResourcesReverse())
+			if err != nil {
+				c.LogError("Getting project resources in reCreate", "error", err)
+				return errLogged.Wrap(err)
+			}
+
+			args := filterResourcesArgs{
+				OnlyServices:     cmd.Args().Slice(),
+				WithDependencies: !cmd.Bool("no-deps"),
+				ExcludeKinds:     []client.Kind{client.KindNetwork},
 			}
 
 			if !cmd.Bool("images") && cmd.String("rmi") != "local" && cmd.String("rmi") != "all" {
-				stackOpts = append(stackOpts, project.ToStackNoImages())
+				args.ExcludeKinds = append(args.ExcludeKinds, client.KindImage)
 			}
 
-			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
-			if err := p.ToStack(c, stack, stackOpts...); err != nil {
-				c.LogError("Adding the project to a stack", "error", err)
-				return errLogged
-			}
+			myResources := filterResources(p, resources, args)
+
+			stack := client.NewStack(c, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
+			stack.Add(flattenResources(myResources)...)
 
 			if healthdInUseByProject(globalClient, p) {
 				h, err := healthdResolve(c)
@@ -110,7 +110,7 @@ func newDownCommand() *cli.Command {
 				}
 			}
 
-			if err := stack.Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
+			if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
 				c.LogWarn("Getting resources", "error", err)
 			}
 
@@ -119,17 +119,12 @@ func newDownCommand() *cli.Command {
 				client.OptionTimeout(cmd.Duration("timeout")),
 			}
 
-			// Networks are handled by the GlobalClient.
-			downFilter := func(r client.Resource) bool {
-				return r.Kind() != client.KindNetwork
-			}
-
-			errStop := stack.ForActionF(client.ActionStop, downFilter).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, runOpts...)
+			errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, cmd.Root().Writer, cmd.Root().ErrWriter, runOpts...)
 			if errStop != nil {
 				c.LogWarn("Stopping resources", "error", errStop)
 			}
 
-			errDel := stack.ForActionF(client.ActionDelete, downFilter).Run(ctx, client.ActionDelete, cmd.Root().Writer, cmd.Root().ErrWriter, runOpts...)
+			errDel := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, cmd.Root().Writer, cmd.Root().ErrWriter, runOpts...)
 			if errDel != nil {
 				c.LogWarn("Deleting resources", "error", errDel)
 			}

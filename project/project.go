@@ -15,12 +15,16 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"slices"
 
 	"github.com/compose-spec/compose-go/v2/cli"
 	"github.com/compose-spec/compose-go/v2/dotenv"
 	"github.com/compose-spec/compose-go/v2/errdefs"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/compose-spec/compose-go/v2/utils"
+	"github.com/dominikbraun/graph"
+
+	"github.com/lxc/incus-compose/client"
 )
 
 // LoadOptions holds configuration for Load and LoadModel.
@@ -229,6 +233,154 @@ func (p *Project) ProjectConfig() map[string]string {
 	}
 
 	return result
+}
+
+// ResourcesOptions configures how services are converted to stack operations.
+type ResourcesOptions struct {
+	Reverse bool
+	Full    bool
+	Scale   map[string]int // service name -> replica count override
+}
+
+// ResourcesOption is a functional option for ToStack.
+type ResourcesOption func(o *ResourcesOptions)
+
+// ResourcesReverse reverses the service dependency graph order.
+// Use for teardown so dependants are stopped before their dependencies.
+// Note: cross-kind priority ordering (e.g. instances vs networks) is handled
+// automatically by Stack.ForAction and does not require this option.
+func ResourcesReverse() ResourcesOption {
+	return func(o *ResourcesOptions) {
+		o.Reverse = true
+	}
+}
+
+// ResourcesFull fetches complete instance state including image alias and full instance details.
+func ResourcesFull() ResourcesOption {
+	return func(o *ResourcesOptions) {
+		o.Full = true
+	}
+}
+
+// ResourcesScale sets replica count overrides for services.
+func ResourcesScale(scale map[string]int) ResourcesOption {
+	return func(o *ResourcesOptions) {
+		o.Scale = scale
+	}
+}
+
+// Resources converts the compose project services to client resources.
+func (p *Project) Resources(c *client.Client, opts ...ResourcesOption) (map[string][]client.Resource, error) {
+	options := &ResourcesOptions{}
+	for _, o := range opts {
+		o(options)
+	}
+
+	result := map[string][]client.Resource{}
+
+	var errs error
+
+	serviceOrder, err := ServiceGraph(p.Services, options.Reverse)
+	if err != nil {
+		return nil, err
+	}
+
+	// Configure instances
+	for _, serviceName := range serviceOrder {
+		service, ok := p.Services[serviceName]
+		if !ok {
+			continue
+		}
+
+		// Determine the desired count: CLI --scale > deploy.replicas > 1.
+		// A plain `up` reconciles to deploy.replicas in both directions, matching
+		// `docker compose up`: a manual --scale applies only to that invocation,
+		// and the next plain `up` restores replicas (scaling up or down).
+		desired := 1
+		if s, ok := options.Scale[service.Name]; ok {
+			desired = s
+		} else if service.Deploy != nil && service.Deploy.Replicas != nil {
+			desired = int(*service.Deploy.Replicas)
+		}
+
+		// Discover existing instances above the desired count so they can be
+		// reconciled away (highest index first) during Ensure.
+		scale := desired
+		for {
+			instanceName := fmt.Sprintf("%s-%d", service.Name, scale+1)
+			if ok, err := c.InstanceExists(instanceName); !ok || err != nil {
+				break
+			}
+
+			scale = scale + 1
+		}
+
+		instances := []*client.Instance{}
+		for i := 1; i <= scale; i++ {
+			instance, instanceResources, err := serviceToInstance(c, p.Project, service.Name, options, i, scale)
+			if err != nil {
+				errs = errors.Join(errs, err)
+				continue
+			}
+
+			result[service.Name] = append(result[service.Name], instance)
+			result[service.Name] = append(result[service.Name], instanceResources...)
+
+			instances = append(instances, instance)
+		}
+
+		// Reconcile down: instances beyond the desired count are marked for
+		// deletion (highest index first) and torn down during Ensure.
+		if len(instances) > desired {
+			slices.Reverse(instances)
+
+			for idx := range len(instances) - desired {
+				instances[idx].MarkDelete()
+			}
+		}
+	}
+
+	if errs != nil {
+		return nil, errs
+	}
+
+	return result, nil
+}
+
+// ServiceGraph returns services in dependency order using topological sort.
+// If reverse is true, returns reverse order (useful for shutdown).
+func ServiceGraph(serviceConfigs types.Services, reverse bool) ([]string, error) {
+	g := graph.New(graph.StringHash, graph.Directed(), graph.PreventCycles())
+
+	// Add vertices
+	for s := range maps.Values(serviceConfigs) {
+		_ = g.AddVertex(s.Name)
+	}
+
+	// Add edges for dependencies that are in scope.
+	for s := range maps.Values(serviceConfigs) {
+		for dep := range s.DependsOn {
+			if _, ok := serviceConfigs[dep]; !ok {
+				continue
+			}
+			// Edge from dependency to dependent (dep must start before n)
+			err := g.AddEdge(dep, s.Name)
+			if err != nil && err != graph.ErrEdgeAlreadyExists {
+				return nil, fmt.Errorf("adding dependency edge %s -> %s: %w", dep, s.Name, err)
+			}
+		}
+	}
+
+	order, err := graph.TopologicalSort(g)
+	if err != nil {
+		return nil, fmt.Errorf("topological sort: %w", err)
+	}
+
+	if reverse {
+		slices.Reverse(order)
+	}
+
+	return order, nil
 }
 
 // buildProjectOptions creates cli.ProjectOptions from LoadOptions.
