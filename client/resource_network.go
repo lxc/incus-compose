@@ -96,7 +96,7 @@ func newNetwork(c *Client, name string, configGetter Config) (*Network, error) {
 
 	// Static initial name: used offline and as first guess before Ensure resolves candidates.
 	if !config.External {
-		network.incusName = sanitizeNetworkName(c.project, c.Config().NetworkPrefix, name)
+		network.incusName = SanitizeNetworkName(c.project, c.Config().NetworkPrefix, name)
 	} else if config.OverrideName != "" {
 		network.incusName = config.OverrideName
 	} else {
@@ -128,10 +128,10 @@ func (r *Network) candidateNames() []string {
 
 	if r.Config.OverrideName != "" {
 		add(r.Config.OverrideName)
-		add(sanitizeNetworkName(project, prefix, r.Config.OverrideName))
+		add(SanitizeNetworkName(project, prefix, r.Config.OverrideName))
 	}
 	add(r.composeName)
-	add(sanitizeNetworkName(project, prefix, r.composeName))
+	add(SanitizeNetworkName(project, prefix, r.composeName))
 
 	return out
 }
@@ -416,9 +416,9 @@ var (
 	_ DeleteAble = (*Network)(nil)
 )
 
-// sanitizeNetworkName generates a network interface name from project and network name.
+// SanitizeNetworkName generates a network interface name from project and network name.
 // Returns a deterministic, unique name that fits within Linux interface name limits.
-func sanitizeNetworkName(projectName, prefix, networkName string) string {
+func SanitizeNetworkName(projectName, prefix, networkName string) string {
 	full := networkName
 	if projectName != "" {
 		full = fmt.Sprintf("%s-%s", projectName, networkName)

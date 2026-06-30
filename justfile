@@ -21,21 +21,28 @@ default:
 # Run tests against nested Incus, includes direct incus tests.
 [env("INCUS_COMPOSE_IMAGE_CACHE", "incus-compose-tests-cache")]
 test folder="./..." *args:
-    gotestsum --hide-summary=skipped --jsonfile=test/logs/`date +%Y%m%d-%H%M%S`.json --packages={{ folder }} -- -parallel {{ v_test_procs }} -timeout 20m -covermode=atomic -v {{ args }}
+    export DATE=`date +%Y%m%d-%H%M%S`; \
+      gotestsum --hide-summary=skipped --format dots-v2 --jsonfile=test/logs/${DATE}.json --packages={{ folder }} -- -parallel {{ v_test_procs }} -timeout 20m -covermode atomic -coverprofile test/logs/${DATE}-cover.out -v {{ args }}; \
 
 # Run local unit-tests, incus-facing tests are skipped.
 [env("INCUS_COMPOSE_TEST_LOCAL", "1")]
 test-local folder="./..." *args:
     @just test {{ folder }} {{ args }}
 
-# Run all tests against nested Incus, includes direct incus as well as slow tests.
+# Run slow tests.
 [env("INCUS_COMPOSE_TEST_SLOW", "1")]
 test-slow folder="./..." *args:
     @just test {{ folder }} {{ args }}
 
-# Run all tests against nested Incus, includes direct incus, slow and examples tests.
+# Run example tests.
 [env("INCUS_COMPOSE_TEST_EXAMPLES", "1")]
 test-examples folder="./..." *args:
+    @just test {{ folder }} {{ args }}
+
+# Run all tests, includes direct incus, slow and examples tests.
+[env("INCUS_COMPOSE_TEST_EXAMPLES", "1")]
+[env("INCUS_COMPOSE_TEST_SLOW", "1")]
+test-all folder="./..." *args:
     @just test {{ folder }} {{ args }}
 
 # Run the tests with a race detector.
@@ -164,6 +171,28 @@ purge-images *args:
         echo "  Deleting: ${image}"
         incus image delete {{ args }} "${remote}:${image}"
     done <<< "${images}"
+    echo "Done."
+
+# Removes all projects
+purge-projects:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    remote="${INCUS_REMOTE:-local}"
+    projects=$(incus project list "${remote}:" -f json | jq -r '.[] .name')
+
+    if [[ -z "${projects}" ]]; then
+        echo "No projects found."
+        exit 1
+    fi
+
+    echo "Deleting projects on remote '${remote}':"
+    while IFS= read -r project; do
+        if [ "${project}" != "default" ]; then
+          echo "  Deleting: ${project}"
+          echo "yes" | incus project delete -f "${remote}:${project}"
+        fi
+    done <<< "${projects}"
     echo "Done."
 
 # Run this before you commit/push.

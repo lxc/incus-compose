@@ -6,7 +6,42 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/lxc/incus-compose/client"
 )
+
+// TestNoDanglingNetworksAfterDown is a regression test for the project default
+// network not being removed after `down --project`.
+func TestNoDanglingNetworksAfterDown(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+
+	ctx := context.Background()
+	pn := t.Name()
+	compose := "../../test/fixtures/simple-nginx/compose.yaml"
+
+	t.Cleanup(func() {
+		_, _, _ = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	})
+
+	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	_, _, err = runCommand(t, ctx, pn, "-f", compose, "down", "--project")
+	require.NoError(t, err)
+
+	gc, err := client.NewTestClient(ctx)
+	require.NoError(t, err)
+
+	conn, err := gc.Connection()
+	require.NoError(t, err)
+
+	networkName := client.SanitizeNetworkName(pn, "ic-", "default")
+	networkNames, err := conn.GetNetworkNames()
+	require.NoError(t, err)
+
+	require.NotContains(t, networkNames, networkName, "network %q was not removed by down --project", networkName)
+}
 
 // TestExecSelectsCorrectInstance is a regression test for the exec command
 // dispatching to the wrong instance when multiple services share a stack.

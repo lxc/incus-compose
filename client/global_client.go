@@ -279,6 +279,11 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 		}
 	}
 
+	pool, ok := os.LookupEnv("INCUS_COMPOSE_STORAGE_POOL")
+	if ok {
+		opts = append(opts, ClientDefaultStoragePool(pool))
+	}
+
 	// Use own cache project for tests.
 	opts = append(opts, ClientCacheProject("incus-compose-tests-cache"))
 

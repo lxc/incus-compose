@@ -68,9 +68,13 @@ func TestFilterResources(t *testing.T) {
 	dbInst := newMockResource("db", client.KindInstance)
 	dbVol := newMockResource("vol-db", client.KindStorageVolume)
 
-	input := map[string][]client.Resource{
-		"web": {webInst, webNet},
-		"db":  {dbInst, dbVol},
+	// makeInput returns a fresh map each call; filterResources mutates the map
+	// when OnlyServices is empty (result = in), so parallel subtests must not share one.
+	makeInput := func() map[string][]client.Resource {
+		return map[string][]client.Resource{
+			"web": {webInst, webNet},
+			"db":  {dbInst, dbVol},
+		}
 	}
 
 	webProject := newProject(&types.Project{
@@ -90,7 +94,7 @@ func TestFilterResources(t *testing.T) {
 	tests := []struct {
 		name     string
 		p        *project.Project
-		in       map[string][]client.Resource
+		inFn     func() map[string][]client.Resource
 		args     filterResourcesArgs
 		wantKeys []string
 		check    func(t *testing.T, got map[string][]client.Resource)
@@ -98,35 +102,35 @@ func TestFilterResources(t *testing.T) {
 		{
 			name:     "no_filter_returns_all",
 			p:        emptyProject,
-			in:       input,
+			inFn:     makeInput,
 			args:     filterResourcesArgs{},
 			wantKeys: []string{"db", "web"},
 		},
 		{
 			name:     "only_services_single",
 			p:        emptyProject,
-			in:       input,
+			inFn:     makeInput,
 			args:     filterResourcesArgs{OnlyServices: []string{"web"}},
 			wantKeys: []string{"web"},
 		},
 		{
 			name:     "only_services_both",
 			p:        emptyProject,
-			in:       input,
+			inFn:     makeInput,
 			args:     filterResourcesArgs{OnlyServices: []string{"web", "db"}},
 			wantKeys: []string{"db", "web"},
 		},
 		{
 			name:     "only_services_unknown_skipped",
 			p:        emptyProject,
-			in:       input,
+			inFn:     makeInput,
 			args:     filterResourcesArgs{OnlyServices: []string{"missing"}},
 			wantKeys: []string{},
 		},
 		{
 			name:     "with_dependencies_adds_dep_key",
 			p:        webProject,
-			in:       input,
+			inFn:     makeInput,
 			args:     filterResourcesArgs{OnlyServices: []string{"web"}, WithDependencies: true},
 			wantKeys: []string{"db", "web"},
 			check: func(t *testing.T, got map[string][]client.Resource) {
@@ -138,21 +142,57 @@ func TestFilterResources(t *testing.T) {
 		{
 			name:     "with_dependencies_no_only_services_ignored",
 			p:        webProject,
-			in:       input,
+			inFn:     makeInput,
 			args:     filterResourcesArgs{WithDependencies: true},
 			wantKeys: []string{"db", "web"},
 		},
 		{
 			name:     "with_dependencies_dep_absent_from_resources",
 			p:        webProject,
-			in:       map[string][]client.Resource{"web": {webInst}}, // "db" not in map
+			inFn:     func() map[string][]client.Resource { return map[string][]client.Resource{"web": {webInst}} },
 			args:     filterResourcesArgs{OnlyServices: []string{"web"}, WithDependencies: true},
 			wantKeys: []string{"web"}, // dep skipped gracefully
 		},
 		{
+			// OnlyServices=["db"]: reverse dep pulls in web because web DependsOn db.
+			name:     "with_reverse_dependencies_adds_dependent",
+			p:        webProject,
+			inFn:     makeInput,
+			args:     filterResourcesArgs{OnlyServices: []string{"db"}, WithDependencies: true, Reverse: true},
+			wantKeys: []string{"db", "web"},
+			check: func(t *testing.T, got map[string][]client.Resource) {
+				assert.Equal(t, []string{"db", "vol-db"}, resourceNames(got["db"]))
+				assert.Equal(t, []string{"net-web", "web"}, resourceNames(got["web"]))
+			},
+		},
+		{
+			// Forward deps (Reverse=false) must not pull in services that depend on OnlyServices.
+			name:     "with_forward_dependencies_does_not_add_dependents",
+			p:        webProject,
+			inFn:     makeInput,
+			args:     filterResourcesArgs{OnlyServices: []string{"db"}, WithDependencies: true, Reverse: false},
+			wantKeys: []string{"db"}, // web depends on db, but forward mode must not pull web in
+		},
+		{
+			// Reverse dep is skipped when WithDependencies is false.
+			name:     "with_reverse_dependencies_requires_flag",
+			p:        webProject,
+			inFn:     makeInput,
+			args:     filterResourcesArgs{OnlyServices: []string{"db"}, WithDependencies: false, Reverse: true},
+			wantKeys: []string{"db"},
+		},
+		{
+			// Dependent service (web) absent from in map: reverse dep skips gracefully.
+			name:     "with_reverse_dependencies_dependent_absent_from_resources",
+			p:        webProject,
+			inFn:     func() map[string][]client.Resource { return map[string][]client.Resource{"db": {dbInst}} },
+			args:     filterResourcesArgs{OnlyServices: []string{"db"}, WithDependencies: true, Reverse: true},
+			wantKeys: []string{"db"},
+		},
+		{
 			name: "exclude_kinds_removes_non_instance",
 			p:    emptyProject,
-			in:   input,
+			inFn: makeInput,
 			args: filterResourcesArgs{ExcludeKinds: []client.Kind{client.KindNetwork, client.KindStorageVolume}},
 			check: func(t *testing.T, got map[string][]client.Resource) {
 				assert.Equal(t, []string{"web"}, resourceNames(got["web"]))
@@ -162,7 +202,7 @@ func TestFilterResources(t *testing.T) {
 		{
 			name: "exclude_kinds_never_removes_instance",
 			p:    emptyProject,
-			in:   input,
+			inFn: makeInput,
 			args: filterResourcesArgs{ExcludeKinds: []client.Kind{client.KindInstance}},
 			check: func(t *testing.T, got map[string][]client.Resource) {
 				// KindInstance in ExcludeKinds is a no-op; instances always kept
@@ -173,7 +213,7 @@ func TestFilterResources(t *testing.T) {
 		{
 			name:     "exclude_kinds_nil_no_filtering",
 			p:        emptyProject,
-			in:       input,
+			inFn:     makeInput,
 			args:     filterResourcesArgs{ExcludeKinds: nil},
 			wantKeys: []string{"db", "web"},
 		},
@@ -182,56 +222,13 @@ func TestFilterResources(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := filterResources(tt.p, tt.in, tt.args)
+			got := filterResources(tt.p, tt.inFn(), tt.args)
 			if tt.wantKeys != nil {
 				assert.Equal(t, tt.wantKeys, resultKeys(got))
 			}
 			if tt.check != nil {
 				tt.check(t, got)
 			}
-		})
-	}
-}
-
-func TestFlattenResources(t *testing.T) {
-	t.Parallel()
-
-	a := newMockResource("a", client.KindInstance)
-	b := newMockResource("b", client.KindNetwork)
-	c := newMockResource("c", client.KindStorageVolume)
-
-	tests := []struct {
-		name      string
-		in        map[string][]client.Resource
-		wantNames []string
-	}{
-		{
-			name:      "empty",
-			in:        map[string][]client.Resource{},
-			wantNames: []string{},
-		},
-		{
-			name:      "single_service",
-			in:        map[string][]client.Resource{"web": {a, b}},
-			wantNames: []string{"a", "b"},
-		},
-		{
-			name:      "multiple_services",
-			in:        map[string][]client.Resource{"web": {a, b}, "db": {c}},
-			wantNames: []string{"a", "b", "c"},
-		},
-		{
-			name:      "nil_slice_value",
-			in:        map[string][]client.Resource{"web": nil},
-			wantNames: []string{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := flattenResources(tt.in)
-			assert.Equal(t, tt.wantNames, resourceNames(got))
 		})
 	}
 }

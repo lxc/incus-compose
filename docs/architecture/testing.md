@@ -2,9 +2,36 @@
 
 This guide covers testing patterns, fixtures, and best practices for incus-compose.
 
+## Prerequisites
+
+- **gotestsum** - required to run tests via [just](https://github.com/casey/just/releases); install with `go install gotest.tools/gotestsum@latest`
+- **just** - must be a recent version; the one shipped with Debian Trixie is too old and will not work
+
 ## Running Tests
 
 Use `just --list` to see all available commands. Below is the complete reference:
+
+**Run with**:
+
+```bash
+just test
+```
+
+### Image Cache
+
+Tests use a dedicated cache project (`incus-compose-tests-cache`) separate from the CLI's image cache (the `default` project unless `--image-cache` is set). This keeps test images isolated and avoids polluting the user's cache.
+
+The test cache is configured via `ClientProvideConnection` in test setup, pointing to a test-specific project.
+
+### Environment Setup
+
+The nested Incus environment is configured via `.env` file:
+
+- `INCUS_REMOTE` - The remote to use.
+- `TEST_PROCS` (default 2) - number of tests to run in parallel.
+- `INCUS_COMPOSE_WORKERS` (default 4) - number of resources to create in parallel per test.
+
+There's also `just test-slow` which includes slow (long-running) tests.
 
 ### Test Commands
 
@@ -90,36 +117,6 @@ func (m *MockInstance) Exists() bool { return m.exists }
 func (m *MockInstance) Done() bool { return m.done }
 func (m *MockInstance) Error() error { return m.error }
 func (m *MockInstance) Handle() error { return m.error }
-```
-
-## Integration Tests
-
-Integration tests use real nested Incus instances and test actual API interactions.
-
-**Run with**:
-
-```bash
-just test
-```
-
-### Image Cache
-
-Tests use a dedicated cache project (`incus-compose-tests-cache`) separate from the CLI's image cache (the `default` project unless `--image-cache` is set). This keeps test images isolated and avoids polluting the user's cache.
-
-The test cache is configured via `ClientProvideConnection` in test setup, pointing to a test-specific project.
-
-### Environment Setup
-
-The nested Incus environment is configured via `.env` file:
-
-- `INCUS_REMOTE` - The remote to use.
-
-Theres also `just test-slow` this includes slow as in long running tests.
-
-**First-time setup**:
-
-```bash
-just dev-install
 ```
 
 ## Test Fixtures

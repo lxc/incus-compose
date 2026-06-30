@@ -10,7 +10,10 @@ import (
 type filterResourcesArgs struct {
 	OnlyServices     []string
 	WithDependencies bool
-	ExcludeKinds     []client.Kind
+	// Reverse includes services that depend on OnlyServices (reverse deps).
+	// Use for stop/down; leave false for start/up which only need forward deps.
+	Reverse      bool
+	ExcludeKinds []client.Kind
 }
 
 func filterResources(p *project.Project, in map[string][]client.Resource, args filterResourcesArgs) map[string][]client.Resource {
@@ -30,19 +33,38 @@ func filterResources(p *project.Project, in map[string][]client.Resource, args f
 	}
 
 	if args.WithDependencies && len(args.OnlyServices) > 0 {
-		for _, s := range args.OnlyServices {
-			svc, ok := p.Services[s]
-			if !ok {
-				continue
-			}
+		if args.Reverse {
+			// Reverse: pull in services that depend on OnlyServices (for stop/down).
+			for _, svc := range p.Services {
+				for depName := range svc.DependsOn {
+					if !slices.Contains(args.OnlyServices, depName) {
+						continue
+					}
 
-			for depName := range svc.DependsOn {
-				resources, ok := in[depName]
+					resources, ok := in[svc.Name]
+					if !ok {
+						continue
+					}
+
+					result[svc.Name] = resources
+				}
+			}
+		} else {
+			// Forward: pull in services that OnlyServices depend on (for start/up).
+			for _, s := range args.OnlyServices {
+				svc, ok := p.Services[s]
 				if !ok {
 					continue
 				}
 
-				result[depName] = resources
+				for depName := range svc.DependsOn {
+					resources, ok := in[depName]
+					if !ok {
+						continue
+					}
+
+					result[depName] = resources
+				}
 			}
 		}
 	}
@@ -59,16 +81,6 @@ func filterResources(p *project.Project, in map[string][]client.Resource, args f
 
 			result[n] = newRes
 		}
-	}
-
-	return result
-}
-
-func flattenResources(in map[string][]client.Resource) []client.Resource {
-	result := []client.Resource{}
-
-	for _, res := range in {
-		result = append(result, res...)
 	}
 
 	return result

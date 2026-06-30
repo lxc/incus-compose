@@ -70,6 +70,76 @@
     "addresses": []
   },
   {
+    "kind": "storage-volume",
+    "name": "auth-db-data",
+    "description": "",
+    "incus_name": "vol-auth-db-data",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "storage-volume",
+    "name": "cache-data",
+    "description": "",
+    "incus_name": "vol-cache-data",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "storage-volume",
+    "name": "orders-db-data",
+    "description": "",
+    "incus_name": "vol-orders-db-data",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "storage-volume",
+    "name": "products-db-data",
+    "description": "",
+    "incus_name": "vol-products-db-data",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "storage-volume",
+    "name": "queue-data",
+    "description": "",
+    "incus_name": "vol-queue-data",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "storage-volume",
+    "name": "search-db-data",
+    "description": "",
+    "incus_name": "vol-search-db-data",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "storage-volume",
+    "name": "users-db-data",
+    "description": "",
+    "incus_name": "vol-users-db-data",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
     "kind": "instance",
     "name": "api",
     "description": "incus-compose: testexamplemanydependencies:api-1",

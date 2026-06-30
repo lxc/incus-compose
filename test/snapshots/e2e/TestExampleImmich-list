@@ -10,6 +10,36 @@
     "addresses": []
   },
   {
+    "kind": "storage-volume",
+    "name": "library",
+    "description": "",
+    "incus_name": "vol-library",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "storage-volume",
+    "name": "model-cache",
+    "description": "",
+    "incus_name": "vol-model-cache",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
+    "kind": "storage-volume",
+    "name": "postgres",
+    "description": "",
+    "incus_name": "vol-postgres",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
     "kind": "instance",
     "name": "machine-learning",
     "description": "incus-compose: testexampleimmich:machine_learning",

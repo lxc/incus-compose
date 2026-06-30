@@ -142,10 +142,16 @@ func newExecCommand() *cli.Command {
 				return errLogged.Wrap(client.ErrNotFound.WithText("service instance not found"))
 			}
 
+			err = client.RunAction(ctx, inst, client.ActionEnsure)
+			if err != nil {
+				c.LogError("Failed to ensure instance", "name", inst.Name())
+				return errLogged.Wrap(client.NewError("instance failed to ensure").WithResource(inst))
+			}
+
 			// Make sure we have full instance details
 			if !inst.HasFull() {
 				c.LogError("Instance missing full details", "name", inst.Name())
-				return errLogged.Wrap(client.NewError("instance details incomplete").WithResource(inst))
+				return errLogged.Wrap(client.NewError("instance missing full details").WithResource(inst))
 			}
 
 			// Check instance running state

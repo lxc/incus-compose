@@ -106,17 +106,6 @@ func projectClient(t *testing.T, ctx context.Context, projectName string, opts .
 	return c
 }
 
-func ensureInstance(t *testing.T, ctx context.Context, c *client.Client, name string, opts ...client.Option) error {
-	t.Helper()
-
-	r, err := c.Resource(client.KindInstance, name, &client.InstanceConfig{})
-	if err != nil {
-		return err
-	}
-
-	return client.RunAction(ctx, r, client.ActionEnsure, opts...)
-}
-
 func TestConfigCommand(t *testing.T) {
 	t.Parallel()
 

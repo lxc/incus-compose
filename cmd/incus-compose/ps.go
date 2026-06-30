@@ -92,7 +92,13 @@ func newPsCommand() *cli.Command {
 			myResources := filterResources(p, resources, args)
 
 			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
-			stack.Add(flattenResources(myResources)...)
+
+			order, err := p.ServiceOrder(false)
+			if err != nil {
+				c.LogError("Getting the service dependency order", "error", err)
+				return errLogged.Wrap(err)
+			}
+			stack.AddOrdered(order, myResources)
 
 			// Run ensure (without create) to populate resource metadata/state where possible.
 			if err := stack.Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {

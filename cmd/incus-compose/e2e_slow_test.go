@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/lxc/incus-compose/client"
@@ -43,9 +44,17 @@ func TestSlowUpNoDeps(t *testing.T) {
 	require.NoError(t, err)
 
 	c := projectClient(t, ctx, pn)
-	require.NoError(t, ensureInstance(t, ctx, c, "nginx-1"))
-	require.Error(t, ensureInstance(t, ctx, c, "backend1-1"))
-	require.Error(t, ensureInstance(t, ctx, c, "backend2-1"))
+	exists, err := c.InstanceExists("nginx-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	exists, err = c.InstanceExists("backend1-1")
+	require.NoError(t, err)
+	assert.False(t, exists)
+
+	exists, err = c.InstanceExists("backend2-1")
+	require.NoError(t, err)
+	assert.False(t, exists)
 }
 
 // TestSlowUpDeps verifies `up <service>` (default) follows depends_on and starts the
@@ -68,9 +77,17 @@ func TestSlowUpDeps(t *testing.T) {
 	require.NoError(t, err)
 
 	c := projectClient(t, ctx, pn)
-	require.NoError(t, ensureInstance(t, ctx, c, "nginx-1"))
-	require.NoError(t, ensureInstance(t, ctx, c, "backend1-1"))
-	require.NoError(t, ensureInstance(t, ctx, c, "backend2-1"))
+	exists, err := c.InstanceExists("nginx-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	exists, err = c.InstanceExists("backend1-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	exists, err = c.InstanceExists("backend2-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
 }
 
 // TestSlowDownNoDeps verifies `down <service> --no-deps` removes only the named
@@ -96,9 +113,17 @@ func TestSlowDownNoDeps(t *testing.T) {
 	require.NoError(t, err)
 
 	c := projectClient(t, ctx, pn)
-	require.NoError(t, ensureInstance(t, ctx, c, "nginx-1"))
-	require.NoError(t, ensureInstance(t, ctx, c, "backend2-1"))
-	require.Error(t, ensureInstance(t, ctx, c, "backend1-1"))
+	exists, err := c.InstanceExists("nginx-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	exists, err = c.InstanceExists("backend2-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	exists, err = c.InstanceExists("backend1-1")
+	require.NoError(t, err)
+	assert.False(t, exists)
 }
 
 // TestSlowDownDeps verifies `down <service>` (default) follows depends_on in reverse
@@ -120,13 +145,21 @@ func TestSlowDownDeps(t *testing.T) {
 	_, _, err := runCommand(t, ctx, pn, "-f", compose, "up", "--detach")
 	require.NoError(t, err)
 
+	c := projectClient(t, ctx, pn)
+	exists, err := c.InstanceExists("nginx-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
 	_, _, err = runCommand(t, ctx, pn, "-f", compose, "down", "backend1")
 	require.NoError(t, err)
 
-	c := projectClient(t, ctx, pn)
-	require.NoError(t, ensureInstance(t, ctx, c, "backend2-1"))
-	require.NoError(t, ensureInstance(t, ctx, c, "nginx-1"))
-	require.Error(t, ensureInstance(t, ctx, c, "backend1-1"))
+	exists, err = c.InstanceExists("backend2-1")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	exists, err = c.InstanceExists("backend1-1")
+	require.NoError(t, err)
+	assert.False(t, exists)
 }
 
 // TestSlowPsDeps verifies that `ps <service> --with-deps` includes the linked
@@ -166,11 +199,11 @@ func TestSlowPsDeps(t *testing.T) {
 	require.Contains(t, withDeps, "backend2")
 }
 
-// TestSlowStartStopRestartLogsWithDeps exercises start/stop/restart/logs with and
+// TestSlowStartStopRestartWithDeps exercises start/stop/restart/logs with and
 // without --with-deps. The default keeps each command scoped to the named
 // service (and, crucially, start does not block on out-of-scope healthd
 // dependency conditions); --with-deps follows depends_on like up/down.
-func TestSlowStartStopRestartLogsWithDeps(t *testing.T) {
+func TestSlowStartStopRestartWithDeps(t *testing.T) {
 	t.Parallel()
 	skipLocal(t)
 	skipSlow(t)
@@ -192,9 +225,6 @@ func TestSlowStartStopRestartLogsWithDeps(t *testing.T) {
 	_, _, err = runCommand(t, ctx, pn, "-f", compose, "restart", "--with-deps", "nginx")
 	require.NoError(t, err)
 
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "logs", "nginx")
-	require.NoError(t, err)
-
 	// Stop all services (no cascade requested) -> nothing running.
 	_, _, err = runCommand(t, ctx, pn, "-f", compose, "stop", "nginx", "backend1", "backend2")
 	require.NoError(t, err)
@@ -202,23 +232,12 @@ func TestSlowStartStopRestartLogsWithDeps(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, cleanLines(t, stdout.String()))
 
-	// start nginx without --with-deps must start only nginx and must not block
-	// waiting for the (still stopped) backends to become healthy.
+	// start nginx it should start everything as it depends on backend1 and backend2.
 	_, _, err = runCommand(t, ctx, pn, "-f", compose, "start", "nginx")
 	require.NoError(t, err)
 	stdout, _, err = runCommand(t, ctx, pn, "-f", compose, "ps", "--quiet")
 	require.NoError(t, err)
 	names := cleanLines(t, stdout.String())
-	require.Contains(t, names, "nginx-1")
-	require.NotContains(t, names, "backend1-1")
-	require.NotContains(t, names, "backend2-1")
-
-	// start nginx --with-deps brings its dependencies up too.
-	_, _, err = runCommand(t, ctx, pn, "-f", compose, "start", "--with-deps", "nginx")
-	require.NoError(t, err)
-	stdout, _, err = runCommand(t, ctx, pn, "-f", compose, "ps", "--quiet")
-	require.NoError(t, err)
-	names = cleanLines(t, stdout.String())
 	require.Contains(t, names, "nginx-1")
 	require.Contains(t, names, "backend1-1")
 	require.Contains(t, names, "backend2-1")

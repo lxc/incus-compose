@@ -7,8 +7,6 @@ import (
 	"io"
 	"maps"
 	"net"
-	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"slices"
@@ -559,8 +557,17 @@ func (r *Instance) attachPostStartDevices(ctx context.Context) error {
 		devices[devName] = devConfig
 	}
 
-	if err := r.patch(instancePatch{Devices: devices}); err != nil {
-		return ErrCreate.WithText("updating with post-start devices").Wrap(err)
+	w := r.IncusInstance.Writable()
+	w.Devices = devices
+
+	op, err := r.conn.UpdateInstance(r.IncusName(), w, r.ETag)
+	if err != nil {
+		return err
+	}
+
+	err = op.WaitContext(ctx)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -579,6 +586,13 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 	}
 
 	if r.Running() {
+		if options.Healthd {
+			err := r.setHealthCheckingStopped(ctx, false)
+			if err != nil {
+				return r.client.hookAfter(ctx, ActionStart, r, options, err)
+			}
+		}
+
 		return r.client.hookAfter(ctx, ActionStart, r, options, nil)
 	}
 
@@ -591,6 +605,11 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 	}
 
 	if options.Healthd {
+		err := r.setHealthCheckingStopped(ctx, false)
+		if err != nil {
+			return r.client.hookAfter(ctx, ActionStart, r, options, err)
+		}
+
 		// Wait for the healthcheck to success if a test is defined.
 		_, hasTest := r.IncusInstance.Config[HealthKeyPrefix+"test"]
 		_, isHealthd := r.IncusInstance.Config[HealthKeyPrefix+"daemon"]
@@ -821,11 +840,6 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 		}
 	}
 
-	if options.Healthd {
-		err = r.setHealthCheckingStopped(false)
-		return err
-	}
-
 	return nil
 }
 
@@ -1004,6 +1018,13 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 	}
 
 	if !r.Running() {
+		if options.Healthd {
+			err := r.setHealthCheckingStopped(ctx, true)
+			if err != nil {
+				return r.client.hookAfter(ctx, ActionStop, r, options, err)
+			}
+		}
+
 		return r.client.hookAfter(ctx, ActionStop, r, options, nil)
 	}
 
@@ -1012,16 +1033,17 @@ func (r *Instance) Stop(ctx context.Context, opts ...Option) error {
 
 	err := r.stop(stopCtx, options)
 
+	if options.Healthd {
+		err := r.setHealthCheckingStopped(ctx, true)
+		if err != nil {
+			return r.client.hookAfter(ctx, ActionStop, r, options, err)
+		}
+	}
+
 	return r.client.hookAfter(ctx, ActionStop, r, options, err)
 }
 
 func (r *Instance) stop(ctx context.Context, options Options) error {
-	if options.Healthd {
-		if err := r.setHealthCheckingStopped(true); err != nil {
-			return err
-		}
-	}
-
 	if !r.Running() {
 		return nil
 	}
@@ -1044,30 +1066,10 @@ func (r *Instance) stop(ctx context.Context, options Options) error {
 	return r.fetch()
 }
 
-// instancePatch is the partial body for PATCH /1.0/instances/<name>.
-// Only non-empty fields are sent; the server preserves everything absent.
-type instancePatch struct {
-	Config  map[string]string            `json:"config,omitempty"`
-	Devices map[string]map[string]string `json:"devices,omitempty"`
-}
-
-// patch sends a partial instance update. Unlike UpdateInstance (full PUT with
-// ETag), the server merges only the given keys, so it cannot conflict with
-// incusd writing volatile config keys concurrently.
-func (r *Instance) patch(body instancePatch) error {
-	u := "/1.0/instances/" + url.PathEscape(r.incusName)
-	if r.client.incusProject != "" {
-		u += "?project=" + url.QueryEscape(r.client.incusProject)
-	}
-
-	_, _, err := r.conn.RawQuery(http.MethodPatch, u, body, "")
-	return err
-}
-
 // setHealthCheckingStopped writes the user.healthcheck.stopped config key on
 // the instance. Patches only this key; a full UpdateInstance races with incusd
 // writing volatile config keys around start/stop (ETag mismatch under load).
-func (r *Instance) setHealthCheckingStopped(stopped bool) error {
+func (r *Instance) setHealthCheckingStopped(ctx context.Context, stopped bool) error {
 	if err := r.fetch(); err != nil {
 		return err
 	}
@@ -1081,12 +1083,20 @@ func (r *Instance) setHealthCheckingStopped(stopped bool) error {
 		value = "true"
 	}
 
-	if err := r.patch(instancePatch{Config: map[string]string{HealthStoppedKey: value}}); err != nil {
+	w := r.IncusInstance.Writable()
+	w.Config[HealthStoppedKey] = value
+
+	op, err := r.conn.UpdateInstance(r.IncusName(), w, r.ETag)
+	if err != nil {
 		return err
 	}
 
-	r.IncusInstance.Config[HealthStoppedKey] = value
-	return nil
+	err = op.WaitContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	return r.fetch()
 }
 
 // MarkDelete marks a instance to be deleted after Ensure(),

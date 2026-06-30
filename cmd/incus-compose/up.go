@@ -169,11 +169,21 @@ func newUpCommand() *cli.Command {
 
 			if cmd.Bool("recreate") {
 				scale := parseScale(cmd.StringSlice("scale"))
-				resources, err := p.Resources(c, project.ResourcesReverse(), project.ResourcesScale(scale))
+				resources, err := p.Resources(c, project.ResourcesScale(scale))
 				if err != nil {
 					c.LogError("Getting project resources in reCreate", "error", err)
 					return errLogged.Wrap(err)
 				}
+
+				order, err := p.ServiceOrder(true)
+				if err != nil {
+					c.LogError("Getting the service dependency order", "error", err)
+					return errLogged.Wrap(err)
+				}
+
+				// The client needs to know about all resources for DNSWatcher, even those we filter out later.
+				ensureStack := client.NewStack(c, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
+				ensureStack.AddOrdered(order, resources)
 
 				args := filterResourcesArgs{
 					OnlyServices:     cmd.Args().Slice(),
@@ -183,14 +193,14 @@ func newUpCommand() *cli.Command {
 				myResources := filterResources(p, resources, args)
 
 				stack := client.NewStack(c, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
-				stack.Add(flattenResources(myResources)...)
+				stack.AddOrdered(order, myResources)
 
 				c.LogDebug("Ensure", "resources", stack.All())
 
 				recreateOptions := append(runOptions, client.OptionForce())
 
 				// Ensure without create for "recreate" (resolution only, no progress).
-				if err := stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
+				if err := ensureStack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, cmd.Root().Writer, cmd.Root().ErrWriter); err != nil {
 					c.LogDebug("Ensuring for reCreate", "error", err)
 				} else {
 					// Stop
@@ -219,6 +229,12 @@ func newUpCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
+			order, err := p.ServiceOrder(false)
+			if err != nil {
+				c.LogError("Getting the service dependency order", "error", err)
+				return errLogged.Wrap(err)
+			}
+
 			args := filterResourcesArgs{
 				OnlyServices:     cmd.Args().Slice(),
 				WithDependencies: !cmd.Bool("no-deps"),
@@ -226,7 +242,7 @@ func newUpCommand() *cli.Command {
 			myResources := filterResources(p, resources, args)
 
 			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
-			stack.Add(flattenResources(myResources)...)
+			stack.AddOrdered(order, myResources)
 
 			if usesHealthd {
 				healthdIncus, healthdNetwork := p.HealthdConfig()

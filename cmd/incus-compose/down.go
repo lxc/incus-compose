@@ -82,7 +82,7 @@ func newDownCommand() *cli.Command {
 				finish = startProgress(globalClient, c, noColor, cmd.Root().Writer)
 			}
 
-			resources, err := p.Resources(c, project.ResourcesReverse())
+			resources, err := p.Resources(c)
 			if err != nil {
 				c.LogError("Getting project resources in reCreate", "error", err)
 				return errLogged.Wrap(err)
@@ -91,17 +91,29 @@ func newDownCommand() *cli.Command {
 			args := filterResourcesArgs{
 				OnlyServices:     cmd.Args().Slice(),
 				WithDependencies: !cmd.Bool("no-deps"),
-				ExcludeKinds:     []client.Kind{client.KindNetwork},
+				Reverse:          true,
+				ExcludeKinds:     []client.Kind{client.KindStorageVolume},
+			}
+
+			// Do not delete networks when we are not deleting all other resources.
+			if cmd.Args().Len() > 0 {
+				args.ExcludeKinds = append(args.ExcludeKinds, client.KindNetwork)
 			}
 
 			if !cmd.Bool("images") && cmd.String("rmi") != "local" && cmd.String("rmi") != "all" {
 				args.ExcludeKinds = append(args.ExcludeKinds, client.KindImage)
 			}
 
+			order, err := p.ServiceOrder(true)
+			if err != nil {
+				c.LogError("Getting the service dependency order", "error", err)
+				return errLogged.Wrap(err)
+			}
+
 			myResources := filterResources(p, resources, args)
 
 			stack := client.NewStack(c, client.StackSortDescending(), client.StackWorkers(cmd.Root().Int("workers")))
-			stack.Add(flattenResources(myResources)...)
+			stack.AddOrdered(order, myResources)
 
 			if healthdInUseByProject(globalClient, p) {
 				h, err := healthdResolve(c)

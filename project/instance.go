@@ -88,6 +88,7 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 
 	instCfg := &client.InstanceConfig{
 		ServiceName:      service.Name,
+		Image:            image.IncusName(),
 		Full:             options.Full,
 		Resources:        slices.Clone(resources),
 		Extensions:       config,
@@ -96,9 +97,6 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		Secrets:          secrets,
 		Files:            files,
 		Dependencies:     instanceDependencyWaits(p, service, options),
-	}
-	if image != nil {
-		instCfg.Image = image.IncusName()
 	}
 
 	ir, err := c.Resource(client.KindInstance, instanceName(service, index, scale), instCfg)

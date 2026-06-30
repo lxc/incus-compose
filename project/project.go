@@ -237,23 +237,12 @@ func (p *Project) ProjectConfig() map[string]string {
 
 // ResourcesOptions configures how services are converted to stack operations.
 type ResourcesOptions struct {
-	Reverse bool
-	Full    bool
-	Scale   map[string]int // service name -> replica count override
+	Full  bool
+	Scale map[string]int // service name -> replica count override
 }
 
 // ResourcesOption is a functional option for ToStack.
 type ResourcesOption func(o *ResourcesOptions)
-
-// ResourcesReverse reverses the service dependency graph order.
-// Use for teardown so dependants are stopped before their dependencies.
-// Note: cross-kind priority ordering (e.g. instances vs networks) is handled
-// automatically by Stack.ForAction and does not require this option.
-func ResourcesReverse() ResourcesOption {
-	return func(o *ResourcesOptions) {
-		o.Reverse = true
-	}
-}
 
 // ResourcesFull fetches complete instance state including image alias and full instance details.
 func ResourcesFull() ResourcesOption {
@@ -269,6 +258,11 @@ func ResourcesScale(scale map[string]int) ResourcesOption {
 	}
 }
 
+// ServiceOrder returns the services in dependency order.
+func (p *Project) ServiceOrder(reverse bool) ([]string, error) {
+	return ServiceGraph(p.Services, reverse)
+}
+
 // Resources converts the compose project services to client resources.
 func (p *Project) Resources(c *client.Client, opts ...ResourcesOption) (map[string][]client.Resource, error) {
 	options := &ResourcesOptions{}
@@ -280,18 +274,8 @@ func (p *Project) Resources(c *client.Client, opts ...ResourcesOption) (map[stri
 
 	var errs error
 
-	serviceOrder, err := ServiceGraph(p.Services, options.Reverse)
-	if err != nil {
-		return nil, err
-	}
-
 	// Configure instances
-	for _, serviceName := range serviceOrder {
-		service, ok := p.Services[serviceName]
-		if !ok {
-			continue
-		}
-
+	for _, service := range p.Services {
 		// Determine the desired count: CLI --scale > deploy.replicas > 1.
 		// A plain `up` reconciles to deploy.replicas in both directions, matching
 		// `docker compose up`: a manual --scale applies only to that invocation,

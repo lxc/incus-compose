@@ -10,6 +10,16 @@
     "addresses": []
   },
   {
+    "kind": "storage-volume",
+    "name": "database",
+    "description": "",
+    "incus_name": "vol-database",
+    "image": "",
+    "status": "Exists",
+    "health": "",
+    "addresses": []
+  },
+  {
     "kind": "instance",
     "name": "database",
     "description": "incus-compose: testexamplewikijs:database-1",

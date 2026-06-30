@@ -55,7 +55,7 @@ func TestNetworkNameForProject(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			result := sanitizeNetworkName(tt.projectName, tt.prefix, tt.networkName)
+			result := SanitizeNetworkName(tt.projectName, tt.prefix, tt.networkName)
 
 			require.LessOrEqual(t, len(result), maxInterfaceNameLen, "Network name too long")
 
@@ -66,13 +66,13 @@ func TestNetworkNameForProject(t *testing.T) {
 
 			require.NotContains(t, result, "_")
 
-			result2 := sanitizeNetworkName(tt.projectName, tt.prefix, tt.networkName)
+			result2 := SanitizeNetworkName(tt.projectName, tt.prefix, tt.networkName)
 			require.Equal(t, result, result2, "Network name generation should be deterministic")
 		})
 	}
 
-	p1n1 := sanitizeNetworkName("p1", "ic-", "n1")
-	p2n1 := sanitizeNetworkName("p2", "ic-", "n1")
+	p1n1 := SanitizeNetworkName("p1", "ic-", "n1")
+	p2n1 := SanitizeNetworkName("p2", "ic-", "n1")
 	require.NotEqual(t, p1n1, p2n1, "Same name different projects should give different names")
 }
 

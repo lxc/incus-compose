@@ -171,7 +171,13 @@ func newListCommand() *cli.Command {
 			myResources := filterResources(p, resources, args)
 
 			stack := client.NewStack(c, client.StackWorkers(cmd.Root().Int("workers")))
-			stack.Add(flattenResources(myResources)...)
+
+			order, err := p.ServiceOrder(false)
+			if err != nil {
+				c.LogError("Getting the service dependency order", "error", err)
+				return errLogged.Wrap(err)
+			}
+			stack.AddOrdered(order, myResources)
 
 			if cmd.Bool("healthd") {
 				if name, err := c.FindHealthd(); err == nil {
