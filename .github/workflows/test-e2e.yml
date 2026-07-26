@@ -54,6 +54,18 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      - name: Set version
+        run: |
+          mkdir -p "$REPORTS_DIR"
+          sha="${{ github.sha }}"
+          short="${sha:0:7}"
+          echo "VERSION=${short}" >> "$GITHUB_ENV"
+          echo "INCUS_COMPOSE_UP_HEALTHD_IMAGE=ghcr.io/lxc/incus-compose/ic-healthd:${short}" >> "$GITHUB_ENV"
+
+      - name: Build healthd
+        run: |
+          just run -P cmd/ic-healthd build --os-env
+
       - name: Test
         run: |
           mkdir -p "$REPORTS_DIR"
@@ -117,6 +129,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+
+      - name: Set version
+        run: |
+          mkdir -p "$REPORTS_DIR"
+          sha="${{ github.sha }}"
+          short="${sha:0:7}"
+          echo "VERSION=${short}" >> "$GITHUB_ENV"
+          echo "INCUS_COMPOSE_UP_HEALTHD_IMAGE=ghcr.io/lxc/incus-compose/ic-healthd:${short}" >> "$GITHUB_ENV"
 
       - name: Test
         run: |

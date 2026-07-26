@@ -104,7 +104,7 @@
     "name": "",
     "description": "incus-compose: testexample-immich:testexample-immich-ic-healthd",
     "incus_name": "testexample-immich-ic-healthd",
-    "image": "ghcr.io/lxc/incus-compose/ic-healthd:latest",
+    "image": "ghcr.io/lxc/incus-compose/ic-healthd:-stripped-",
     "status": "Running",
     "health": "Healthy",
     "addresses": [

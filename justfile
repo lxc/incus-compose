@@ -94,6 +94,7 @@ fix folder="./...":
 dev-install container_name="local:ict" listen='127.0.0.1:1443' project='default' image='images:debian/trixie' storagepool='default' repo='stable':
     go install gotest.tools/gotestsum@latest
     @just make-nested "{{ container_name }}" "{{ image }}" "{{ listen }}" "{{ project }}" "{{ storagepool }}" "{{ repo }}"
+    just build-healthd-image
 
 # Run commands in the nested incus.
 incus *args:
@@ -113,10 +114,19 @@ build-healthd: lint
     CGO_ENABLED=0 go build -tags=netgo -ldflags="-w -s -X github.com/lxc/incus-compose/cmd/ic-healthd/version.Version=`git describe --tags --always --long --dirty="-dirty"`" -trimpath -o bin/ic-healthd ./cmd/ic-healthd
 
 # Build ic-healthd container image
-build-healthd-image tag="ghcr.io/lxc/incus-compose/ic-healthd:latest":
-    VERSION=`git describe --tags --always --long --dirty="-dirty"`; \
-        echo ${VERSION}; \
-        podman build --build-arg VERSION=${VERSION} -t {{ tag }} -f cmd/ic-healthd/Dockerfile .
+build-healthd-image tag_base="ghcr.io/lxc/incus-compose/ic-healthd":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    export VERSION=`git describe --tags --always --long --dirty="-dirty"`
+    echo ${VERSION}
+    echo "Building for the 'default' cache"
+    just run -P cmd/ic-healthd build --os-env
+    echo "Building for the 'incus-compose-tests-cache' cache"
+    INCUS_COMPOSE_IMAGE_CACHE="incus-compose-tests-cache" just run -P cmd/ic-healthd build --os-env
+    sed -i -e 's|export INCUS_COMPOSE_HEALTHD_UP_IMAGE=".*"|export INCUS_COMPOSE_HEALTHD_UP_IMAGE="{{ tag_base }}:'${VERSION}'"|g' \
+           -e 's|export INCUS_COMPOSE_UP_IMAGE=".*"|export INCUS_COMPOSE_UP_IMAGE="{{ tag_base }}:'${VERSION}'"|g' \
+           .env
 
 # Build ic-healthd container image
 release-healthd-image tag="ghcr.io/lxc/incus-compose/ic-healthd:latest": build-healthd-image

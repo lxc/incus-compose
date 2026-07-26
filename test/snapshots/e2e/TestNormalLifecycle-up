@@ -14,7 +14,7 @@
     "name": "",
     "description": "incus-compose: testnormallifecycle:testnormallifecycle-ic-healthd",
     "incus_name": "testnormallifecycle-ic-healthd",
-    "image": "ghcr.io/lxc/incus-compose/ic-healthd:latest",
+    "image": "ghcr.io/lxc/incus-compose/ic-healthd:-stripped-",
     "status": "Running",
     "health": "Healthy",
     "addresses": [

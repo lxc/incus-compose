@@ -43,17 +43,16 @@ func runCommand(ctx context.Context, t *testing.T, projectName string, args ...s
 	return stdout, err
 }
 
-// stripListOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
-func stripListOutput(t *testing.T, output *bytes.Buffer) string {
+// stripOutput removes dynamic content (IP addresses, network hashes) for snapshot comparison.
+func stripOutput(t *testing.T, output *bytes.Buffer) string {
 	t.Helper()
 
-	ipRegex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
-	outStr := ipRegex.ReplaceAllString(output.String(), "-stripped-")
-
-	// // Strip health status for now, its flaky.
-	// healthRegex, err := regexp.Compile(`"health": "[a-zA-Z]+",`)
-	// require.NoError(t, err)
-	// outStr = healthRegex.ReplaceAllString(outStr, `"health": "-stripped-",`)
+	ipv4Regex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
+	ipv6Regex := regexp.MustCompile(`(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}`)
+	healthdImageRegex := regexp.MustCompile("ic-healthd:[0-9a-z.-]+")
+	outStr := ipv4Regex.ReplaceAllString(output.String(), "-stripped-")
+	outStr = ipv6Regex.ReplaceAllString(outStr, "-stripped-")
+	outStr = healthdImageRegex.ReplaceAllString(outStr, "ic-healthd:-stripped-")
 
 	// Cupaloy adds a newline, 2 lines are bad for my editors format on save.
 	return strings.Trim(outStr, "\n")
@@ -121,7 +120,7 @@ func TestExample(t *testing.T) {
 			stdout, err := runCommand(ctx, t, t.Name(), args...)
 			require.NoError(t, err)
 
-			snapshotter.SnapshotT(t, stripListOutput(t, stdout))
+			snapshotter.SnapshotT(t, stripOutput(t, stdout))
 		})
 	}
 }

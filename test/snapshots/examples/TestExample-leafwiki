@@ -3,7 +3,7 @@
     "kind": "network",
     "name": "default",
     "description": "",
-    "incus_name": "ic-5xhk5y7yoz",
+    "incus_name": "lwiki0",
     "image": "",
     "status": "Exists",
     "health": "",
@@ -24,7 +24,7 @@
     "name": "",
     "description": "incus-compose: testexample-leafwiki:testexample-leafwiki-ic-healthd",
     "incus_name": "testexample-leafwiki-ic-healthd",
-    "image": "ghcr.io/lxc/incus-compose/ic-healthd:latest",
+    "image": "ghcr.io/lxc/incus-compose/ic-healthd:-stripped-",
     "status": "Running",
     "health": "Healthy",
     "addresses": [

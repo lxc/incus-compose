@@ -44,7 +44,7 @@
     "name": "",
     "description": "incus-compose: teste2estartstoprestartwithdeps:teste2estartstoprestartwithdeps-ic-healthd",
     "incus_name": "teste2estartstoprestartwithdeps-ic-healthd",
-    "image": "ghcr.io/lxc/incus-compose/ic-healthd:latest",
+    "image": "ghcr.io/lxc/incus-compose/ic-healthd:-stripped-",
     "status": "Running",
     "health": "-stripped-",
     "addresses": [

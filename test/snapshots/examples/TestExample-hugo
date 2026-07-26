@@ -26,7 +26,7 @@
     "name": "",
     "description": "incus-compose: testexample-hugo:testexample-hugo-ic-healthd",
     "incus_name": "testexample-hugo-ic-healthd",
-    "image": "ghcr.io/lxc/incus-compose/ic-healthd:latest",
+    "image": "ghcr.io/lxc/incus-compose/ic-healthd:-stripped-",
     "status": "Running",
     "health": "Healthy",
     "addresses": [

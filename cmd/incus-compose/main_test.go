@@ -121,8 +121,10 @@ func stripOutput(t *testing.T, output *bytes.Buffer, stripHealth bool) string {
 
 	ipv4Regex := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
 	ipv6Regex := regexp.MustCompile(`(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}`)
+	healthdImageRegex := regexp.MustCompile("ic-healthd:[0-9a-z.-]+")
 	outStr := ipv4Regex.ReplaceAllString(output.String(), "-stripped-")
 	outStr = ipv6Regex.ReplaceAllString(outStr, "-stripped-")
+	outStr = healthdImageRegex.ReplaceAllString(outStr, "ic-healthd:-stripped-")
 
 	if stripHealth {
 		healthRegex := regexp.MustCompile(`"health": "[a-zA-Z]+",`)
@@ -186,8 +188,14 @@ type e2eTest struct {
 func runE2ETests(ctx context.Context, t *testing.T, projectName string, tests []e2eTest) {
 	t.Helper()
 
+	_, update := os.LookupEnv("UPDATE_SNAPSHOTS")
+	prevFailed := false
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if prevFailed && !update {
+				t.Skip("Previous failed")
+			}
+
 			switch {
 			case tt.snapshotList:
 				// This ugly sleep lets incus settle before we ask for "list".
@@ -198,8 +206,14 @@ func runE2ETests(ctx context.Context, t *testing.T, projectName string, tests []
 			default:
 				_, err := runCommand(ctx, t, projectName, tt.args...)
 				if !tt.wantErr {
+					if err != nil {
+						prevFailed = true
+					}
 					require.NoError(t, err)
 				} else {
+					if err == nil {
+						prevFailed = true
+					}
 					require.Error(t, err)
 				}
 			}

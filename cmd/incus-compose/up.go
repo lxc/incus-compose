@@ -168,7 +168,6 @@ func newUpCommand() *cli.Command {
 			// We start all resources, just ignore that warning but let progress know them (so add before - LIFO - progress runs before).
 			c.IgnoreError(client.ActionStart, client.ErrRunning)
 			c.IgnoreError(client.ActionStop, client.ErrNotRunning)
-			c.IgnoreError(client.ActionEnsure, client.ErrNotFound)
 
 			// The recreate client has own errors it ignores.
 			rc := c.Clone()

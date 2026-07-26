@@ -65,6 +65,8 @@ jobs:
     env:
       INCUS_REMOTE: ${{ matrix.remote }}
       INCUS_COMPOSE_IMAGE_CACHE: incus-compose-tests-cache
+      VERSION: "${{ github.sha }}"
+
       NO_COLOR: 1
       TEST_PROCS: 2
       INCUS_COMPOSE_UP_DEPENDENCY_TIMEOUT: "2m"
@@ -80,10 +82,20 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Test
+      - name: Set version
         run: |
           mkdir -p "$REPORTS_DIR"
+          sha="${{ github.sha }}"
+          short="${sha:0:7}"
+          echo "VERSION=${short}" >> "$GITHUB_ENV"
+          echo "INCUS_COMPOSE_UP_HEALTHD_IMAGE=ghcr.io/lxc/incus-compose/ic-healthd:${short}" >> "$GITHUB_ENV"
 
+      - name: Build healthd
+        run: |
+          just run -P cmd/ic-healthd build --os-env
+
+      - name: Test
+        run: |
           gotestsum \
             --packages="./..." \
             --junitfile="$REPORTS_DIR/junit.xml" \

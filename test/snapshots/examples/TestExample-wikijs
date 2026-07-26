@@ -3,7 +3,7 @@
     "kind": "network",
     "name": "default",
     "description": "",
-    "incus_name": "nwiki0",
+    "incus_name": "wikijs0",
     "image": "",
     "status": "Exists",
     "health": "",
@@ -36,7 +36,7 @@
     "name": "",
     "description": "incus-compose: testexample-wikijs:testexample-wikijs-ic-healthd",
     "incus_name": "testexample-wikijs-ic-healthd",
-    "image": "ghcr.io/lxc/incus-compose/ic-healthd:latest",
+    "image": "ghcr.io/lxc/incus-compose/ic-healthd:-stripped-",
     "status": "Running",
     "health": "Healthy",
     "addresses": [
