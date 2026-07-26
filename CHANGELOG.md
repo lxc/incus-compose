@@ -22,7 +22,6 @@ for correct semver ordering. Headings below preserve each release's announced fo
   Builder detection also no longer shells out to `<builder> version` to
   distinguish Podman from Docker; it now checks the resolved binary name,
   and `buildah` is tried alongside `podman`/`docker`. (by @jochumdev)
-
 - Published ports (`ports:`) create a proxy device. On Incus 7.0+ the
   device uses NAT mode (`nat=true`) with ARP/NDP-based instance IP
   detection; on older servers it falls back to a userspace proxy
@@ -90,6 +89,11 @@ for correct semver ordering. Headings below preserve each release's announced fo
   cache and project before re-copying, so a floating tag could keep serving
   the old image. Deleting the cache is now a distinct step that runs before
   create/refresh, and the well-known-registry hook fires on it too. (by @jochumdev)
+- Image caching: images built with `build:` now go through the same cache
+  path as pulled images instead of being created directly in the project,
+  fixing stale/duplicate builds when a cache is configured. `deleteCached`
+  also no longer aborts before cleaning up the cache when the source image
+  was already removed. (by @jochumdev)
 
 ### Internal
 
