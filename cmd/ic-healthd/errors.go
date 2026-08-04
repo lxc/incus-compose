@@ -70,3 +70,7 @@ var ErrRetriesExhausted = newError("healthcheck retries exhausted")
 
 // ErrNotRunning is an internal sentinel error.
 var ErrNotRunning = newError("not running")
+
+// ErrInstanceStopped means the checker exited because its instance stopped;
+// the lifecycle events own restarting it.
+var ErrInstanceStopped = newError("instance stopped")

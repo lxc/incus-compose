@@ -252,6 +252,22 @@ func (r *Runner) handleCheckerStatus(name, status string) {
 
 // handleCheckerExit reacts only to a retries-exhausted exit; a nil exit was already handled.
 func (r *Runner) handleCheckerExit(name string, err error) {
+	slog.Debug("Checker exited", "instance", name, "reason", err)
+
+	// handleStarted skips a tracked name, so an entry outliving its checker is
+	// never given a new one. Drop it and let instance-started spawn afresh.
+	if errors.Is(err, ErrInstanceStopped) {
+		r.mu.Lock()
+		ti, ok := r.tracked[name]
+		if ok {
+			ti.cancel()
+			delete(r.tracked, name)
+		}
+		r.mu.Unlock()
+
+		return
+	}
+
 	if !errors.Is(err, ErrRetriesExhausted) {
 		return
 	}
@@ -314,12 +330,16 @@ func (r *Runner) evaluateBackoff(ctx context.Context, name string) {
 	})
 }
 
-// isMarkedStopped reports whether the instance was stopped on purpose; an API error counts as stopped.
+// isMarkedStopped reports whether the instance was stopped on purpose.
 func (r *Runner) isMarkedStopped(name string) bool {
 	inst, _, err := r.conn.GetInstance(name)
 	if err != nil {
-		return true
+		// Only the config key states intent; treating an error as intent turns
+		// restart: unless-stopped into never restart.
+		slog.Debug("Fetching instance to check the stopped marker", "instance", name, "error", err)
+		return false
 	}
+
 	return inst.Config[shared.HealthStoppedKey] == "true"
 }
 

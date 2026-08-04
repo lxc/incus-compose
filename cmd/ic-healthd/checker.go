@@ -54,8 +54,9 @@ func newChecker(
 type phaseResult int
 
 const (
-	phaseStop   phaseResult = iota // retries exhausted: stop and report
-	phaseNormal                    // continue with the normal-interval checker
+	phaseStop    phaseResult = iota // retries exhausted: stop and report
+	phaseNormal                     // continue with the normal-interval checker
+	phaseStopped                    // the instance is not running: exit, events own the restart
 )
 
 // run alternates the start-period and normal phases until ctx ends or retries run out.
@@ -68,13 +69,18 @@ func (c *checker) run(ctx context.Context, inStart bool) {
 
 		result := c.runPhase(ctx, inStart)
 		if ctx.Err() != nil {
+			slog.Debug("Checker exiting, canceled", "instance", c.name)
 			c.exitCh <- nil
 			return
 		}
 
 		switch result {
 		case phaseStop:
+			slog.Debug("Checker exiting, retries exhausted", "instance", c.name, "failures", c.failures)
 			c.exitCh <- ErrRetriesExhausted.WithFailures(uint64(c.failures))
+			return
+		case phaseStopped:
+			c.exitCh <- ErrInstanceStopped
 			return
 		case phaseNormal:
 			inStart = false
@@ -94,6 +100,14 @@ func (c *checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 	}
 	defer cancel()
 
+	// NewTicker panics on a non-positive interval, which would kill the daemon
+	// and every instance it watches, not just this checker.
+	if interval <= 0 {
+		slog.Warn("Non-positive check interval, falling back to the default",
+			"instance", c.name, "interval", interval)
+		interval = defaultInterval
+	}
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -104,9 +118,18 @@ func (c *checker) runPhase(ctx context.Context, inStart bool) phaseResult {
 			var result phaseResult
 			done := false
 
+			// Logged either side of the check so a silent checker tells whether
+			// the tick stopped arriving or the check itself never returned.
+			slog.Debug("Check starting", "instance", c.name, "inStart", inStart)
+
+			started := time.Now()
 			err := c.check(phaseCtx)
+			slog.Debug("Check done", "instance", c.name, "took", time.Since(started), "error", err)
+
 			if errors.Is(err, ErrNotRunning) {
-				continue
+				// Events own bringing the instance and its checker back.
+				slog.Info("Checker exiting, instance is not running", "instance", c.name)
+				return phaseStopped
 			} else if err == nil {
 				c.failures = 0
 				status = shared.HealthStatusHealthy
@@ -187,6 +210,7 @@ func (c *checker) check(ctx context.Context) error {
 	}
 
 	if inst.StatusCode != incusApi.Running {
+		slog.Debug("instance is not running", "instance", c.name, "status", inst.Status)
 		return ErrNotRunning
 	}
 

@@ -90,6 +90,17 @@ for correct semver ordering. Headings below preserve each release's announced fo
   `condition: service_healthy` timed out. Calls are now bounded by the
   healthcheck's own `timeout`, and the daemon's HTTP transport has a
   30s response-header timeout. (by @jochumdev)
+- a `healthcheck` with a zero or negative `interval` or `start_interval` is
+  rejected instead of crashing ic-healthd. The value reached `time.NewTicker`,
+  whose panic took down the sidecar and stopped health checking every instance
+  in the project. (by @jochumdev)
+- an instance with `restart: unless-stopped` is restarted again after a
+  temporary Incus API error. The error was read as "stopped on purpose", so the
+  restart was skipped and the instance was dropped from health checking - and
+  since it stays stopped, nothing brought it back. (by @jochumdev)
+- ic-healthd stops health checking an instance that is no longer running,
+  instead of re-checking it forever without reporting anything. The lifecycle
+  events start a fresh checker when the instance comes back. (by @jochumdev)
 
 ## [1.1.0] - 2026-07-31
 

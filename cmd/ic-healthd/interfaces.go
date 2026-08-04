@@ -15,9 +15,7 @@ const (
 )
 
 const (
-	// checkInstanceRunningDelay is the checker's own running-state poll.
-	checkInstanceRunningDelay = 30 * time.Second
-	maxRestartDelay           = 5 * time.Minute
+	maxRestartDelay = 5 * time.Minute
 
 	// debounceWindow coalesces bursts of update/delete events into one kill-and-replace.
 	debounceWindow = 100 * time.Millisecond

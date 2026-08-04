@@ -105,6 +105,9 @@ func parseInstance(cfg map[string]string, running bool) (instanceConfig, error) 
 		if err != nil {
 			return ic, fmt.Errorf("parsing start_interval: %w", err)
 		}
+		if d <= 0 {
+			return ic, errors.New("start_interval must be greater than 0")
+		}
 		ic.StartInterval = d
 	}
 
@@ -112,6 +115,9 @@ func parseInstance(cfg map[string]string, running bool) (instanceConfig, error) 
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return ic, fmt.Errorf("parsing interval: %w", err)
+		}
+		if d <= 0 {
+			return ic, errors.New("interval must be greater than 0")
 		}
 		ic.Interval = d
 	}
