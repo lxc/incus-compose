@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/types"
+	incusClient "github.com/lxc/incus/v7/client"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/lxc/incus/v7/shared/units"
 	"github.com/urfave/cli/v3"
@@ -679,55 +680,150 @@ func healthdIncusURL(c *client.Client, params healthdParams, network *client.Net
 	return u, nil
 }
 
-// healthdBridgeIP returns the gateway of the bridge the sidecar sits on and its
-// network, taken from the default profile when the sidecar brings none.
+// healthdBridgeIP returns a host address on the bridge the sidecar sits on, so
+// it can dial Incus over it. The bridge is taken from the default profile when
+// the sidecar brings none.
 func healthdBridgeIP(c *client.Client, network *client.Network) (net.IP, string, error) {
-	var cidr, name string
+	conn, err := c.GlobalConnection()
+	if err != nil {
+		return nil, "", err
+	}
+
+	var name string
+	var config map[string]string
 
 	if network != nil {
-		cidr, name = network.IncusNetwork.Config["ipv4.address"], network.Name()
+		name, config = network.Name(), network.IncusNetwork.Config
 	} else {
-		conn, err := c.GlobalConnection()
+		name, config, err = healthdProfileNetwork(conn)
 		if err != nil {
 			return nil, "", err
 		}
+	}
 
-		profile, _, err := conn.GetProfile("default")
-		if err != nil {
-			return nil, "", fmt.Errorf("reading the default profile of the %s project: %w", globalHealthdProject, err)
+	if ip := healthdGatewayIP(config); ip != nil {
+		return ip, name, nil
+	}
+
+	listen := healthdListenAddrs(conn)
+
+	// An unmanaged bridge carries no address in its config, only in its state,
+	// and only the ones Incus answers on are of any use to the sidecar.
+	if ip := healthdNetworkStateIP(conn, name, listen); ip != nil {
+		return ip, name, nil
+	}
+
+	// Whatever else Incus binds is another bridge or the host's uplink, so
+	// picking one would only move the failure into the sidecar.
+	return nil, name, fmt.Errorf(
+		"no address of network %q is one Incus listens on (%s); set --healthd-incus or x-incus-compose.healthd.incus",
+		name, strings.Join(slices.Sorted(maps.Keys(listen)), ", "))
+}
+
+// healthdProfileNetwork returns the network the default profile's nic attaches
+// to and its config.
+func healthdProfileNetwork(conn incusClient.InstanceServer) (string, map[string]string, error) {
+	profile, _, err := conn.GetProfile("default")
+	if err != nil {
+		return "", nil, fmt.Errorf("reading the default profile of the %s project: %w", globalHealthdProject, err)
+	}
+
+	for _, device := range profile.Devices {
+		if device["type"] != "nic" {
+			continue
 		}
 
-		for _, device := range profile.Devices {
-			if device["type"] != "nic" || device["network"] == "" {
-				continue
-			}
-
-			incusNetwork, _, err := conn.GetNetwork(device["network"])
-			if err != nil {
-				return nil, "", fmt.Errorf("reading network %q: %w", device["network"], err)
-			}
-
-			cidr, name = incusNetwork.Config["ipv4.address"], device["network"]
-
-			break
+		name := device["network"]
+		if name == "" {
+			name = device["parent"]
 		}
 
 		if name == "" {
-			return nil, "", errors.New(
-				"the default profile has no managed network to reach Incus over, set --healthd-incus or x-incus-compose.healthd.incus")
+			continue
+		}
+
+		incusNetwork, _, err := conn.GetNetwork(name)
+		if err != nil {
+			return "", nil, fmt.Errorf("reading network %q: %w", name, err)
+		}
+
+		return name, incusNetwork.Config, nil
+	}
+
+	return "", nil, errors.New(
+		"the default profile has no network to reach Incus over, set --healthd-incus or x-incus-compose.healthd.incus")
+}
+
+// healthdGatewayIP returns the bridge gateway a managed network configures.
+func healthdGatewayIP(config map[string]string) net.IP {
+	for _, key := range []string{"ipv4.address", "ipv6.address"} {
+		cidr := config[key]
+		if cidr == "" || cidr == "none" || cidr == "auto" {
+			continue
+		}
+
+		if ip, _, err := net.ParseCIDR(cidr); err == nil {
+			return ip
 		}
 	}
 
-	if cidr == "" {
-		return nil, name, fmt.Errorf("ip of network %q is empty", name)
-	}
+	return nil
+}
 
-	ip, _, err := net.ParseCIDR(cidr)
+// healthdListenAddrs returns the addresses Incus answers on. It is empty when
+// the server reports none, which callers read as "unknown", not "nowhere".
+func healthdListenAddrs(conn incusClient.InstanceServer) map[string]bool {
+	listen := map[string]bool{}
+
+	server, _, err := conn.GetServer()
 	if err != nil {
-		return nil, name, fmt.Errorf("parsing the address of network %q: %w", name, err)
+		return listen
 	}
 
-	return ip, name, nil
+	for _, addr := range server.Environment.Addresses {
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			continue
+		}
+
+		if ip := net.ParseIP(host); ip != nil {
+			listen[ip.String()] = true
+		}
+	}
+
+	return listen
+}
+
+// healthdNetworkStateIP returns a global address of the host interface behind
+// name that Incus answers on, IPv4 first.
+func healthdNetworkStateIP(conn incusClient.InstanceServer, name string, listen map[string]bool) net.IP {
+	state, err := conn.GetNetworkState(name)
+	if err != nil || state == nil {
+		return nil
+	}
+
+	var v6 net.IP
+
+	for _, addr := range state.Addresses {
+		ip := net.ParseIP(addr.Address)
+		if addr.Scope != "global" || ip == nil {
+			continue
+		}
+
+		if len(listen) > 0 && !listen[ip.String()] {
+			continue
+		}
+
+		if ip.To4() != nil {
+			return ip
+		}
+
+		if v6 == nil {
+			v6 = ip
+		}
+	}
+
+	return v6
 }
 
 // healthdTeardown removes a healthd sidecar, its volume and its certificate

@@ -672,7 +672,7 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 	}
 
 	if options.Healthd {
-		if (hasTest || restart) && !isHealthd {
+		if hasTest || restart {
 			r.client.globalClient.emitProgress(action, r, options, Progress{
 				Percent: -1,
 				Text:    "Waiting for the healthcheck",
@@ -680,13 +680,14 @@ func (r *Instance) Start(ctx context.Context, opts ...Option) error {
 
 			err = r.waitForHealthCheck(startCtx)
 			if err != nil {
-				return r.client.hookAfter(
-					ctx,
-					action,
-					r,
-					options,
-					fmt.Errorf("failed to wait for the healthcheck with timeout: %v", options.Timeout),
-				)
+				failed := fmt.Errorf("failed to wait for the healthcheck with timeout: %v", options.Timeout)
+				if isHealthd {
+					failed = fmt.Errorf(
+						"ic-healthd did not report itself healthy within %v, the project has no health daemon",
+						options.Timeout)
+				}
+
+				return r.client.hookAfter(ctx, action, r, options, failed)
 			}
 		}
 	}
@@ -1370,6 +1371,10 @@ func (r *Instance) addMissingConfig(ctx context.Context) error {
 	missing := map[string]string{}
 
 	for key, value := range r.Config.Extensions {
+		if value == "" {
+			continue
+		}
+
 		_, ok := r.IncusInstance.Config[key]
 		if ok {
 			continue
