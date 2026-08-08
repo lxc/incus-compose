@@ -1065,7 +1065,7 @@ func (r *Instance) pushFile(sftpConn *sftp.Client, file InstanceFile) error {
 		WriteMode: "overwrite",
 	}
 
-	err := sftpCreateFile(r.client, sftpConn, file.Target, args, true)
+	err := SFTPCreateFile(r.client, sftpConn, file.Target, args, true)
 	if err != nil {
 		return ErrCreate.Wrap(err)
 	}
@@ -1122,9 +1122,9 @@ func sftpSetOwnerMode(sftpConn *sftp.Client, targetPath string, args incusClient
 	return nil
 }
 
-// sftpCreateFile
+// SFTPCreateFile
 // From: https://github.com/lxc/incus/blob/975d9869315b6db088c7c40ca5b37ee45e5ff8cf/cmd/incus/utils_sftp.go#L69
-func sftpCreateFile(c *Client, sftpConn *sftp.Client, targetPath string, args incusClient.InstanceFileArgs, push bool) error {
+func SFTPCreateFile(c *Client, sftpConn *sftp.Client, targetPath string, args incusClient.InstanceFileArgs, push bool) error {
 	switch args.Type {
 	case "file":
 		file, err := sftpConn.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
@@ -1234,7 +1234,7 @@ func sftpRecursiveMkdir(c *Client, sftpConn *sftp.Client, p string, mode *os.Fil
 		}
 
 		c.LogDebug("Creating", "directory", cur)
-		err := sftpCreateFile(c, sftpConn, cur, args, false)
+		err := SFTPCreateFile(c, sftpConn, cur, args, false)
 		if err != nil {
 			return err
 		}
