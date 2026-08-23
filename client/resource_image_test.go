@@ -1,8 +1,12 @@
 package client
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -686,6 +690,89 @@ func TestImageEnsure_ProjectCopySurvivesCacheDeletion(t *testing.T) {
 	// A refill would mean it went looking past its own project.
 	_, _, err = img.cache.incus.GetImageAlias(ctx, img.cache.incusProject, img.incusName, nil)
 	require.Error(t, err, "ensure repopulated the cache instead of using the project copy")
+}
+
+// emptyTar returns a valid, empty tar stream, enough for incusd to accept a
+// manually-crafted image whose content is never actually unpacked into a
+// running instance.
+func emptyTar(t *testing.T) io.Reader {
+	t.Helper()
+
+	var buf bytes.Buffer
+	require.NoError(t, tar.NewWriter(&buf).Close())
+
+	return &buf
+}
+
+// TestImageEnsure_DropsCachedWrongArch covers the cache project
+// (DefaultCacheProject, or here a client-scoped stand-in) being shared
+// cluster-wide, not per node: a member of another architecture may already
+// have materialized this alias. Ensure must notice a cached image built for
+// an architecture this server does not run, drop it, and pull one that
+// actually fits, rather than handing the mismatched image to the project
+// unexamined.
+func TestImageEnsure_DropsCachedWrongArch(t *testing.T) {
+	skipLocal(t)
+	ctx := t.Context()
+
+	cache := newRandomTestClient(t, "image-wrong-arch-cache-")
+	c := newRandomTestClient(t, "image-wrong-arch-")
+
+	name := "docker.io/library/alpine:3.21"
+	r, err := c.Resource(KindImage, name, &ImageConfig{CacheClient: cache})
+	require.NoError(t, err)
+
+	img, ok := r.(*Image)
+	require.True(t, ok)
+
+	conn, err := c.Connection()
+	require.NoError(t, err)
+	server, _, err := conn.GetServer(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, server.Environment.Architectures)
+
+	// A name no real host reports, so the planted entry is unambiguously wrong.
+	wrongArch := "riscv64"
+	if slices.Contains(server.Environment.Architectures, wrongArch) {
+		wrongArch = "s390x"
+	}
+
+	meta, err := buildMetadataTar(name, wrongArch, nil)
+	require.NoError(t, err)
+
+	op, err := cache.incus.CreateImage(ctx, cache.incusProject, incusApi.ImagesPost{
+		Aliases: []incusApi.ImageAlias{{Name: name}},
+	}, &iclient.ImageCreateArgs{
+		MetaFile:   meta,
+		MetaName:   "metadata.tar",
+		RootfsFile: emptyTar(t),
+		RootfsName: "rootfs.tar",
+	})
+	require.NoError(t, err)
+	_, err = iclient.WaitOperation(ctx, op)
+	require.NoError(t, err)
+
+	poisoned, _, err := cache.incus.GetImageAlias(ctx, cache.incusProject, name, nil)
+	require.NoError(t, err)
+
+	poisonedImg, _, err := cache.incus.GetImage(ctx, cache.incusProject, poisoned.Target, nil)
+	require.NoError(t, err)
+	require.Equal(t, wrongArch, poisonedImg.Architecture,
+		"test setup: the planted cache entry must actually be wrong-arch")
+
+	// Ensure must not hand the wrong-architecture cached image to the
+	// project: it has to notice, drop it, and pull one this server can run.
+	require.NoError(t, RunAction(ctx, r, ActionEnsure, OptionCreate()))
+	require.True(t, r.IsEnsured())
+
+	got, _, err := conn.GetImage(ctx, c.incusProject, img.State().IncusAlias.Target, nil)
+	require.NoError(t, err)
+	require.Contains(t, server.Environment.Architectures, got.Architecture)
+
+	// The wrong-architecture blob itself must be gone, not just unaliased, or
+	// the next server of that same architecture inherits it right back.
+	_, _, err = cache.incus.GetImage(ctx, cache.incusProject, poisoned.Target, nil)
+	require.Error(t, err, "the wrong-architecture cached image must be deleted")
 }
 
 func TestImagePullNever_NoCacheStoreMiss(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -701,6 +702,10 @@ func (r *Image) create(ctx context.Context, args Options) error {
 func (r *Image) materialize(ctx context.Context, args Options) (*incusApi.ImageAliasesEntry, error) {
 	cacheAlias, _, err := r.cache.incus.GetImageAlias(ctx, r.cache.incusProject, r.incusName, nil)
 	if err == nil {
+		err = r.dropIfWrongArch(ctx, cacheAlias)
+	}
+
+	if err == nil {
 		// An entry cached before the split still concatenates entrypoint and
 		// command, so reading the config again upgrades it where it lies.
 		err = r.ociStoreConfig(ctx, r.cache.incus, r.cache.incusProject, cacheAlias.Target, nil)
@@ -733,6 +738,42 @@ func (r *Image) materialize(ctx context.Context, args Options) (*incusApi.ImageA
 	}
 
 	return cacheAlias, nil
+}
+
+// dropIfWrongArch clears err back to a cache miss when alias resolves to an
+// image this server cannot run, deleting it so the fallthrough pull replaces
+// it. The cache project is shared cluster-wide, not per-node, so a member of
+// another architecture may have materialized the alias first; without this,
+// every other-architecture member reusing the same alias silently inherits
+// that image forever.
+func (r *Image) dropIfWrongArch(ctx context.Context, alias *incusApi.ImageAliasesEntry) error {
+	img, _, err := r.cache.incus.GetImage(ctx, r.cache.incusProject, alias.Target, nil)
+	if err != nil {
+		return err
+	}
+
+	conn, err := r.client.Connection()
+	if err != nil {
+		return err
+	}
+
+	server, _, err := conn.GetServer(ctx)
+	if err != nil {
+		return err
+	}
+
+	if slices.Contains(server.Environment.Architectures, img.Architecture) {
+		return nil
+	}
+
+	r.client.LogWarn("Dropping cached image built for another architecture", "resource", r,
+		"cached", img.Architecture, "server", server.Environment.Architectures)
+
+	if err := deleteImage(ctx, r.cache.incus, r.cache.incusProject, alias.Target); err != nil {
+		return ErrCreate.WithText("removing wrong-architecture cached image").Wrap(err)
+	}
+
+	return ErrNotFound.WithText("cached image architecture mismatch")
 }
 
 // createDirect copies the source straight into the project, used when no cache
