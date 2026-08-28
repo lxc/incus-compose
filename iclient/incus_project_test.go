@@ -15,7 +15,7 @@ func TestIncusGetProjectNames(t *testing.T) {
 	names, err := conn.GetProjectNames(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []string{"default", "other"}, names)
-	require.Equal(t, []string{"/1.0/projects?project=myproject"}, seen.uris())
+	require.Equal(t, []string{"/1.0/projects"}, seen.uris())
 }
 
 // TestIncusDeleteProjectForce pins the one thing that separates a delete from a
