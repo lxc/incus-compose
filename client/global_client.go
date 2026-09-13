@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	incusApi "github.com/lxc/incus/v7/shared/api"
 
@@ -78,6 +79,9 @@ type ClientConfig struct {
 
 	// SystemProject is the project holding the instances the library runs.
 	SystemProject string
+
+	// LocksVolume is the storage volume holding advisory locks in SystemProject.
+	LocksVolume string
 }
 
 // ClientOption is a functional option for configuring the Client.
@@ -135,6 +139,11 @@ func ClientSystemProject(n string) ClientOption {
 	return func(c *ClientConfig) { c.SystemProject = n }
 }
 
+// ClientLocksVolume sets the storage volume name holding advisory locks in SystemProject.
+func ClientLocksVolume(n string) ClientOption {
+	return func(c *ClientConfig) { c.LocksVolume = n }
+}
+
 // GlobalClient provides a high-level interface to Incus operations.
 type GlobalClient struct {
 	ctx    context.Context
@@ -163,6 +172,9 @@ type GlobalClient struct {
 	// Cache for ConnectionIP()
 	connectionIPs []net.IP
 
+	// networkTypes caches each network's Incus type, keyed by project/name.
+	networkTypes sync.Map
+
 	// hookBefore is called hookBefore any action.
 	hookBefore func(ctx context.Context, action Action, r Resource, args Options, err error) error
 
@@ -185,6 +197,7 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 		NetworkPrefix:      "ic-",
 		DescriptionFormat:  DefaultSystemProject + ": %s",
 		SystemProject:      DefaultSystemProject,
+		LocksVolume:        DefaultLocksVolume,
 		Stdout:             os.Stdout,
 		Stderr:             NewSwapWriter(os.Stderr),
 	}
@@ -525,22 +538,23 @@ func (c *GlobalClient) CliConfig() *iclient.Config {
 func (c *GlobalClient) getProject(name string) (*Client, error) {
 	incusName := SanitizeProjectName(name)
 
-	_, _, err := c.incus.GetProject(c.ctx, incusName)
+	project, _, err := c.incus.GetProject(c.ctx, incusName)
 	if err != nil {
 		return nil, err
 	}
 
 	c.logger.DebugContext(c.ctx, "Got project", "name", name, "incus_name", incusName)
-	return c.newProjectClient(name, incusName, false)
+	return c.newProjectClient(name, incusName, false, project.Config)
 }
 
 // EnsureProjectOption is a functional option for configuring project creation.
 type EnsureProjectOption func(*ensureProjectOptions)
 
 type ensureProjectOptions struct {
-	create      bool
-	config      map[string]string
-	skipHealthd bool
+	create        bool
+	config        map[string]string
+	skipHealthd   bool
+	networkDriver string
 }
 
 // EnsureProjectWithCreate enables project creation if the project doesn't exist.
@@ -563,6 +577,74 @@ func EnsureProjectWithSkipHealthd() EnsureProjectOption {
 	return func(opts *ensureProjectOptions) {
 		opts.skipHealthd = true
 	}
+}
+
+// EnsureProjectWithNetworkDriver sets the network driver mode for project creation.
+func EnsureProjectWithNetworkDriver(driver string) EnsureProjectOption {
+	return func(opts *ensureProjectOptions) {
+		opts.networkDriver = driver
+	}
+}
+
+// NetworkType returns a network's Incus type, reading it once and caching it.
+func (c *GlobalClient) NetworkType(ctx context.Context, project string, name string) (string, error) {
+	key := project + "/" + name
+
+	if v, ok := c.networkTypes.Load(key); ok {
+		if typ, ok := v.(string); ok {
+			return typ, nil
+		}
+	}
+
+	network, _, err := c.incus.GetNetwork(ctx, project, name)
+	if err != nil {
+		notFound := incusApi.StatusErrorCheck(err, http.StatusNotFound)
+		if notFound {
+			return "", ErrNotFound.WithText("network " + name).Wrap(err)
+		}
+
+		return "", err
+	}
+
+	c.networkTypes.Store(key, network.Type)
+
+	return network.Type, nil
+}
+
+// DetectOVN reports whether the server supports OVN networks.
+func (c *GlobalClient) DetectOVN() (bool, error) {
+	// Cheap check: scan all network names for any active OVN network.
+	names, err := c.incus.GetNetworkNamesAllProjects(c.ctx)
+	if err == nil {
+		for _, name := range names {
+			net, _, getErr := c.incus.GetNetwork(c.ctx, "", name)
+			if getErr == nil && net.Type == "ovn" && net.Status == "Created" {
+				return true, nil
+			}
+		}
+	}
+
+	// Fallback probe: create a throwaway type=ovn, network=none network in default.
+	probeName := fmt.Sprintf("ic-probe-%x", time.Now().UnixNano())
+	createErr := c.incus.CreateNetwork(c.ctx, "default", incusApi.NetworksPost{
+		Name: probeName,
+		Type: "ovn",
+		NetworkPut: incusApi.NetworkPut{
+			Config: map[string]string{
+				"network": "none",
+			},
+		},
+	})
+	if createErr != nil {
+		return false, nil //nolint:nilerr // creation failure means the server does not support OVN
+	}
+
+	deleteErr := c.incus.DeleteNetwork(c.ctx, "default", probeName)
+	if deleteErr != nil {
+		c.LogWarn("Failed to delete OVN probe network", "network", probeName, "error", deleteErr)
+	}
+
+	return true, nil
 }
 
 // ProjectConfig returns the Incus project's config, empty if it does not exist.
@@ -706,7 +788,7 @@ func (c *GlobalClient) createProject(name string, config map[string]string) (*Cl
 	}
 
 	// c.logger.DebugContext(c.Ctx, "Created project", "name", name, "incus_name", incusName)
-	return c.newProjectClient(name, incusName, true)
+	return c.newProjectClient(name, incusName, true, projectConfig)
 }
 
 // EnsureProject ensures a project exists and returns a Client for it.
@@ -732,7 +814,8 @@ func (c *GlobalClient) EnsureProject(name string, opts ...EnsureProjectOption) (
 	p, err := c.getProject(name)
 	if err == nil {
 		// Same reason as Instance.addMissingConfig.
-		if err := c.AddMissingProjectConfig(name, options.config); err != nil {
+		err = c.AddMissingProjectConfig(name, options.config)
+		if err != nil {
 			return nil, err
 		}
 
@@ -741,6 +824,37 @@ func (c *GlobalClient) EnsureProject(name string, opts ...EnsureProjectOption) (
 
 	if !options.create {
 		return nil, ErrNotFound.WithKindName(KindProject, name).Wrap(err)
+	}
+
+	if options.config == nil {
+		options.config = map[string]string{}
+	}
+
+	_, hasFeaturesNetworks := options.config["features.networks"]
+	if !hasFeaturesNetworks {
+		driver := options.networkDriver
+		if driver == "" {
+			driver = "auto"
+		}
+
+		switch driver {
+		case "bridge":
+			// Leave features.networks off for bridge mode.
+		case "ovn":
+			supported, err := c.DetectOVN()
+			if err != nil {
+				return nil, fmt.Errorf("detecting OVN support: %w", err)
+			}
+			if !supported {
+				return nil, fmt.Errorf("server does not support OVN networks")
+			}
+			options.config["features.networks"] = "true"
+		case "auto":
+			supported, _ := c.DetectOVN()
+			if supported {
+				options.config["features.networks"] = "true"
+			}
+		}
 	}
 
 	p, createErr := c.createProject(name, options.config)
@@ -1054,4 +1168,54 @@ func (c *GlobalClient) HasExtension(ext string) bool {
 	defer c.mu.Unlock()
 
 	return slices.Contains(c.apiExtensions, ext)
+}
+
+// Lock acquires an advisory lock by name on the configured LocksVolume in SystemProject.
+// It blocks until the lock is acquired or ctx is canceled.
+// The returned release function releases the lock and closes the underlying connection.
+func (c *GlobalClient) Lock(ctx context.Context, name string, stale time.Duration) (func(), error) {
+	if !c.IsConnected() {
+		return nil, ErrDisconnected
+	}
+
+	sysClient, err := c.EnsureProject(c.config.SystemProject, EnsureProjectWithCreate())
+	if err != nil {
+		return nil, fmt.Errorf("ensuring system project %q for lock: %w", c.config.SystemProject, err)
+	}
+
+	volName := c.config.LocksVolume
+	if volName == "" {
+		volName = DefaultLocksVolume
+	}
+
+	res, err := sysClient.Resource(KindStorageVolume, volName, &StorageVolumeConfig{})
+	if err != nil {
+		return nil, fmt.Errorf("getting locks volume %q in project %q: %w", volName, c.config.SystemProject, err)
+	}
+
+	vol, ok := res.(*StorageVolume)
+	if !ok {
+		return nil, ErrUnknownResource.WithText(volName)
+	}
+
+	err = RunAction(ctx, vol, ActionEnsure, OptionCreate())
+	if err != nil {
+		return nil, fmt.Errorf("ensuring locks volume %q in project %q: %w", volName, c.config.SystemProject, err)
+	}
+
+	sc, err := vol.SFTP(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to locks volume %q in project %q: %w", volName, c.config.SystemProject, err)
+	}
+
+	vLock, err := vol.Lock(ctx, sc, name, stale)
+	if err != nil {
+		sysClient.WarnError(sc.Close, "Failed closing SFTP connection for lock "+name)
+		return nil, fmt.Errorf("acquiring lock %q in volume %q: %w", name, volName, err)
+	}
+
+	return func() {
+		sysClient.WarnError(vLock.Unlock, "Failed releasing lock "+name)
+		sysClient.WarnError(sc.Close, "Failed closing SFTP connection for lock "+name)
+	}, nil
 }

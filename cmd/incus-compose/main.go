@@ -31,6 +31,7 @@ import (
 const managedKey = "user.incus-compose.managed"
 
 const systemProject = "incus-compose"
+const locksVolume = "locks"
 
 type noColorKey struct{}
 
@@ -121,6 +122,16 @@ func buildLoadOptions(cmd *cli.Command) []project.LoadOption {
 
 	if cmd.Bool("os-env") {
 		loadOpts = append(loadOpts, project.LoadOsEnv())
+	}
+
+	driver := cmd.String("network-driver")
+	if driver != "" {
+		loadOpts = append(loadOpts, project.LoadNetworkDriver(driver))
+	}
+
+	uplink := cmd.String("network-uplink")
+	if uplink != "" {
+		loadOpts = append(loadOpts, project.LoadNetworkUplink(uplink))
 	}
 
 	return loadOpts
@@ -369,6 +380,7 @@ func newRootCommand() *cli.Command {
 
 			opts := []client.ClientOption{
 				client.ClientSystemProject(systemProject),
+				client.ClientLocksVolume(locksVolume),
 				client.ClientDescriptionFormat("incus-compose: %s"),
 				client.ClientLogger(logger),
 				client.ClientStdout(cmd.Writer),

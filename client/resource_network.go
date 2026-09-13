@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"net/netip"
 	"slices"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/avast/retry-go/v5"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 )
 
@@ -44,6 +46,12 @@ type NetworkConfig struct {
 	// OverrideName is the x-incus-compose.network override. For external networks
 	// it is probed raw then sanitized before falling back to the compose name.
 	OverrideName string
+
+	// ACL, when set, is created and attached to this network.
+	ACL *incusApi.NetworkACLsPost
+
+	// Peers are the peer relationships to create on this network.
+	Peers []incusApi.NetworkPeersPost
 }
 
 // NetworkState is what the last fetch read back from Incus.
@@ -93,7 +101,11 @@ func newNetwork(c *Client, name string, configGetter Config) (*Network, error) {
 	config = cConfig
 
 	if config.Type == "" {
-		config.Type = "bridge"
+		if c.FeaturesNetworks() {
+			config.Type = "ovn"
+		} else {
+			config.Type = "bridge"
+		}
 	}
 
 	network := &Network{
@@ -191,11 +203,12 @@ func (r *Network) Ensure(ctx context.Context, opts ...Option) error {
 
 	options := NewOptions(opts...)
 
-	if err := r.client.hookBefore(ctx, ActionEnsure, r, options, nil); err != nil {
+	err := r.client.hookBefore(ctx, ActionEnsure, r, options, nil)
+	if err != nil {
 		return err
 	}
 
-	_, err := r.client.GlobalConnection()
+	_, err = r.client.GlobalConnection()
 	if err != nil {
 		return r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 	}
@@ -214,6 +227,13 @@ func (r *Network) Ensure(ctx context.Context, opts ...Option) error {
 	}
 
 	if err == nil {
+		if options.Create {
+			err = r.ensurePeers(ctx)
+			if err == nil {
+				err = r.ensureACLs(ctx)
+			}
+		}
+
 		err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 		return err
@@ -239,9 +259,24 @@ func (r *Network) Ensure(ctx context.Context, opts ...Option) error {
 		err = nil
 	}
 
+	if err == nil && options.Create {
+		err = r.ensurePeers(ctx)
+		if err == nil {
+			err = r.ensureACLs(ctx)
+		}
+	}
+
 	err = r.client.hookAfter(ctx, ActionEnsure, r, options, err)
 
 	return err
+}
+
+func (r *Network) incusProject() string {
+	if r.client.FeaturesNetworks() {
+		return r.client.incusProject
+	}
+
+	return incusApi.ProjectDefaultName
 }
 
 func (r *Network) get(ctx context.Context) error {
@@ -250,10 +285,19 @@ func (r *Network) get(ctx context.Context) error {
 		return err
 	}
 
-	network, eTag, err := conn.GetNetwork(ctx, incusApi.ProjectDefaultName, r.incusName)
+	proj := r.incusProject()
+	network, eTag, err := conn.GetNetwork(ctx, proj, r.incusName)
+	if err != nil && r.Config.External && proj != incusApi.ProjectDefaultName {
+		network, eTag, err = conn.GetNetwork(ctx, incusApi.ProjectDefaultName, r.incusName)
+	}
 	if err != nil {
 		r.clearState()
-		return ErrNotFound.Wrap(err)
+		notFound := incusApi.StatusErrorCheck(err, http.StatusNotFound)
+		if notFound {
+			return ErrNotFound.Wrap(err)
+		}
+
+		return err
 	}
 
 	r.state.Store(&NetworkState{IncusNetwork: network, ETag: eTag})
@@ -267,6 +311,33 @@ func (r *Network) create(ctx context.Context) error {
 		return fmt.Errorf("preparing network config for %q: %w", r.Name(), err)
 	}
 
+	conn, err := r.client.GlobalConnection()
+	if err != nil {
+		return err
+	}
+
+	if r.Config.Type == "ovn" {
+		if config == nil {
+			config = map[string]string{}
+		}
+		if config["network"] == "" {
+			// If the user did not explicitly set an uplink network via x-incus-compose.parent,
+			// look for an uplink network in the default project with OVN ranges configured.
+			defaultNets, netErr := conn.GetNetworks(ctx, incusApi.ProjectDefaultName)
+			if netErr == nil {
+				var eligible []string
+				for _, n := range defaultNets {
+					if (n.Type == "bridge" || n.Type == "physical") && (n.Config["ipv4.ovn.ranges"] != "" || n.Config["ipv6.ovn.ranges"] != "") {
+						eligible = append(eligible, n.Name)
+					}
+				}
+				if len(eligible) == 1 {
+					config["network"] = eligible[0]
+				}
+			}
+		}
+	}
+
 	// Use client's configured description format for consistency with other resources.
 	req := incusApi.NetworksPost{
 		Name: r.incusName,
@@ -277,12 +348,9 @@ func (r *Network) create(ctx context.Context) error {
 		},
 	}
 
-	conn, err := r.client.GlobalConnection()
+	proj := r.incusProject()
+	err = conn.CreateNetwork(ctx, proj, req)
 	if err != nil {
-		return err
-	}
-
-	if err := conn.CreateNetwork(ctx, incusApi.ProjectDefaultName, req); err != nil {
 		return fmt.Errorf("creating network %q: %w", r.Name(), err)
 	}
 
@@ -293,7 +361,7 @@ func (r *Network) create(ctx context.Context) error {
 	defer cancel()
 	interval := 100 * time.Millisecond
 	for {
-		nw, eTag, err := conn.GetNetwork(ctx, incusApi.ProjectDefaultName, r.incusName)
+		nw, eTag, err := conn.GetNetwork(ctx, proj, r.incusName)
 		if err == nil {
 			if nw.Status == incusApi.NetworkStatusCreated || nw.Status == "Created" {
 				r.state.Store(&NetworkState{IncusNetwork: nw, ETag: eTag})
@@ -353,7 +421,8 @@ func (r *Network) Delete(ctx context.Context, opts ...Option) error {
 
 	options := NewOptions(opts...)
 
-	if err := r.client.hookBefore(ctx, ActionDelete, r, options, nil); err != nil {
+	err := r.client.hookBefore(ctx, ActionDelete, r, options, nil)
+	if err != nil {
 		r.clearState()
 
 		r.client.resources.Remove(r)
@@ -373,7 +442,8 @@ func (r *Network) Delete(ctx context.Context, opts ...Option) error {
 		return r.client.hookAfter(ctx, ActionDelete, r, options, nil)
 	}
 
-	if err := r.get(ctx); err != nil {
+	err = r.get(ctx)
+	if err != nil {
 		// Already gone server side
 		r.client.resources.Remove(r)
 		return r.client.hookAfter(ctx, ActionDelete, r, options, ErrNotFound.Wrap(err))
@@ -384,11 +454,47 @@ func (r *Network) Delete(ctx context.Context, opts ...Option) error {
 		return err
 	}
 
-	err = conn.DeleteNetwork(ctx, incusApi.ProjectDefaultName, r.incusName)
+	err = r.deleteACLs(ctx)
+	if err != nil {
+		r.clearState()
+
+		r.client.resources.Remove(r)
+		return r.client.hookAfter(ctx, ActionDelete, r, options, err)
+	}
+
+	err = r.deletePeers(ctx)
+	if err != nil {
+		r.clearState()
+
+		r.client.resources.Remove(r)
+		return r.client.hookAfter(ctx, ActionDelete, r, options, err)
+	}
+
+	err = conn.DeleteNetwork(ctx, r.incusProject(), r.incusName)
 	r.clearState()
 
 	r.client.resources.Remove(r)
 	return r.client.hookAfter(ctx, ActionDelete, r, options, err)
+}
+
+// isConcurrencyConflict reports whether err is a transient concurrency conflict:
+// an HTTP 412 (Precondition Failed / ETag mismatch), HTTP 409 (Conflict), or an
+// OVN transaction collision (OVSDB constraint or referential integrity violation).
+func isConcurrencyConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if incusApi.StatusErrorCheck(err, http.StatusPreconditionFailed) || incusApi.StatusErrorCheck(err, http.StatusConflict) {
+		return true
+	}
+
+	msg := strings.ToLower(err.Error())
+
+	return strings.Contains(msg, "referential integrity violation") ||
+		strings.Contains(msg, "constraint violation") ||
+		strings.Contains(msg, "failed getting acl usage") ||
+		strings.Contains(msg, "failed to load project")
 }
 
 // updateDNSAliases reads raw.dnsmasq from Incus, replaces records for
@@ -406,94 +512,109 @@ func (r *Network) updateDNSAliases(ctx context.Context, ownedServices []string, 
 		return err
 	}
 
-	net, etag, err := conn.GetNetwork(ctx, incusApi.ProjectDefaultName, r.incusName)
-	if err != nil {
-		return fmt.Errorf("reading network %q: %w", r.Name(), err)
-	}
-
-	if net.Type != "bridge" {
-		r.client.LogDebug("skipping service DNS records: network is not a bridge", "network", r.Name(), "type", net.Type)
-		return nil
-	}
-
-	cAddresses, cCnames, cExtra := DNSmasqParse(net.Config["raw.dnsmasq"])
-
-	// Delete owned.
-	maps.DeleteFunc(cAddresses, func(k string, _ []string) bool {
-		return slices.Contains(ownedServices, k)
-	})
-
-	// Copy new.
-	maps.Copy(cAddresses, newIPs)
-
-	userRaw, userFound := r.Config.Extensions["raw.dnsmasq"]
-
-	var s strings.Builder
-	s.WriteString(dnsmasqRecords(cAddresses))
-	if len(cExtra) > 0 {
-		fmt.Fprintf(&s, "%s\n", cExtra)
-	}
-
-	for oldTarget, oldCnames := range cCnames {
-		_, ok := r.CNames[oldTarget]
-		if !ok {
-			fmt.Fprintf(&s, "cname=%s,%s\n", strings.Join(oldCnames, ","), oldTarget)
+	err = retry.New(
+		retry.Context(ctx),
+		retry.Attempts(10),
+		retry.Delay(100*time.Millisecond),
+		retry.DelayType(retry.FixedDelay),
+		retry.LastErrorOnly(true),
+		retry.RetryIf(isConcurrencyConflict),
+	).Do(func() error {
+		net, etag, readErr := conn.GetNetwork(ctx, r.incusProject(), r.incusName)
+		if readErr != nil {
+			return fmt.Errorf("reading network %q: %w", r.Name(), readErr)
 		}
-	}
-	for target, cnames := range r.CNames {
-		oldCnames, exists := cCnames[target]
-		if !exists {
-			fmt.Fprintf(&s, "cname=%s,%s\n", strings.Join(cnames, ","), target)
-		} else {
-			for _, oldCname := range oldCnames {
-				if !slices.Contains(cnames, oldCname) {
-					cnames = append(cnames, oldCname)
+
+		if net.Type != "bridge" {
+			r.client.LogDebug("skipping service DNS records: network is not a bridge", "network", r.Name(), "type", net.Type)
+			return nil
+		}
+
+		cAddresses, cCnames, cExtra := DNSmasqParse(net.Config["raw.dnsmasq"])
+
+		// Delete owned.
+		maps.DeleteFunc(cAddresses, func(k string, _ []string) bool {
+			return slices.Contains(ownedServices, k)
+		})
+
+		// Copy new.
+		maps.Copy(cAddresses, newIPs)
+
+		userRaw, userFound := r.Config.Extensions["raw.dnsmasq"]
+
+		var s strings.Builder
+		s.WriteString(dnsmasqRecords(cAddresses))
+		if len(cExtra) > 0 {
+			fmt.Fprintf(&s, "%s\n", cExtra)
+		}
+
+		for oldTarget, oldCnames := range cCnames {
+			_, ok := r.CNames[oldTarget]
+			if !ok {
+				fmt.Fprintf(&s, "cname=%s,%s\n", strings.Join(oldCnames, ","), oldTarget)
+			}
+		}
+		for target, cnames := range r.CNames {
+			oldCnames, exists := cCnames[target]
+			if !exists {
+				fmt.Fprintf(&s, "cname=%s,%s\n", strings.Join(cnames, ","), target)
+			} else {
+				for _, oldCname := range oldCnames {
+					if !slices.Contains(cnames, oldCname) {
+						cnames = append(cnames, oldCname)
+					}
+				}
+				fmt.Fprintf(&s, "cname=%s,%s\n", strings.Join(cnames, ","), target)
+			}
+		}
+
+		if userFound {
+			existing := map[string]struct{}{}
+			for _, line := range strings.Split(cExtra, "\n") {
+				line = strings.TrimSpace(line)
+				if line != "" {
+					existing[line] = struct{}{}
 				}
 			}
-			fmt.Fprintf(&s, "cname=%s,%s\n", strings.Join(cnames, ","), target)
-		}
-	}
-
-	if userFound {
-		existing := map[string]struct{}{}
-		for _, line := range strings.Split(cExtra, "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				existing[line] = struct{}{}
+			for _, line := range strings.Split(userRaw, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				if _, ok := existing[line]; ok {
+					continue
+				}
+				fmt.Fprintf(&s, "%s\n", line)
 			}
 		}
-		for _, line := range strings.Split(userRaw, "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			if _, ok := existing[line]; ok {
-				continue
-			}
-			fmt.Fprintf(&s, "%s\n", line)
+
+		raw := s.String()
+
+		r.client.LogDebug("dnsmasq", "raw", raw)
+
+		// Check same config.
+		if net.Config["raw.dnsmasq"] == raw {
+			return nil
 		}
-	}
 
-	raw := s.String()
+		put := net.Writable()
+		if put.Config == nil {
+			put.Config = map[string]string{}
+		}
+		if raw == "" {
+			delete(put.Config, "raw.dnsmasq")
+		} else {
+			put.Config["raw.dnsmasq"] = raw
+		}
 
-	r.client.LogDebug("dnsmasq", "raw", raw)
+		updateErr := conn.UpdateNetwork(ctx, r.incusProject(), r.incusName, put, etag)
+		if updateErr != nil {
+			return updateErr
+		}
 
-	// Check same config.
-	if net.Config["raw.dnsmasq"] == raw {
 		return nil
-	}
-
-	put := net.Writable()
-	if put.Config == nil {
-		put.Config = map[string]string{}
-	}
-	if raw == "" {
-		delete(put.Config, "raw.dnsmasq")
-	} else {
-		put.Config["raw.dnsmasq"] = raw
-	}
-
-	if err := conn.UpdateNetwork(ctx, incusApi.ProjectDefaultName, r.incusName, put, etag); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("updating dnsmasq records for network %q: %w", r.Name(), err)
 	}
 

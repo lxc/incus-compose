@@ -56,6 +56,12 @@ type LoadOptions struct {
 
 	// ProjectMarks is config stamped on the Incus project itself.
 	ProjectMarks map[string]string
+
+	// NetworkDriver is the network driver override (auto, ovn, bridge).
+	NetworkDriver string
+
+	// NetworkUplink is the OVN network uplink override.
+	NetworkUplink string
 }
 
 // LoadOption is a functional option for LoadProject.
@@ -118,6 +124,20 @@ func LoadOsEnv() LoadOption {
 	}
 }
 
+// LoadNetworkDriver sets the network driver override.
+func LoadNetworkDriver(driver string) LoadOption {
+	return func(o *LoadOptions) {
+		o.NetworkDriver = driver
+	}
+}
+
+// LoadNetworkUplink sets the OVN network uplink override.
+func LoadNetworkUplink(uplink string) LoadOption {
+	return func(o *LoadOptions) {
+		o.NetworkUplink = uplink
+	}
+}
+
 // NewLoadOptions creates LoadOptions with the given options applied.
 func NewLoadOptions(opts ...LoadOption) LoadOptions {
 	res := LoadOptions{
@@ -156,8 +176,18 @@ type Project struct {
 
 	ClientConfig XICProject `json:"-" yaml:"-"`
 
+	// NeedsBridge is set by Load when a published port asks for NAT, which
+	// Incus refuses in a project that has the networks feature.
+	NeedsBridge bool `json:"-" yaml:"-"`
+
 	// InstanceMarks is stamped on every instance; see LoadInstanceMarks.
 	InstanceMarks map[string]string `json:"-" yaml:"-"`
+}
+
+// XICNetwork is the x-incus-compose.network block.
+type XICNetwork struct {
+	Driver string `mapstructure:"driver"`
+	Uplink string `mapstructure:"uplink"`
 }
 
 // XICProject is the typed view of the top-level x-incus-compose extension.
@@ -165,6 +195,7 @@ type XICProject struct {
 	Backup  client.BackupConfig `mapstructure:"backup"`
 	Healthd XICHealthd
 	DNS     XICDNS
+	Network XICNetwork
 	XIncus  map[string]string
 
 	// SleepImage is the image `run` takes its blocking helper from. Empty means the
@@ -212,6 +243,7 @@ func New() *Project {
 	return &Project{ClientConfig: XICProject{
 		Healthd: XICHealthd{XIncus: map[string]string{}},
 		DNS:     XICDNS{},
+		Network: XICNetwork{},
 		XIncus:  map[string]string{},
 	}}
 }
@@ -235,6 +267,22 @@ func (p *Project) Load(ctx context.Context, opts ...LoadOption) (*Project, error
 	}
 
 	p.Project = cp
+
+	for _, svc := range p.Services {
+		for _, port := range svc.Ports {
+			if port.Extensions == nil {
+				continue
+			}
+
+			var ext struct {
+				Nat bool `mapstructure:"nat"`
+			}
+			ok, err := port.Extensions.Get("x-incus-compose", &ext)
+			if err == nil && ok && ext.Nat {
+				p.NeedsBridge = true
+			}
+		}
+	}
 
 	if p.Extensions != nil {
 		var ext struct {
@@ -264,12 +312,25 @@ func (p *Project) Load(ctx context.Context, opts ...LoadOption) (*Project, error
 				Scope       string `mapstructure:"scope"`
 				Zone        string `mapstructure:"zone"`
 			} `mapstructure:"dns"`
+
+			Network struct {
+				Driver string `mapstructure:"driver"`
+				Uplink string `mapstructure:"uplink"`
+			} `mapstructure:"network"`
+
+			NetworkDriver string `mapstructure:"network-driver"`
 		}
 		ok, err := p.Extensions.Get("x-incus-compose", &ext)
 		if err != nil {
 			return nil, err
 		}
 		if ok {
+			p.ClientConfig.Network.Driver = ext.Network.Driver
+			if p.ClientConfig.Network.Driver == "" && ext.NetworkDriver != "" {
+				p.ClientConfig.Network.Driver = ext.NetworkDriver
+			}
+			p.ClientConfig.Network.Uplink = ext.Network.Uplink
+
 			p.ClientConfig.Healthd.Incus = ext.Healthd.Incus
 			p.ClientConfig.Healthd.Network = ext.Healthd.Network
 			p.ClientConfig.Healthd.External = ext.Healthd.External
@@ -317,6 +378,31 @@ func (p *Project) Load(ctx context.Context, opts ...LoadOption) (*Project, error
 		p.ClientConfig.DNS.Zone = p.Name + "." + DefaultDNSZoneSuffix
 	}
 
+	if options.NetworkDriver != "" {
+		p.ClientConfig.Network.Driver = options.NetworkDriver
+	}
+	if options.NetworkUplink != "" {
+		p.ClientConfig.Network.Uplink = options.NetworkUplink
+	}
+
+	if p.ClientConfig.Network.Driver == "" {
+		p.ClientConfig.Network.Driver = "auto"
+	}
+
+	switch p.ClientConfig.Network.Driver {
+	case "auto", "ovn", "bridge":
+	default:
+		return nil, fmt.Errorf("invalid network driver %q: must be auto, ovn, or bridge", p.ClientConfig.Network.Driver)
+	}
+
+	if p.NeedsBridge {
+		if p.ClientConfig.Network.Driver == "ovn" {
+			return nil, fmt.Errorf("network driver %q cannot be used: a published port asks for NAT, which needs a bridge network", p.ClientConfig.Network.Driver)
+		}
+
+		p.ClientConfig.Network.Driver = "bridge"
+	}
+
 	return p, nil
 }
 
@@ -349,6 +435,9 @@ type ResourcesOptions struct {
 
 	// noAutoVolumes carries x-incus-compose.auto-volumes: false to the instances.
 	noAutoVolumes bool
+
+	// uplink carries x-incus-compose.network.uplink to the network devices.
+	uplink string
 
 	// oneOff replaces one service's declared instances with a single one-off.
 	oneOff *OneOff
@@ -407,6 +496,7 @@ func (p *Project) Resources(c *client.Client, opts ...ResourcesOption) (map[stri
 
 	options.marks = p.InstanceMarks
 	options.noAutoVolumes = p.ClientConfig.NoAutoVolumes
+	options.uplink = p.ClientConfig.Network.Uplink
 
 	result := map[string][]client.Resource{}
 

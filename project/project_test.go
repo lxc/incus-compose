@@ -627,6 +627,8 @@ func TestNewLoadOptionsAppliesOptions(t *testing.T) {
 		LoadEnvFiles([]string{".env", "prod.env"}),
 		LoadProfiles([]string{"dev"}),
 		LoadOsEnv(),
+		LoadNetworkDriver("ovn"),
+		LoadNetworkUplink("incusbr0"),
 	)
 
 	assert.Equal(t, "custom", options.Name)
@@ -634,6 +636,8 @@ func TestNewLoadOptionsAppliesOptions(t *testing.T) {
 	assert.Equal(t, "/tmp/project", options.WorkingDir)
 	assert.Equal(t, []string{".env", "prod.env"}, options.EnvFiles)
 	assert.True(t, options.OsEnv)
+	assert.Equal(t, "ovn", options.NetworkDriver)
+	assert.Equal(t, "incusbr0", options.NetworkUplink)
 }
 
 func TestServiceGraphOrdersDependencies(t *testing.T) {
@@ -879,4 +883,134 @@ func TestDNSConfigEmptyWithoutExtension(t *testing.T) {
 	assert.Empty(t, proj.ClientConfig.DNS.Scope)
 	assert.Equal(t, proj.Name+"."+
 		DefaultDNSZoneSuffix, proj.ClientConfig.DNS.Zone)
+}
+
+func TestNetworkDriverConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		yaml     string
+		opts     []LoadOption
+		expected string
+		wantErr  bool
+	}{
+		{
+			name:     "empty_defaults_to_auto",
+			yaml:     "services:\n  web:\n    image: test\n",
+			expected: "auto",
+		},
+		{
+			name:    "nat_port_with_ovn_fails",
+			yaml:    "services:\n  web:\n    image: test\n    ports:\n      - published: \"8080\"\n        target: \"80\"\n        x-incus-compose:\n          nat: true\n",
+			opts:    []LoadOption{LoadNetworkDriver("ovn")},
+			wantErr: true,
+		},
+		{
+			name:     "nat_port_with_auto_becomes_bridge",
+			yaml:     "services:\n  web:\n    image: test\n    ports:\n      - published: \"8080\"\n        target: \"80\"\n        x-incus-compose:\n          nat: true\n",
+			expected: "bridge",
+		},
+		{
+			name:     "auto_driver",
+			yaml:     "x-incus-compose:\n  network-driver: auto\nservices:\n  web:\n    image: test\n",
+			expected: "auto",
+		},
+		{
+			name:     "ovn_driver",
+			yaml:     "x-incus-compose:\n  network-driver: ovn\nservices:\n  web:\n    image: test\n",
+			expected: "ovn",
+		},
+		{
+			name:     "bridge_driver",
+			yaml:     "x-incus-compose:\n  network-driver: bridge\nservices:\n  web:\n    image: test\n",
+			expected: "bridge",
+		},
+		{
+			name:     "nested_network_driver",
+			yaml:     "x-incus-compose:\n  network:\n    driver: ovn\nservices:\n  web:\n    image: test\n",
+			expected: "ovn",
+		},
+		{
+			name:     "nested_network_driver_and_uplink",
+			yaml:     "x-incus-compose:\n  network:\n    driver: ovn\n    uplink: incusbr0\nservices:\n  web:\n    image: test\n",
+			expected: "ovn",
+		},
+		{
+			name:    "invalid_driver",
+			yaml:    "x-incus-compose:\n  network-driver: invalid\nservices:\n  web:\n    image: test\n",
+			wantErr: true,
+		},
+		{
+			name:    "invalid_nested_driver",
+			yaml:    "x-incus-compose:\n  network:\n    driver: invalid\nservices:\n  web:\n    image: test\n",
+			wantErr: true,
+		},
+		{
+			name:     "cli_override_driver_and_uplink",
+			yaml:     "services:\n  web:\n    image: test\n",
+			opts:     []LoadOption{LoadNetworkDriver("ovn"), LoadNetworkUplink("incusbr0")},
+			expected: "ovn",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(tt.yaml), 0o600)
+			require.NoError(t, err)
+
+			loadOpts := append([]LoadOption{LoadWorkingDir(dir)}, tt.opts...)
+			proj, err := New().Load(t.Context(), loadOpts...)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, proj.ClientConfig.Network.Driver)
+			if tt.name == "nested_network_driver_and_uplink" || tt.name == "cli_override_driver_and_uplink" {
+				assert.Equal(t, "incusbr0", proj.ClientConfig.Network.Uplink)
+			}
+		})
+	}
+}
+
+func TestNeedsBridgeFromNATPort(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		yaml string
+		want bool
+	}{
+		{
+			name: "no ports",
+			yaml: "services:\n  web:\n    image: test\n",
+		},
+		{
+			name: "plain port",
+			yaml: "services:\n  web:\n    image: test\n    ports:\n      - \"8080:80\"\n",
+		},
+		{
+			name: "nat port",
+			yaml: "services:\n  web:\n    image: test\n    ports:\n      - published: \"8080\"\n        target: \"80\"\n        x-incus-compose:\n          nat: true\n",
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(tt.yaml), 0o600)
+			require.NoError(t, err)
+
+			proj, err := New().Load(t.Context(), LoadWorkingDir(dir))
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, proj.NeedsBridge)
+		})
+	}
 }

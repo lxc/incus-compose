@@ -16,14 +16,19 @@ type sidecarNetworkRef struct {
 	incusName string
 }
 
-// sidecarEnsureNetwork brings up the bridge the sidecar attaches to.
+// sidecarEnsureNetwork brings up the network the sidecar attaches to.
 func sidecarEnsureNetwork(ctx context.Context, c *client.Client, ref sidecarNetworkRef, sidecarName string) (*client.Network, error) {
 	var netRes client.Resource
 	var err error
 
 	switch {
 	case ref.deflt:
-		netRes, err = c.Resource(client.KindNetwork, ref.name, &client.NetworkConfig{OverrideName: ref.incusName})
+		cfg := &client.NetworkConfig{OverrideName: ref.incusName}
+		if ovn, _ := c.Global().DetectOVN(); ovn {
+			cfg.Type = "ovn"
+		}
+
+		netRes, err = c.Resource(client.KindNetwork, ref.name, cfg)
 	case ref.project != "" && ref.project != c.Project():
 		var nc *client.Client
 		nc, err = c.Global().EnsureProject(ref.project)
@@ -57,7 +62,7 @@ func sidecarEnsureNetwork(ctx context.Context, c *client.Client, ref sidecarNetw
 }
 
 // sidecarIncusURL is the endpoint the sidecar dials: override, then
-// core.https_address once it names a host, then the bridge gateway.
+// core.https_address once it names a host, then the network gateway.
 func sidecarIncusURL(c *client.Client, incusOverride *url.URL, network *client.Network, sidecarName, envFlag string) (*url.URL, error) {
 	u := incusOverride
 
@@ -91,17 +96,47 @@ func sidecarIncusURL(c *client.Client, incusOverride *url.URL, network *client.N
 			return nil, fmt.Errorf("failed to get the url: %w", err)
 		}
 
-		cidr := network.State().IncusNetwork.Config["ipv4.address"]
-		if cidr == "" {
-			return nil, fmt.Errorf("ip of network %q is empty", network.Name())
-		}
+		// An OVN network's gateway is on the logical router, not the host, so the
+		// sidecar dials the endpoint the host is already reachable on.
+		if network.State().IncusNetwork.Type != "ovn" {
+			cidr := network.State().IncusNetwork.Config["ipv4.address"]
+			if cidr == "" {
+				return nil, fmt.Errorf("ip of network %q is empty", network.Name())
+			}
 
-		ip, _, err := net.ParseCIDR(cidr)
+			ip, _, err := net.ParseCIDR(cidr)
+			if err != nil {
+				return nil, fmt.Errorf("parsing the address of network %q: %w", network.Name(), err)
+			}
+
+			u.Host = net.JoinHostPort(ip.String(), u.Port())
+		}
+	}
+
+	// The sidecar resolves names in its own container, where the daemon's own
+	// hostname is the container itself: a named remote lands on loopback there.
+	// Resolve it here, where the name still means what it does to us.
+	if host := u.Hostname(); net.ParseIP(host) == nil {
+		ips, err := net.DefaultResolver.LookupHost(context.Background(), host)
 		if err != nil {
-			return nil, fmt.Errorf("parsing the address of network %q: %w", network.Name(), err)
+			return nil, fmt.Errorf("resolving the Incus endpoint %q: %w", u.Host, err)
 		}
 
-		u.Host = net.JoinHostPort(ip.String(), u.Port())
+		resolved := ""
+		for _, ip := range ips {
+			parsed := net.ParseIP(ip)
+			if parsed != nil && parsed.To4() != nil {
+				resolved = ip
+
+				break
+			}
+		}
+
+		if resolved == "" {
+			return nil, fmt.Errorf("the Incus endpoint %q has no IPv4 address the %s container can dial", u.Host, sidecarName)
+		}
+
+		u.Host = net.JoinHostPort(resolved, u.Port())
 	}
 
 	if ip := net.ParseIP(u.Hostname()); ip != nil && ip.IsLoopback() {

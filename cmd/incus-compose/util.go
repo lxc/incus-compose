@@ -58,7 +58,12 @@ func loadProject(ctx context.Context, cmd *cli.Command, opts ...client.EnsurePro
 		return nil, nil, errLogged.Wrap(err)
 	}
 
-	c, err := globalClient.EnsureProject(p.Name, append(opts, client.EnsureProjectWithConfig(p.ClientConfig.XIncus))...)
+	opts = append(opts,
+		client.EnsureProjectWithConfig(p.ClientConfig.XIncus),
+		client.EnsureProjectWithNetworkDriver(p.ClientConfig.Network.Driver),
+	)
+
+	c, err := globalClient.EnsureProject(p.Name, opts...)
 	if err != nil {
 		globalClient.LogError("Getting the incus project", "error", err)
 		return nil, nil, errLogged.Wrap(err)

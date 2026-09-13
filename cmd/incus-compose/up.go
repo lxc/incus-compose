@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"os"
 	"os/signal"
@@ -138,6 +139,27 @@ func newUpCommand() *cli.Command {
 				Usage:   "Don't start or configure DNS for the project",
 				Sources: cli.EnvVars("INCUS_COMPOSE_DISABLE_DNS"),
 			},
+			&cli.StringFlag{
+				Name:    "network-driver",
+				Usage:   `Network driver to use: "auto" (default), "ovn", or "bridge"`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_NETWORK_DRIVER"),
+				Validator: func(v string) error {
+					if v == "" {
+						return nil
+					}
+					switch v {
+					case "auto", "ovn", "bridge":
+						return nil
+					default:
+						return fmt.Errorf("invalid network-driver %q: must be auto, ovn, or bridge", v)
+					}
+				},
+			},
+			&cli.StringFlag{
+				Name:    "network-uplink",
+				Usage:   `Uplink network for OVN networks (e.g. "incusbr0")`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_NETWORK_UPLINK"),
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			noColor := noColor(ctx)
@@ -175,6 +197,7 @@ func newUpCommand() *cli.Command {
 				p.Name,
 				client.EnsureProjectWithCreate(),
 				client.EnsureProjectWithConfig(p.ClientConfig.XIncus),
+				client.EnsureProjectWithNetworkDriver(p.ClientConfig.Network.Driver),
 			)
 			if err != nil {
 				globalClient.LogError("Getting the incus project", "error", err)
@@ -228,10 +251,13 @@ func newUpCommand() *cli.Command {
 				runOptions = append(runOptions, client.OptionExternalHealthd())
 			}
 
+			recreate := cmd.Bool("recreate")
+
 			scale := parseScale(cmd.StringSlice("scale"))
 			args := filterResourcesArgs{
 				OnlyServices:     cmd.Args().Slice(),
 				WithDependencies: !cmd.Bool("no-deps"),
+				Reverse:          recreate,
 			}
 
 			// "missing" and the legacy "policy" are the default, as is anything unknown.
@@ -263,7 +289,6 @@ func newUpCommand() *cli.Command {
 			}
 
 			// A rebuilt image only reaches an instance created from it again.
-			recreate := cmd.Bool("recreate")
 			downServices, downNoDeps := cmd.Args().Slice(), cmd.Bool("no-deps")
 			if !recreate && buildMode == client.BuildForce {
 				downServices = builtServices(p, args)

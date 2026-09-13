@@ -35,6 +35,21 @@ func (c *Connection) GetNetworkNames(ctx context.Context, project string) ([]str
 	return resourceNames(incusNetworksPath, uris)
 }
 
+// GetNetworkNamesAllProjects returns the names of every network across all projects.
+func (c *Connection) GetNetworkNamesAllProjects(ctx context.Context) ([]string, error) {
+	uris := []string{}
+
+	query := url.Values{}
+	query.Set("all-projects", "true")
+
+	_, err := c.getStruct(ctx, "", incusNetworksPath, query, &uris)
+	if err != nil {
+		return nil, err
+	}
+
+	return resourceNames(incusNetworksPath, uris)
+}
+
 // GetNetworks returns every network, each one whole.
 func (c *Connection) GetNetworks(ctx context.Context, project string) ([]api.Network, error) {
 	networks := []api.Network{}
@@ -52,21 +67,30 @@ func (c *Connection) GetNetworks(ctx context.Context, project string) ([]api.Net
 
 // CreateNetwork adds a managed network.
 func (c *Connection) CreateNetwork(ctx context.Context, project string, network api.NetworksPost) error {
-	_, _, err := c.do(ctx, project, http.MethodPost, incusNetworksPath, nil, network, "")
+	// Remove when https://github.com/lxc/incus/issues/3983 is merged and live in the LTS release.
+	return retryACLOp(ctx, func() error {
+		_, _, err := c.do(ctx, project, http.MethodPost, incusNetworksPath, nil, network, "")
 
-	return err
+		return err
+	})
 }
 
 // UpdateNetwork replaces a network's configuration.
 func (c *Connection) UpdateNetwork(ctx context.Context, project string, name string, network api.NetworkPut, etag string) error {
-	_, _, err := c.do(ctx, project, http.MethodPut, incusNetworksPath+"/"+url.PathEscape(name), nil, network, etag)
+	// Remove when https://github.com/lxc/incus/issues/3983 is merged and live in the LTS release.
+	return retryACLOp(ctx, func() error {
+		_, _, err := c.do(ctx, project, http.MethodPut, incusNetworksPath+"/"+url.PathEscape(name), nil, network, etag)
 
-	return err
+		return err
+	})
 }
 
 // DeleteNetwork removes a managed network.
 func (c *Connection) DeleteNetwork(ctx context.Context, project string, name string) error {
-	_, _, err := c.do(ctx, project, http.MethodDelete, incusNetworksPath+"/"+url.PathEscape(name), nil, nil, "")
+	// Remove when https://github.com/lxc/incus/issues/3983 is merged and live in the LTS release.
+	return retryACLOp(ctx, func() error {
+		_, _, err := c.do(ctx, project, http.MethodDelete, incusNetworksPath+"/"+url.PathEscape(name), nil, nil, "")
 
-	return err
+		return err
+	})
 }

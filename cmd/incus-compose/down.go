@@ -40,7 +40,7 @@ type downArgs struct {
 func down(ctx context.Context, p *project.Project, c *client.Client, args downArgs) error {
 	noColor := noColor(ctx)
 
-	// We start all resources, just ignore that warning but let progress know them (so add before - LIFO - progress runs before).
+	// We stop all resources, just ignore that warning but let progress know them (so add before - LIFO - progress runs before).
 	c.IgnoreError(client.ActionStop, client.ErrNotEnsured)
 	c.IgnoreError(client.ActionStop, client.ErrNotRunning)
 	c.IgnoreError(client.ActionEnsure, client.ErrNotFound)
@@ -132,6 +132,17 @@ func down(ctx context.Context, p *project.Project, c *client.Client, args downAr
 	errStop := stack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, runOpts...)
 	if errStop != nil {
 		c.LogWarn("Stopping resources", "error", errStop)
+	}
+
+	// Before the networks go: the resolver's peer and ACL reference them, so
+	// they have to be removed first or the delete fails with "in use".
+	networksGo := args.Project || (len(args.Services) == 0 && !args.NoNetworks)
+	if networksGo && !p.ClientConfig.DNS.Disabled {
+		err := removeDNSACLs(ctx, c, p)
+		if err != nil {
+			c.LogError("Removing the shared DNS wiring", "error", err)
+			return errLogged.Wrap(err)
+		}
 	}
 
 	errDel := stack.ForAction(client.ActionDelete).Run(ctx, client.ActionDelete, runOpts...)
