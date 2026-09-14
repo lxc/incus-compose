@@ -59,6 +59,12 @@ form.
   is unchanged - the same flags, environment variables and status writes, and
   `healthd reload` still forces a full resync. (by @jochumdev)
 
+### Fixed
+
+- `working_dir` on a service now sets the instance's `oci.cwd`; the image's
+  WORKDIR no longer always wins. `run` without `--workdir` starts there too. (by
+  @sandroden)
+
 ## [v1.3.3] - 2026-09-07
 
 ### Fixed
