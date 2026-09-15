@@ -101,8 +101,9 @@ TCP port into an instance, published or not. See
 
 ## Quick Start
 
-Requires Incus 7.0.1 (LTS) or 7.2+, `podman` or `docker` for image building and
-an Incus https remote (needed for healthchecking) with OCI registries added. See
+Requires Incus 7.0.2 (LTS, unreleased) or 7.5+ (unreleased), `podman` or
+`docker` for image building and an Incus https remote (needed for
+healthchecking) with OCI registries added. See
 [Getting Started](https://docs.incus-compose.org/getting-started) for the full
 setup walkthrough.
 

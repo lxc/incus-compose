@@ -22,10 +22,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: stable
-            remote: ict-stable
-          - name: custom
-            remote: ict-custom
+          # - name: stable
+          #   remote: ict-stable
+          # - name: custom
+          #   remote: ict-custom
           # - name: lts
           #   remote: ict-lts
           - name: daily
@@ -125,17 +125,18 @@ jobs:
     needs: test-e2e
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - name: Hugo
             args: "-run TestExample/hugo"
-            remote: ict-stable
+            remote: ict-daily
           - name: Leafwiki
             args: "-run TestExample/leafwiki"
-            remote: ict-custom
+            remote: ict-daily
           # - name: Immich
           #   args: "-run TestExample/immich -timeout 20m"
-          #   remote: ict-lts
+          #   remote: ict-daily
           # - name: ManyDependencies
           #   args: "-run TestExample/many-dependencies"
           #   remote: ict-daily
