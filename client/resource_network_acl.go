@@ -12,6 +12,8 @@ import (
 
 	"github.com/avast/retry-go/v5"
 	incusApi "github.com/lxc/incus/v7/shared/api"
+
+	"github.com/lxc/incus-compose/shared"
 )
 
 // Subnets returns the network's address CIDRs, read from Incus.
@@ -94,6 +96,10 @@ func (r *Network) defaultACL() incusApi.NetworkACLsPost {
 // ensureACLs creates or updates the network's ACLs and attaches them. An OVN
 // network always gets the default posture; Config.ACL adds the caller's rules.
 func (r *Network) ensureACLs(ctx context.Context) error {
+	if !r.client.Global().HasExtension(shared.Incus75Extension) {
+		return nil
+	}
+
 	net := r.State().IncusNetwork
 	if net == nil {
 		return ErrNotEnsured

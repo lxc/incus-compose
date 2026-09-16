@@ -613,6 +613,10 @@ func (c *GlobalClient) NetworkType(ctx context.Context, project string, name str
 
 // DetectOVN reports whether the server supports OVN networks.
 func (c *GlobalClient) DetectOVN() (bool, error) {
+	if !c.HasExtension(shared.Incus75Extension) {
+		return false, nil
+	}
+
 	// Cheap check: scan all network names for any active OVN network.
 	names, err := c.incus.GetNetworkNamesAllProjects(c.ctx)
 	if err == nil {
@@ -835,6 +839,14 @@ func (c *GlobalClient) EnsureProject(name string, opts ...EnsureProjectOption) (
 		driver := options.networkDriver
 		if driver == "" {
 			driver = "auto"
+		}
+
+		if (driver == "ovn" || driver == "auto") && !c.HasExtension(shared.Incus75Extension) {
+			if driver == "ovn" {
+				c.LogWarn("For ovn network driver you need at least incus 7.5 or 7.0.2 LTS, forcing bridge")
+			}
+
+			driver = "bridge"
 		}
 
 		switch driver {

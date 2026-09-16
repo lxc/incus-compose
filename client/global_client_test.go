@@ -64,3 +64,12 @@ func TestParsePercent(t *testing.T) {
 		})
 	}
 }
+
+func TestDetectOVN_Requires75Extension(t *testing.T) {
+	t.Parallel()
+
+	gc := &GlobalClient{}
+	supported, err := gc.DetectOVN()
+	require.NoError(t, err)
+	require.False(t, supported)
+}

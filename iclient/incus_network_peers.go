@@ -42,30 +42,21 @@ func (c *Connection) GetNetworkPeers(ctx context.Context, project string, networ
 
 // CreateNetworkPeer adds a network peer, initiating the relationship.
 func (c *Connection) CreateNetworkPeer(ctx context.Context, project string, network string, peer api.NetworkPeersPost) error {
-	// Remove when https://github.com/lxc/incus/issues/3983 is merged and live in the LTS release.
-	return retryACLOp(ctx, func() error {
-		_, _, err := c.do(ctx, project, http.MethodPost, incusNetworkPeersPath(network), nil, peer, "")
+	_, _, err := c.do(ctx, project, http.MethodPost, incusNetworkPeersPath(network), nil, peer, "")
 
-		return err
-	})
+	return err
 }
 
 // UpdateNetworkPeer replaces a network peer's configuration.
 func (c *Connection) UpdateNetworkPeer(ctx context.Context, project string, network string, name string, peer api.NetworkPeerPut, etag string) error {
-	// Remove when https://github.com/lxc/incus/issues/3983 is merged and live in the LTS release.
-	return retryACLOp(ctx, func() error {
-		_, _, err := c.do(ctx, project, http.MethodPut, incusNetworkPeersPath(network)+"/"+url.PathEscape(name), nil, peer, etag)
+	_, _, err := c.do(ctx, project, http.MethodPut, incusNetworkPeersPath(network)+"/"+url.PathEscape(name), nil, peer, etag)
 
-		return err
-	})
+	return err
 }
 
 // DeleteNetworkPeer removes a network peer.
 func (c *Connection) DeleteNetworkPeer(ctx context.Context, project string, network string, name string) error {
-	// Remove when https://github.com/lxc/incus/issues/3983 is merged and live in the LTS release.
-	return retryACLOp(ctx, func() error {
-		_, _, err := c.do(ctx, project, http.MethodDelete, incusNetworkPeersPath(network)+"/"+url.PathEscape(name), nil, nil, "")
+	_, _, err := c.do(ctx, project, http.MethodDelete, incusNetworkPeersPath(network)+"/"+url.PathEscape(name), nil, nil, "")
 
-		return err
-	})
+	return err
 }

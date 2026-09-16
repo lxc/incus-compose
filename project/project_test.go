@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/lxc/incus-compose/client"
 	"github.com/lxc/incus-compose/shared"
 )
 
@@ -1013,4 +1014,50 @@ func TestNeedsBridgeFromNATPort(t *testing.T) {
 			assert.Equal(t, tt.want, proj.NeedsBridge)
 		})
 	}
+}
+
+func TestResourcesNetworkDriverFallsBackToBridgeWithout75Extension(t *testing.T) {
+	t.Parallel()
+
+	offlineClient := client.NewOfflineClient(t.Context(), "test")
+	p := New()
+	p.Project = &types.Project{
+		Name: "test",
+		Services: types.Services{
+			"web": {
+				Name:  "web",
+				Image: "alpine",
+			},
+		},
+	}
+	p.ClientConfig.Network.Driver = "ovn"
+	p.ClientConfig.Network.Uplink = "incusbr0"
+
+	res, err := p.Resources(offlineClient)
+	require.NoError(t, err)
+	assert.NotEmpty(t, res)
+	assert.Equal(t, "bridge", p.ClientConfig.Network.Driver)
+	assert.Empty(t, p.ClientConfig.Network.Uplink)
+
+	t.Run("auto driver falls back to bridge", func(t *testing.T) {
+		t.Parallel()
+
+		offlineClient := client.NewOfflineClient(t.Context(), "test")
+		p := New()
+		p.Project = &types.Project{
+			Name: "test",
+			Services: types.Services{
+				"web": {
+					Name:  "web",
+					Image: "alpine",
+				},
+			},
+		}
+		p.ClientConfig.Network.Driver = "auto"
+
+		res, err := p.Resources(offlineClient)
+		require.NoError(t, err)
+		assert.NotEmpty(t, res)
+		assert.Equal(t, "bridge", p.ClientConfig.Network.Driver)
+	})
 }

@@ -100,7 +100,7 @@ func newNetwork(c *Client, name string, configGetter Config) (*Network, error) {
 	}
 	config = cConfig
 
-	if config.Type == "" {
+	if config.Type == "" || config.Type == "auto" {
 		if c.FeaturesNetworks() {
 			config.Type = "ovn"
 		} else {

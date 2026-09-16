@@ -4,46 +4,12 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"strings"
-	"time"
 
-	"github.com/avast/retry-go/v5"
 	"github.com/lxc/incus/v7/shared/api"
 )
 
 // incusNetworkACLsPath is the collection every network ACL call hangs off.
 const incusNetworkACLsPath = "/network-acls"
-
-// isTransientACLRace reports whether err is an upstream Incus race where
-// acl.UsedBy fails because a concurrently deleted project was not found,
-// or where peer creation encounters concurrent peer collisions.
-// Remove when https://github.com/lxc/incus/issues/3983 is merged and live in the LTS release.
-func isTransientACLRace(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	msg := err.Error()
-
-	return strings.Contains(msg, "Failed getting ACL usage") ||
-		strings.Contains(msg, "Failed to load project") ||
-		strings.Contains(msg, "More than one matching network peer was found")
-}
-
-// retryACLOp runs an ACL operation with retries when hitting the upstream Incus
-// race where UsedBy scans an unrelated project being deleted concurrently.
-// Remove when https://github.com/lxc/incus/issues/3983 is merged and live in the LTS release.
-func retryACLOp(ctx context.Context, op func() error) error {
-	return retry.New(
-		retry.Context(ctx),
-		retry.Attempts(8),
-		retry.Delay(100*time.Millisecond),
-		retry.MaxDelay(2*time.Second),
-		retry.DelayType(retry.BackOffDelay),
-		retry.LastErrorOnly(true),
-		retry.RetryIf(isTransientACLRace),
-	).Do(op)
-}
 
 // GetNetworkACLNames returns the names of every network ACL.
 func (c *Connection) GetNetworkACLNames(ctx context.Context, project string) ([]string, error) {
@@ -64,11 +30,7 @@ func (c *Connection) GetNetworkACLs(ctx context.Context, project string) ([]api.
 	query := url.Values{}
 	query.Set("recursion", "1")
 
-	err := retryACLOp(ctx, func() error {
-		_, opErr := c.getStruct(ctx, project, incusNetworkACLsPath, query, &acls)
-
-		return opErr
-	})
+	_, err := c.getStruct(ctx, project, incusNetworkACLsPath, query, &acls)
 	if err != nil {
 		return nil, err
 	}
@@ -79,14 +41,8 @@ func (c *Connection) GetNetworkACLs(ctx context.Context, project string) ([]api.
 // GetNetworkACL returns one network ACL and its ETag.
 func (c *Connection) GetNetworkACL(ctx context.Context, project string, name string) (*api.NetworkACL, string, error) {
 	acl := api.NetworkACL{}
-	var etag string
 
-	err := retryACLOp(ctx, func() error {
-		var opErr error
-		etag, opErr = c.getStruct(ctx, project, incusNetworkACLsPath+"/"+url.PathEscape(name), nil, &acl)
-
-		return opErr
-	})
+	etag, err := c.getStruct(ctx, project, incusNetworkACLsPath+"/"+url.PathEscape(name), nil, &acl)
 	if err != nil {
 		return nil, "", err
 	}
@@ -96,27 +52,21 @@ func (c *Connection) GetNetworkACL(ctx context.Context, project string, name str
 
 // CreateNetworkACL adds a network ACL.
 func (c *Connection) CreateNetworkACL(ctx context.Context, project string, acl api.NetworkACLsPost) error {
-	return retryACLOp(ctx, func() error {
-		_, _, err := c.do(ctx, project, http.MethodPost, incusNetworkACLsPath, nil, acl, "")
+	_, _, err := c.do(ctx, project, http.MethodPost, incusNetworkACLsPath, nil, acl, "")
 
-		return err
-	})
+	return err
 }
 
 // UpdateNetworkACL replaces a network ACL's rules.
 func (c *Connection) UpdateNetworkACL(ctx context.Context, project string, name string, acl api.NetworkACLPut, etag string) error {
-	return retryACLOp(ctx, func() error {
-		_, _, err := c.do(ctx, project, http.MethodPut, incusNetworkACLsPath+"/"+url.PathEscape(name), nil, acl, etag)
+	_, _, err := c.do(ctx, project, http.MethodPut, incusNetworkACLsPath+"/"+url.PathEscape(name), nil, acl, etag)
 
-		return err
-	})
+	return err
 }
 
 // DeleteNetworkACL removes a network ACL.
 func (c *Connection) DeleteNetworkACL(ctx context.Context, project string, name string) error {
-	return retryACLOp(ctx, func() error {
-		_, _, err := c.do(ctx, project, http.MethodDelete, incusNetworkACLsPath+"/"+url.PathEscape(name), nil, nil, "")
+	_, _, err := c.do(ctx, project, http.MethodDelete, incusNetworkACLsPath+"/"+url.PathEscape(name), nil, nil, "")
 
-		return err
-	})
+	return err
 }
