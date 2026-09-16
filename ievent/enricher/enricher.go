@@ -1,6 +1,6 @@
 // Package enricher reads what an event's subject looks like now, and fills the
 // rest of the event in from what it already holds. See
-// docs/root/architecture/ievent/enricher.md for the design.
+// docs/root/developer/ievent/enricher.md for the design.
 package enricher
 
 import (

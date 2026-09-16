@@ -54,6 +54,9 @@ form.
 
 ### Changed
 
+- Require incus 7.0.2+ LTS or 7.5+ both unreleased at the time of writing, we
+  need various recent bugfixes (by @jochumdev)
+
 - ic-healthd is migrated to the `ievent` framework: one chain of plugins
   replaces its listener, router and per-project schedulers. The sidecar contract
   is unchanged - the same flags, environment variables and status writes, and
