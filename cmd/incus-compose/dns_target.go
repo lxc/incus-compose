@@ -93,10 +93,10 @@ func findDNS(ctx context.Context, c *client.Client) (string, string, error) {
 		}
 	}
 
-	// 2. Check systemProject if different from current project.
-	sysProj := systemProject
-	if sysProj != c.IncusProject() {
-		sysInstances, err := conn.GetInstances(ctx, sysProj, nil)
+	// 2. Check globalProject if different from current project.
+	globalProj := globalProject
+	if globalProj != c.IncusProject() {
+		sysInstances, err := conn.GetInstances(ctx, globalProj, nil)
 		if err == nil {
 			for _, inst := range sysInstances {
 				scope := inst.Config[shared.DNSDaemonScopeKey]
@@ -104,8 +104,8 @@ func findDNS(ctx context.Context, c *client.Client) (string, string, error) {
 					scope = inst.Config[shared.DNSScopeKey]
 				}
 
-				if matchDNSScope(scope, sysProj, targetScope, c.IncusProject()) {
-					return inst.Name, sysProj, nil
+				if matchDNSScope(scope, globalProj, targetScope, c.IncusProject()) {
+					return inst.Name, globalProj, nil
 				}
 			}
 		}
@@ -115,7 +115,7 @@ func findDNS(ctx context.Context, c *client.Client) (string, string, error) {
 	allInstances, err := conn.GetInstancesAllProjects(ctx, nil)
 	if err == nil {
 		for _, inst := range allInstances {
-			if inst.Project == c.IncusProject() || inst.Project == sysProj {
+			if inst.Project == c.IncusProject() || inst.Project == globalProj {
 				continue
 			}
 
@@ -151,12 +151,12 @@ func resolveDNSTarget(ctx context.Context, cmd *cli.Command, gc *client.GlobalCl
 
 		searchClient = c
 	} else {
-		c, err := gc.EnsureProject(systemProject)
+		c, err := gc.EnsureProject(globalProject)
 		if errors.Is(err, client.ErrNotFound) {
 			return nil, nil, errNoDNS
 		}
 		if err != nil {
-			return nil, nil, fmt.Errorf("getting the %s project: %w", systemProject, err)
+			return nil, nil, fmt.Errorf("getting the %s project: %w", globalProject, err)
 		}
 
 		searchClient = c

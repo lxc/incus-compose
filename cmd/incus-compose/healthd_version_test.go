@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHealthdNeedsUpgrade(t *testing.T) {
+func TestSidecarNeedsUpgrade(t *testing.T) {
 	t.Parallel()
 
 	const repo = "ghcr.io/lxc/incus-compose/ic-healthd:"
@@ -100,7 +100,7 @@ func TestHealthdNeedsUpgrade(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tt.res, healthdNeedsUpgrade(tt.have, tt.want))
+			assert.Equal(t, tt.res, sidecarNeedsUpgrade(tt.have, tt.want))
 		})
 	}
 }

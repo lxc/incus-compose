@@ -254,13 +254,18 @@ func downloadTools(ctx context.Context, c *client.Client, healthdImage string, s
 		return errs
 	}
 
-	for _, image := range []string{healthdImage, sleepImage, dnsImage} {
-		sysClient, err := c.Global().EnsureProject(systemProject, client.EnsureProjectWithCreate())
-		if err != nil {
-			errs = errors.Join(errs, fmt.Errorf("failed to ensure the %q project: %w", systemProject, err))
-			continue
-		}
+	sysClient, err := c.Global().EnsureProject(globalProject, client.EnsureProjectWithCreate())
+	if err != nil {
+		return fmt.Errorf("failed to ensure the %q project: %w", globalProject, err)
+	}
 
+	release, err := c.Global().LockGlobalProject(ctx)
+	if err != nil {
+		return err
+	}
+	release()
+
+	for _, image := range []string{healthdImage, sleepImage, dnsImage} {
 		res, err := sysClient.Resource(client.KindImage, image, &client.ImageConfig{})
 		if err != nil {
 			errs = errors.Join(errs, err)

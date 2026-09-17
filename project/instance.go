@@ -468,12 +468,32 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 			if networkDef.Driver != "" {
 				netConfig.Type = networkDef.Driver
 			}
-			isOVN := netConfig.Type == "ovn" || (netConfig.Type == "" && c.FeaturesNetworks())
+			isOVN := netConfig.Type == "ovn" || ((netConfig.Type == "" || netConfig.Type == "auto") && c.FeaturesNetworks())
+			if (isOVN || netConfig.Type == "ovn" || netConfig.Type == "auto") && !c.Global().HasExtension(shared.Incus75Extension) {
+				if netConfig.Type == "ovn" {
+					c.LogWarn(
+						"For ovn on a network you need at least incus 7.5 or 7.0.2 LTS",
+						"service", service.Name,
+						"network", name,
+					)
+				}
+				netConfig.Type = "bridge"
+				isOVN = false
+			}
 			if isOVN && netConfig.Extensions["network"] == "" && uplink != "" {
 				netConfig.Extensions["network"] = uplink
 			}
 			if !isOVN {
 				delete(netConfig.Extensions, "network")
+			}
+			_, hasACL := netConfig.Extensions["security.acls"]
+			if hasACL && !c.Global().HasExtension(shared.Incus75Extension) {
+				c.LogWarn(
+					"For `security.acls` on a network you need at least incus 7.5 or 7.0.2 LTS",
+					"service", service.Name,
+					"network", name,
+				)
+				delete(netConfig.Extensions, "security.acls")
 			}
 			// compose-go always fills Name in, with the key for an external network
 			// and {project}_{key} otherwise; anything else is a `name:` the user
@@ -535,6 +555,15 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 		internal := false
 		if sNet != nil && sNet.Extensions != nil {
 			userExtensions = xIncusExtensions(sNet.Extensions)
+			_, hasNICACL := userExtensions["security.acls"]
+			if hasNICACL && !c.Global().HasExtension(shared.Incus75Extension) {
+				c.LogWarn(
+					"For `security.acls` on a network you need at least incus 7.5 or 7.0.2 LTS",
+					"service", service.Name,
+					"network", name,
+				)
+				delete(userExtensions, "security.acls")
+			}
 
 			var ext struct {
 				Internal bool  `mapstructure:"internal"`
@@ -630,6 +659,15 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 			netClient = owned
 			netName = network
 			netConfig.OverrideName = ""
+		}
+
+		if netConfig.ACL != nil && !c.Global().HasExtension(shared.Incus75Extension) {
+			c.LogWarn(
+				"For a network ACL you need at least incus 7.5 or 7.0.2 LTS",
+				"service", service.Name,
+				"network", name,
+			)
+			netConfig.ACL = nil
 		}
 
 		rNetwork, err := netClient.Resource(client.KindNetwork, netName, netConfig)

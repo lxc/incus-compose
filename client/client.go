@@ -13,7 +13,6 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
-	"time"
 
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/lxc/incus/v7/shared/util"
@@ -491,7 +490,7 @@ func (c *Client) healthdTarget() (*iclient.Connection, string, string, error) {
 
 	conn, project := c.incus, c.incusProject
 	if cfg[shared.HealthScopeKey] == shared.HealthScopeGlobal {
-		conn, project = c.globalClient.incus, c.config.SystemProject
+		conn, project = c.globalClient.incus, c.config.GlobalProject
 		if daemonProject := cfg[shared.HealthProjectKey]; daemonProject != "" {
 			project = daemonProject
 		}
@@ -540,9 +539,4 @@ func (c *Client) ResolveImageFingerprint(fingerprint string) string {
 
 	c.LogWarn("failed to resolve image", "fingerprint", fingerprint)
 	return fingerprint
-}
-
-// Lock acquires an advisory lock on the shared LocksVolume in SystemProject.
-func (c *Client) Lock(ctx context.Context, name string, stale time.Duration) (func(), error) {
-	return c.globalClient.Lock(ctx, name, stale)
 }

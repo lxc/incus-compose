@@ -25,6 +25,7 @@ import (
 	"github.com/dominikbraun/graph"
 
 	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/shared"
 )
 
 // ErrNoComposeFile says there was no compose file to load, so a caller that can
@@ -492,6 +493,18 @@ func (p *Project) Resources(c *client.Client, opts ...ResourcesOption) (map[stri
 	options := &ResourcesOptions{}
 	for _, o := range opts {
 		o(options)
+	}
+
+	if !c.Global().HasExtension(shared.Incus75Extension) {
+		switch p.ClientConfig.Network.Driver {
+		case "ovn":
+			c.LogWarn("For ovn network driver you need at least incus 7.5 or 7.0.2 LTS, forcing bridge")
+			p.ClientConfig.Network.Driver = "bridge"
+		case "auto":
+			p.ClientConfig.Network.Driver = "bridge"
+		}
+
+		p.ClientConfig.Network.Uplink = ""
 	}
 
 	options.marks = p.InstanceMarks

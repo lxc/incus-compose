@@ -1401,6 +1401,7 @@ func TestInstanceNetworkDevices(t *testing.T) {
 
 	t.Run("ovn network driver and parent", func(t *testing.T) {
 		t.Parallel()
+		testlib.SkipNoExtension(t, shared.Incus75Extension, "For ovn on a network you need at least incus 7.5 or 7.0.2 LTS")
 
 		p := &types.Project{Networks: types.Networks{
 			"ovn-backend": {
@@ -1429,6 +1430,7 @@ func TestInstanceNetworkDevices(t *testing.T) {
 
 	t.Run("ovn network driver and uplink", func(t *testing.T) {
 		t.Parallel()
+		testlib.SkipNoExtension(t, shared.Incus75Extension, "For ovn on a network you need at least incus 7.5 or 7.0.2 LTS")
 
 		p := &types.Project{Networks: types.Networks{
 			"ovn-uplink-net": {
@@ -1457,6 +1459,7 @@ func TestInstanceNetworkDevices(t *testing.T) {
 
 	t.Run("ovn network driver and top-level uplink", func(t *testing.T) {
 		t.Parallel()
+		testlib.SkipNoExtension(t, shared.Incus75Extension, "For ovn on a network you need at least incus 7.5 or 7.0.2 LTS")
 
 		p := &types.Project{
 			Networks: types.Networks{
@@ -1485,6 +1488,77 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, "ovn", netRes.Config.Type)
 		assert.Equal(t, "top-uplink", netRes.Config.Extensions["network"])
+	})
+
+	t.Run("ovn network driver falls back to bridge without 7.5 extension", func(t *testing.T) {
+		t.Parallel()
+
+		offlineClient := client.NewOfflineClient(t.Context(), "test")
+
+		p := &types.Project{Networks: types.Networks{
+			"ovn-backend": {
+				Driver: "ovn",
+				Extensions: types.Extensions{
+					"x-incus-compose": map[string]any{
+						"parent": "incusbr0",
+					},
+					"x-incus": map[string]any{
+						"security.acls": "my-acl",
+					},
+				},
+			},
+		}}
+		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
+			"ovn-backend": {
+				Extensions: types.Extensions{
+					"x-incus": map[string]any{
+						"security.acls": "nic-acl",
+					},
+				},
+			},
+		}}
+
+		devices, resources, err := instanceNetworkDevices(offlineClient, p, service, "")
+		require.NoError(t, err)
+		require.Len(t, devices, 1)
+		require.Len(t, resources, 1)
+
+		netRes, ok := resources[0].(*client.Network)
+		require.True(t, ok)
+		assert.Equal(t, "bridge", netRes.Config.Type)
+		assert.Empty(t, netRes.Config.Extensions["network"])
+		assert.Empty(t, netRes.Config.Extensions["security.acls"])
+		assert.Empty(t, devices[0].Config.Extensions["security.acls"])
+	})
+
+	t.Run("auto network driver falls back to bridge without 7.5 extension", func(t *testing.T) {
+		t.Parallel()
+
+		offlineClient := client.NewOfflineClient(t.Context(), "test")
+
+		p := &types.Project{Networks: types.Networks{
+			"backend": {
+				Driver: "auto",
+				Extensions: types.Extensions{
+					"x-incus-compose": map[string]any{
+						"parent": "incusbr0",
+					},
+				},
+			},
+		}}
+		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
+			"backend": {},
+		}}
+
+		devices, resources, err := instanceNetworkDevices(offlineClient, p, service, "")
+		require.NoError(t, err)
+		require.Len(t, devices, 1)
+		require.Len(t, resources, 1)
+
+		netRes, ok := resources[0].(*client.Network)
+		require.True(t, ok)
+		assert.Equal(t, "bridge", netRes.Config.Type)
+		assert.Empty(t, netRes.Config.Extensions["network"])
 	})
 
 	t.Run("bridge network driver ignores top-level uplink", func(t *testing.T) {

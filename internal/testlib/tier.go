@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lxc/incus-compose/client"
-	"github.com/lxc/incus-compose/shared"
 )
 
 // The environment a stage runs in. `just test-local` and `just test-e2e` set one
@@ -57,7 +56,7 @@ func SkipNoExtension(t *testing.T, extension, message string) {
 	c, err := gc.EnsureProject("default")
 	require.NoError(t, err)
 
-	if !c.Global().HasExtension(shared.Incus73Extension) {
+	if !c.Global().HasExtension(extension) {
 		t.Skip(message)
 	}
 }

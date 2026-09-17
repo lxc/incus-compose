@@ -14,7 +14,6 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/types"
 	incusApi "github.com/lxc/incus/v7/shared/api"
-	"github.com/lxc/incus/v7/shared/units"
 	"github.com/urfave/cli/v3"
 
 	"github.com/lxc/incus-compose/client"
@@ -83,22 +82,6 @@ type healthdParams struct {
 
 	// xIncus is Incus instance config for the sidecar, e.g. limits.*.
 	xIncus map[string]string
-
-	// carry is the replaced daemon's config on an upgrade. It is filled between
-	// the two ensures, so the hook applying it must read it at hook time.
-	carry map[string]string
-}
-
-// healthdDropPrefixes are config namespaces Incus or the image owns.
-var healthdDropPrefixes = []string{"volatile.", "image.", "oci."}
-
-// healthdDropKeys are decided by the new image, the new registration or the
-// daemon itself, so carrying them would pin a sidecar to the one it replaced.
-var healthdDropKeys = []string{
-	"user.image_alias",
-	"environment.INCUS_COMPOSE_HEALTHD_TOKEN",
-	shared.HealthStatusKey,
-	client.HealthKeyPrefix + "stopped",
 }
 
 // The daemon's environment keys, as Incus instance config.
@@ -110,14 +93,11 @@ const (
 	envTrace          = "environment.INCUS_COMPOSE_HEALTHD_TRACE"
 )
 
-// healthdSettings layers this run's settings over the daemon being replaced:
-// what a flag or the compose file names wins, what it leaves out is kept, and
-// incusURL only fills the gap when neither supplies an endpoint.
+// healthdSettings builds this run's healthd settings from flags, compose configuration and defaults.
 func healthdSettings(params healthdParams, incusURL string, debug bool) map[string]string {
 	settings := map[string]string{}
-	maps.Copy(settings, params.carry)
 
-	if params.incus != nil || settings[envIncus] == "" {
+	if incusURL != "" {
 		settings[envIncus] = incusURL
 	}
 	if params.workers > 0 {
@@ -133,69 +113,9 @@ func healthdSettings(params healthdParams, incusURL string, debug bool) map[stri
 		settings[envTrace] = "true"
 	}
 
-	// Last, so x-incus overrides a limit the replaced daemon carried.
 	maps.Copy(settings, params.xIncus)
 
 	return settings
-}
-
-// healthdCarriedConfig is what survives replacing a sidecar: everything the
-// running daemon carries except what has to be derived again. Excluding rather
-// than listing keeps settings a newer incus-compose does not know about.
-func healthdCarriedConfig(config map[string]string) map[string]string {
-	carried := map[string]string{}
-
-	for key, value := range config {
-		if slices.Contains(healthdDropKeys, key) {
-			continue
-		}
-
-		if slices.ContainsFunc(healthdDropPrefixes, func(p string) bool { return strings.HasPrefix(key, p) }) {
-			continue
-		}
-
-		carried[key] = value
-	}
-
-	healthdFloorLimits(carried)
-
-	return carried
-}
-
-// healthdFloorLimits raises a carried limit below the sidecar's default, so a
-// daemon created by an older version is not kept at a size its worker pools
-// have outgrown.
-func healthdFloorLimits(carried map[string]string) {
-	_, hasOldCPULimit := carried["limits.cpu"]
-	if hasOldCPULimit {
-		i, err := strconv.Atoi(carried["limits.cpu"])
-		if err != nil {
-			return
-		}
-		// Upgrade v1.1.0 `limits.cpu: 1` to v1.2 `limits.cpu: 2`
-		if i < 2 {
-			i = 2
-		}
-
-		// Upgrade to current "limits.cpu.allowance"
-		carried["limits.cpu.allowance"] = fmt.Sprintf("%dms/100ms", i*100)
-		delete(carried, "limits.cpu")
-	}
-
-	// An empty value parses as zero bytes, which would floor a limit into being.
-	if carried["limits.memory"] == "" {
-		return
-	}
-
-	memory, err := units.ParseByteSizeString(carried["limits.memory"])
-	if err != nil {
-		return
-	}
-
-	def, err := units.ParseByteSizeString(defaultHealthdMemoryLimit)
-	if err == nil && memory < def {
-		carried["limits.memory"] = defaultHealthdMemoryLimit
-	}
 }
 
 // healthdCreateToken creates the sidecar's trust token. Daemons watching multiple
@@ -407,17 +327,12 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 
 		inst.Config.Resources = append(inst.Config.Resources, network)
 
-		// A carried endpoint stands, so replacing a daemon does not require
-		// being able to derive the one it already dials.
-		var incusURL string
-		if params.incus != nil || params.carry[envIncus] == "" {
-			u, err := healthdIncusURL(c, params, network)
-			if err != nil {
-				return err
-			}
-
-			incusURL = u.String()
+		u, err := healthdIncusURL(c, params, network)
+		if err != nil {
+			return err
 		}
+
+		incusURL := u.String()
 
 		restricted := !params.global && params.scope == shared.HealthScopeProject
 		token, err := healthdCreateToken(ctx, c, restricted)

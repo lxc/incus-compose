@@ -366,25 +366,31 @@ func TestClientLock(t *testing.T) {
 
 	c, err := gc.EnsureProject(testSysProject, EnsureProjectWithCreate())
 	require.NoError(t, err)
-	c.config.SystemProject = testSysProject
+	c.config.GlobalProject = testSysProject
 	c.config.LocksVolume = "test-locks"
-	c.globalClient.config.SystemProject = testSysProject
+	c.globalClient.config.GlobalProject = testSysProject
 	c.globalClient.config.LocksVolume = "test-locks"
 
-	release1, err := c.Lock(ctx, "test-lock", 10*time.Second)
+	release1, err := c.Global().Lock(ctx, "test-lock", 10*time.Second)
 	require.NoError(t, err)
 	require.NotNil(t, release1)
 
 	ctxShort, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 
-	_, err = c.Lock(ctxShort, "test-lock", 10*time.Second)
+	_, err = c.Global().Lock(ctxShort, "test-lock", 10*time.Second)
 	require.Error(t, err)
 
 	release1()
 
-	release2, err := c.Lock(ctx, "test-lock", 10*time.Second)
+	release2, err := c.Global().Lock(ctx, "test-lock", 10*time.Second)
 	require.NoError(t, err)
 	require.NotNil(t, release2)
 	release2()
+
+	// Direct lock without barrier.
+	releaseDirect, err := c.Global().LockDirect(ctx, "direct-lock", 10*time.Second)
+	require.NoError(t, err)
+	require.NotNil(t, releaseDirect)
+	releaseDirect()
 }

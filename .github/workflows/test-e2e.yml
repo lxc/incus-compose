@@ -98,6 +98,12 @@ jobs:
                -cover -covermode=atomic -coverpkg ./... -v \
                -args -test.gocoverdir="$INCUS_COMPOSE_TEST_COVERDIR" 2>&1
 
+      - name: Post-test cleanup
+        if: always()
+        run: |
+          just purge-projects || true
+          just purge-networks || true
+
       - name: Publish test results
         if: always()
         uses: dorny/test-reporter@v3
@@ -200,6 +206,12 @@ jobs:
             --junitfile "$REPORTS_DIR/junit.xml" \
             -- -count=1 -parallel "$TEST_PROCS" -timeout 20m \
                ${{ matrix.args }} 2>&1
+
+      - name: Post-test cleanup
+        if: always()
+        run: |
+          just purge-projects || true
+          just purge-networks || true
 
       - name: Publish test results
         if: always()

@@ -28,11 +28,11 @@ const (
 	HealthStoppedKey = shared.HealthStoppedKey
 )
 
-// DefaultSystemProject is the Incus project the library runs its own instances
+// DefaultGlobalProject is the Incus project the library runs its own instances
 // in.
-const DefaultSystemProject = "incus-client"
+const DefaultGlobalProject = "incus-client"
 
-// DefaultLocksVolume is the storage volume holding advisory locks in SystemProject.
+// DefaultLocksVolume is the storage volume holding advisory locks in GlobalProject.
 const DefaultLocksVolume = "locks"
 
 // Kind identifies a resource type.

@@ -147,3 +147,99 @@ func sidecarIncusURL(c *client.Client, incusOverride *url.URL, network *client.N
 
 	return u, nil
 }
+
+// isLegacyGlobal reports whether the global project or icompose0 network is in
+// a legacy non-OVN configuration on an OVN-capable host.
+func isLegacyGlobal(ctx context.Context, gc *client.GlobalClient) (bool, error) {
+	conn, err := gc.Connection()
+	if err != nil {
+		return false, err
+	}
+
+	net, _, err := conn.GetNetwork(ctx, "default", globalHealthdNetwork)
+	if err == nil && net.Type != "ovn" {
+		return true, nil
+	}
+
+	proj, _, err := conn.GetProject(ctx, globalProject)
+	if err == nil {
+		if proj.Config["features.networks"] != "true" {
+			return true, nil
+		}
+
+		net, _, err = conn.GetNetwork(ctx, globalProject, globalHealthdNetwork)
+		if err == nil && net.Type != "ovn" {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// upgradeGlobalProject upgrades the shared global project and icompose0 network
+// to OVN networking if the host supports OVN and legacy bridge resources exist.
+func upgradeGlobalProject(ctx context.Context, gc *client.GlobalClient, network string) (func(), error) {
+	if network != "" && network != globalHealthdNetwork {
+		return nil, nil
+	}
+
+	ovn, err := gc.DetectOVN()
+	if err != nil {
+		return nil, fmt.Errorf("detecting OVN support: %w", err)
+	}
+	if !ovn {
+		return nil, nil
+	}
+
+	legacy, err := isLegacyGlobal(ctx, gc)
+	if err != nil {
+		return nil, fmt.Errorf("checking legacy global state: %w", err)
+	}
+	if !legacy {
+		return nil, nil
+	}
+
+	_, _ = gc.EnsureProject(globalProject, client.EnsureProjectWithCreate())
+
+	release, err := gc.LockGlobalProject(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("acquiring global upgrade lock: %w", err)
+	}
+
+	legacy, err = isLegacyGlobal(ctx, gc)
+	if err != nil {
+		release()
+		return nil, fmt.Errorf("checking legacy global state: %w", err)
+	}
+
+	if !legacy {
+		return release, nil
+	}
+
+	// Release the lock before deleting the project that holds it.
+	release()
+
+	gc.LogInfo("Upgrading incus-compose to OVN networking; recreating global project and network")
+
+	conn, err := gc.Connection()
+	if err != nil {
+		return nil, err
+	}
+
+	certs, err := conn.GetCertificates(ctx)
+	if err == nil {
+		want := healthdCertName(globalProject, true)
+		for _, cert := range certs {
+			if cert.Name == want {
+				_ = conn.DeleteCertificate(ctx, cert.Fingerprint)
+			}
+		}
+	}
+
+	_ = gc.DeleteProject(globalProject, true)
+	_ = conn.DeleteNetwork(ctx, "default", globalHealthdNetwork)
+	gc.InvalidateNetworkType("default", globalHealthdNetwork)
+	gc.InvalidateNetworkType(globalProject, globalHealthdNetwork)
+
+	return upgradeGlobalProject(ctx, gc, network)
+}

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/avast/retry-go/v5"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 
 	"github.com/lxc/incus-compose/iclient"
@@ -77,10 +78,10 @@ type ClientConfig struct {
 	// If set, the project will be created if it doesn't exist.
 	CacheProject string
 
-	// SystemProject is the project holding the instances the library runs.
-	SystemProject string
+	// GlobalProject is the project holding the instances the library runs.
+	GlobalProject string
 
-	// LocksVolume is the storage volume holding advisory locks in SystemProject.
+	// LocksVolume is the storage volume holding advisory locks in GlobalProject.
 	LocksVolume string
 }
 
@@ -134,12 +135,12 @@ func ClientCacheProject(n string) ClientOption {
 	return func(c *ClientConfig) { c.CacheProject = n }
 }
 
-// ClientSystemProject sets the project holding the library's own instances.
-func ClientSystemProject(n string) ClientOption {
-	return func(c *ClientConfig) { c.SystemProject = n }
+// ClientGlobalProject sets the project holding the library's own instances.
+func ClientGlobalProject(n string) ClientOption {
+	return func(c *ClientConfig) { c.GlobalProject = n }
 }
 
-// ClientLocksVolume sets the storage volume name holding advisory locks in SystemProject.
+// ClientLocksVolume sets the storage volume name holding advisory locks in GlobalProject.
 func ClientLocksVolume(n string) ClientOption {
 	return func(c *ClientConfig) { c.LocksVolume = n }
 }
@@ -195,8 +196,8 @@ func New(ctx context.Context, opts ...ClientOption) *GlobalClient {
 		Logger:             slog.Default(),
 		DefaultStoragePool: "detect",
 		NetworkPrefix:      "ic-",
-		DescriptionFormat:  DefaultSystemProject + ": %s",
-		SystemProject:      DefaultSystemProject,
+		DescriptionFormat:  DefaultGlobalProject + ": %s",
+		GlobalProject:      DefaultGlobalProject,
 		LocksVolume:        DefaultLocksVolume,
 		Stdout:             os.Stdout,
 		Stderr:             NewSwapWriter(os.Stderr),
@@ -611,8 +612,17 @@ func (c *GlobalClient) NetworkType(ctx context.Context, project string, name str
 	return network.Type, nil
 }
 
+// InvalidateNetworkType clears the cached network type for a given network in a project.
+func (c *GlobalClient) InvalidateNetworkType(project string, name string) {
+	c.networkTypes.Delete(project + "/" + name)
+}
+
 // DetectOVN reports whether the server supports OVN networks.
 func (c *GlobalClient) DetectOVN() (bool, error) {
+	if !c.HasExtension(shared.Incus75Extension) {
+		return false, nil
+	}
+
 	// Cheap check: scan all network names for any active OVN network.
 	names, err := c.incus.GetNetworkNamesAllProjects(c.ctx)
 	if err == nil {
@@ -837,6 +847,14 @@ func (c *GlobalClient) EnsureProject(name string, opts ...EnsureProjectOption) (
 			driver = "auto"
 		}
 
+		if (driver == "ovn" || driver == "auto") && !c.HasExtension(shared.Incus75Extension) {
+			if driver == "ovn" {
+				c.LogWarn("For ovn network driver you need at least incus 7.5 or 7.0.2 LTS, forcing bridge")
+			}
+
+			driver = "bridge"
+		}
+
 		switch driver {
 		case "bridge":
 			// Leave features.networks off for bridge mode.
@@ -913,6 +931,15 @@ func (c *GlobalClient) DeleteProject(name string, force bool) error {
 			break
 		}
 	}
+
+	c.networkTypes.Range(func(key, value any) bool {
+		k, ok := key.(string)
+		if ok && strings.HasPrefix(k, name+"/") {
+			c.networkTypes.Delete(k)
+		}
+
+		return true
+	})
 
 	return nil
 }
@@ -1170,17 +1197,16 @@ func (c *GlobalClient) HasExtension(ext string) bool {
 	return slices.Contains(c.apiExtensions, ext)
 }
 
-// Lock acquires an advisory lock by name on the configured LocksVolume in SystemProject.
-// It blocks until the lock is acquired or ctx is canceled.
-// The returned release function releases the lock and closes the underlying connection.
-func (c *GlobalClient) Lock(ctx context.Context, name string, stale time.Duration) (func(), error) {
+// LockDirect acquires an advisory lock by name on the LocksVolume in GlobalProject
+// without waiting on the global project barrier.
+func (c *GlobalClient) LockDirect(ctx context.Context, name string, stale time.Duration) (func(), error) {
 	if !c.IsConnected() {
 		return nil, ErrDisconnected
 	}
 
-	sysClient, err := c.EnsureProject(c.config.SystemProject, EnsureProjectWithCreate())
+	sysClient, err := c.EnsureProject(c.config.GlobalProject)
 	if err != nil {
-		return nil, fmt.Errorf("ensuring system project %q for lock: %w", c.config.SystemProject, err)
+		return nil, fmt.Errorf("getting global project %q for lock: %w", c.config.GlobalProject, err)
 	}
 
 	volName := c.config.LocksVolume
@@ -1190,7 +1216,7 @@ func (c *GlobalClient) Lock(ctx context.Context, name string, stale time.Duratio
 
 	res, err := sysClient.Resource(KindStorageVolume, volName, &StorageVolumeConfig{})
 	if err != nil {
-		return nil, fmt.Errorf("getting locks volume %q in project %q: %w", volName, c.config.SystemProject, err)
+		return nil, fmt.Errorf("getting locks volume %q in project %q: %w", volName, c.config.GlobalProject, err)
 	}
 
 	vol, ok := res.(*StorageVolume)
@@ -1200,12 +1226,12 @@ func (c *GlobalClient) Lock(ctx context.Context, name string, stale time.Duratio
 
 	err = RunAction(ctx, vol, ActionEnsure, OptionCreate())
 	if err != nil {
-		return nil, fmt.Errorf("ensuring locks volume %q in project %q: %w", volName, c.config.SystemProject, err)
+		return nil, fmt.Errorf("ensuring locks volume %q in project %q: %w", volName, c.config.GlobalProject, err)
 	}
 
 	sc, err := vol.SFTP(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("connecting to locks volume %q in project %q: %w", volName, c.config.SystemProject, err)
+		return nil, fmt.Errorf("connecting to locks volume %q in project %q: %w", volName, c.config.GlobalProject, err)
 	}
 
 	vLock, err := vol.Lock(ctx, sc, name, stale)
@@ -1218,4 +1244,35 @@ func (c *GlobalClient) Lock(ctx context.Context, name string, stale time.Duratio
 		sysClient.WarnError(vLock.Unlock, "Failed releasing lock "+name)
 		sysClient.WarnError(sc.Close, "Failed closing SFTP connection for lock "+name)
 	}, nil
+}
+
+// LockGlobalProject acquires the advisory lock for the global project, blocking until held.
+func (c *GlobalClient) LockGlobalProject(ctx context.Context) (func(), error) {
+	return retry.NewWithData[func()](
+		retry.Context(ctx),
+		retry.Attempts(0),
+		retry.Delay(250*time.Millisecond),
+		retry.DelayType(retry.FixedDelay),
+		retry.LastErrorOnly(true),
+	).Do(func() (func(), error) {
+		return c.LockDirect(ctx, "global", 30*time.Second)
+	})
+}
+
+// Lock acquires an advisory lock by name on the configured LocksVolume in GlobalProject,
+// first waiting on the global project barrier.
+//
+// Because LocksVolume resides inside GlobalProject, acquiring "global" first ensures that
+// any in-flight infrastructure upgrade or project recreation has fully completed before
+// opening an SFTP connection to the volume. Releasing it immediately allows independent
+// resource locks to proceed in parallel without contention.
+func (c *GlobalClient) Lock(ctx context.Context, name string, stale time.Duration) (func(), error) {
+	release, err := c.LockGlobalProject(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	release()
+
+	return c.LockDirect(ctx, name, stale)
 }

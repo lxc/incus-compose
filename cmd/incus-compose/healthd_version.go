@@ -7,10 +7,10 @@ import (
 	"github.com/Masterminds/semver/v3"
 )
 
-// healthdNeedsUpgrade reports whether a sidecar on have should be replaced by
+// sidecarNeedsUpgrade reports whether a sidecar on have should be replaced by
 // want. Two semver tags only move forwards, so an older incus-compose cannot
 // downgrade a shared daemon; anything else replaces on any difference.
-func healthdNeedsUpgrade(have, want string) bool {
+func sidecarNeedsUpgrade(have, want string) bool {
 	if have == want {
 		return false
 	}

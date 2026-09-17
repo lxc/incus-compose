@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -628,7 +627,8 @@ func TestProjectArchOK(t *testing.T) {
 
 // lockableImage returns an Image with its cache resolved, ready for lockStore.
 func lockableImage(ctx context.Context, t *testing.T, c *Client, name string) *Image {
-	t.Helper()
+	_, err := c.globalClient.EnsureProject(c.globalClient.config.GlobalProject, EnsureProjectWithCreate())
+	require.NoError(t, err)
 
 	r, err := c.Resource(KindImage, name, &ImageConfig{})
 	require.NoError(t, err)
@@ -864,97 +864,6 @@ func TestImageLockStore_NoCacheIsNoop(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, release)
 	release()
-}
-
-func TestImageLockStore_CustomVolumeIsSeparate(t *testing.T) {
-	skipLocal(t)
-	ctx := t.Context()
-
-	name := "docker.io/library/ic-lockvol-" + strings.ToLower(shared.RandString(8)) + ":latest"
-
-	def := lockableImage(ctx, t, newRandomTestClient(t, "image-lockvol-def-"), name)
-
-	other, err := newRandomTestClient(t, "image-lockvol-alt-").Resource(KindImage, name, &ImageConfig{
-		LockVolume: "ic-lock-" + strings.ToLower(shared.RandString(6)),
-	})
-	require.NoError(t, err)
-
-	alt, ok := other.(*Image)
-	require.True(t, ok)
-	require.NoError(t, alt.setupCacheAndSource(ctx))
-
-	release, err := def.lockStore(ctx)
-	require.NoError(t, err)
-	defer release()
-
-	// Same alias, different lock volume, so the lock files cannot collide.
-	acquired := make(chan error, 1)
-	go func() {
-		releaseAlt, err := alt.lockStore(ctx)
-		if releaseAlt != nil {
-			releaseAlt()
-		}
-		acquired <- err
-	}()
-
-	select {
-	case err := <-acquired:
-		require.NoError(t, err)
-	case <-time.After(30 * time.Second):
-		t.Fatal("a custom lock volume blocked on the default one")
-	}
-}
-
-func TestImageLockStore_ConcurrentVolumeCreate(t *testing.T) {
-	skipLocal(t)
-	ctx := t.Context()
-
-	// A volume name nothing has created yet, so every worker races to make it.
-	// Distinct aliases keep the per-alias lock from serializing them and
-	// hiding the race.
-	volume := "ic-lock-" + strings.ToLower(shared.RandString(8))
-	suffix := strings.ToLower(shared.RandString(8))
-
-	const workers = 6
-	images := make([]*Image, workers)
-	for i := range images {
-		c := newRandomTestClient(t, "image-lockvol-race-")
-		r, err := c.Resource(KindImage, fmt.Sprintf("docker.io/library/ic-race%d-%s:latest", i, suffix), &ImageConfig{
-			LockVolume: volume,
-		})
-		require.NoError(t, err)
-
-		img, ok := r.(*Image)
-		require.True(t, ok)
-		require.NoError(t, img.setupCacheAndSource(ctx))
-		images[i] = img
-	}
-
-	var wg sync.WaitGroup
-	errs := make([]error, workers)
-	start := make(chan struct{})
-
-	for i, img := range images {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			<-start
-
-			release, err := img.lockStore(ctx)
-			if release != nil {
-				release()
-			}
-			errs[i] = err
-		}()
-	}
-
-	close(start)
-	wg.Wait()
-
-	for i, err := range errs {
-		require.NoError(t, err, i)
-	}
 }
 
 func TestImageBuild_NeverErrors(t *testing.T) {

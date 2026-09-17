@@ -156,8 +156,17 @@ func dnsUp(ctx context.Context, p *project.Project, c *client.Client, args dnsUp
 			}
 		}
 
+		release, err := upgradeGlobalProject(ctx, c.Global(), params.network)
+		if err != nil {
+			c.LogError("Upgrading global project", "error", err)
+			return errLogged.Wrap(err)
+		}
+		if release != nil {
+			defer release()
+		}
+
 		hc, err = c.Global().EnsureProject(
-			systemProject,
+			globalProject,
 			client.EnsureProjectWithCreate(),
 			client.EnsureProjectWithConfig(map[string]string{managedKey: "true"}),
 		)
@@ -220,7 +229,7 @@ func dnsUp(ctx context.Context, p *project.Project, c *client.Client, args dnsUp
 
 	// After the project networks, so their subnets can be read for the ACL.
 	if resolverNet != nil && len(projectNets) > 0 {
-		release, err := c.Lock(ctx, "network/"+globalDNSNetwork, 30*time.Second)
+		release, err := c.Global().Lock(ctx, "network/"+globalDNSNetwork, 30*time.Second)
 		if err != nil {
 			c.LogError("Locking the shared DNS network", "error", err)
 			return errLogged.Wrap(err)
@@ -370,14 +379,14 @@ func removeDNSACLs(ctx context.Context, c *client.Client, p *project.Project) er
 		return nil
 	}
 
-	release, err := c.Lock(ctx, "network/"+globalDNSNetwork, 30*time.Second)
+	release, err := c.Global().Lock(ctx, "network/"+globalDNSNetwork, 30*time.Second)
 	if err != nil {
 		c.LogError("Locking the shared DNS network", "error", err)
 		return err
 	}
 	defer release()
 
-	sysClient, err := c.Global().EnsureProject(systemProject)
+	sysClient, err := c.Global().EnsureProject(globalProject)
 	if err != nil {
 		return err
 	}
@@ -471,8 +480,17 @@ func dnsUpGlobal(ctx context.Context, gc *client.GlobalClient, args dnsUpArgs) e
 		stackWorkers:  args.Workers,
 	}
 
+	release, err := upgradeGlobalProject(ctx, gc, args.Network)
+	if err != nil {
+		gc.LogError("Upgrading global project", "error", err)
+		return errLogged.Wrap(err)
+	}
+	if release != nil {
+		defer release()
+	}
+
 	hc, err := gc.EnsureProject(
-		systemProject,
+		globalProject,
 		client.EnsureProjectWithCreate(),
 		client.EnsureProjectWithConfig(map[string]string{managedKey: "true"}),
 	)
@@ -555,7 +573,7 @@ func dnsEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, para
 
 	fetchImage := !dInst.IsEnsured() ||
 		params.pull == "always" ||
-		dnsNeedsUpgrade(running, wantAlias)
+		sidecarNeedsUpgrade(running, wantAlias)
 
 	needed := func(r client.Resource) bool {
 		if fetchImage {
@@ -578,7 +596,7 @@ func dnsEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, para
 		return errLogged.Wrap(err)
 	}
 
-	if info := dInst.State().IncusInstance; info != nil && dnsNeedsUpgrade(info.Config["user.image_alias"], wantAlias) {
+	if info := dInst.State().IncusInstance; info != nil && sidecarNeedsUpgrade(info.Config["user.image_alias"], wantAlias) {
 		maps.Copy(params.carry, dnsCarriedConfig(info.Config))
 
 		downStack := client.NewStack(hc, client.StackSortDescending(), client.StackWorkers(params.stackWorkers))

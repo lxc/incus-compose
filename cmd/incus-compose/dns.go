@@ -457,20 +457,6 @@ func dnsIncusURL(c *client.Client, params dnsParams, network *client.Network) (*
 	return sidecarIncusURL(c, params.incus, network, "ic-dns", "INCUS_COMPOSE_DNS_INCUS")
 }
 
-// dnsNeedsUpgrade reports whether a sidecar on have should be replaced by want.
-func dnsNeedsUpgrade(have, want string) bool {
-	if have == want {
-		return false
-	}
-
-	haveVersion, wantVersion := imageSemver(have), imageSemver(want)
-	if haveVersion != nil && wantVersion != nil {
-		return wantVersion.GreaterThan(haveVersion)
-	}
-
-	return true
-}
-
 // dnsTeardown removes a dns sidecar, its volume and its certificate
 // from the project c belongs to.
 func dnsTeardown(ctx context.Context, c *client.Client, global bool, timeout time.Duration, keepVolume bool) error {

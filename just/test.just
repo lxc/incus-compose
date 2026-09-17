@@ -124,6 +124,10 @@ test-e2e folder="./..." *args:
 test-examples *args:
     @just test ./examples/... "$@"
 
+# Run upgrade test across versions (v1.0.0 -> v1.2.0 -> current)
+test-upgrade fixture="test/fixtures/two-services" *args:
+    ./scripts/test-upgrade.sh "{{ fixture }}" "$@"
+
 # Run all tests, includes direct incus, e2 and examples tests.
 [env("INCUS_COMPOSE_TEST_E2E", "1")]
 [env("INCUS_COMPOSE_TEST_EXAMPLES", "1")]
