@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -483,6 +482,13 @@ func (r *Image) Ensure(ctx context.Context, opts ...Option) error {
 	}
 
 	err = r.create(ctx, args)
+	if err != nil {
+		// A concurrent creator may have won the race; adopt whatever is there.
+		getErr := r.get(ctx)
+		if getErr == nil {
+			err = nil
+		}
+	}
 	err = r.client.hookAfter(ctx, ActionEnsure, r, args, err)
 
 	return err
@@ -867,13 +873,19 @@ func (r *Image) copyToProject(ctx context.Context, args Options, cacheAlias *inc
 
 	err = r.client.hookOperation(ctx, ActionEnsure, r, args, op, err)
 	if err != nil {
+		// A concurrent copy may have won the race; adopt whatever is there.
+		getErr := r.get(ctx)
+		if getErr == nil {
+			return nil
+		}
+
 		return ErrCreate.WithText("project image").Wrap(err)
 	}
 
 	return r.get(ctx)
 }
 
-// lockStore takes the per-alias lock in the cache, returning a release func.
+// lockStore takes the per-alias lock, returning a release func.
 // Without a cache the store is the project, which nobody else writes to, so
 // there is nothing to serialize against.
 func (r *Image) lockStore(ctx context.Context) (func(), error) {
@@ -881,45 +893,7 @@ func (r *Image) lockStore(ctx context.Context) (func(), error) {
 		return func() {}, nil
 	}
 
-	name := r.Config.LockVolume
-	if name == "" {
-		name = DefaultLockVolume
-	}
-
-	// The lock volume lives in the cache project, not the one being built into,
-	// so every failure here names it.
-	where := fmt.Sprintf("lock volume %q in project %q", name, r.cache.project)
-
-	res, err := r.cache.Resource(KindStorageVolume, name, &StorageVolumeConfig{})
-	if err != nil {
-		return nil, ErrCreate.WithText("getting the image " + where).Wrap(err)
-	}
-
-	vol, ok := res.(*StorageVolume)
-	if !ok {
-		return nil, ErrUnknownResource.WithText(name)
-	}
-
-	err = RunAction(ctx, vol, ActionEnsure, OptionCreate())
-	if err != nil {
-		return nil, ErrCreate.WithText("ensuring the image " + where).Wrap(err)
-	}
-
-	sc, err := vol.SFTP(ctx)
-	if err != nil {
-		return nil, ErrCreate.WithText("connecting to the image " + where).Wrap(err)
-	}
-
-	lock, err := vol.Lock(ctx, sc, fmt.Sprintf("%x", sha256.Sum256([]byte(r.cacheAlias()))), imageLockStale)
-	if err != nil {
-		r.client.WarnError(sc.Close, "Failed to close the image lock connection")
-		return nil, ErrCreate.WithText("taking the image lock in the " + where).Wrap(err)
-	}
-
-	return func() {
-		r.client.WarnError(lock.Unlock, "Failed to release the image lock")
-		r.client.WarnError(sc.Close, "Failed to close the image lock connection")
-	}, nil
+	return r.client.Global().Lock(ctx, "image/"+r.cacheAlias(), imageLockStale)
 }
 
 // create materializes the image. With a cache that is hop A under the per-alias

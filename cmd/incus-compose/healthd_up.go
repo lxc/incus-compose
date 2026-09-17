@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"maps"
 	"net/url"
 	"os"
 	"strings"
@@ -110,15 +109,25 @@ func healthdUp(ctx context.Context, p *project.Project, c *client.Client, args h
 		if exists {
 			c.LogInfo("Replacing the project healthd with the shared one")
 
-			if err := healthdTeardown(ctx, c, false, params.timeout); err != nil {
+			err = healthdTeardown(ctx, c, false, params.timeout)
+			if err != nil {
 				c.LogError("Removing the project healthd", "error", err)
 				return errLogged.Wrap(err)
 			}
 		}
 
-		daemonProject = systemProject
+		daemonProject = globalProject
 		if project, rest, ok := strings.Cut(params.network, ":"); ok && project != "" && rest != "" && !strings.Contains(rest, ":") {
 			daemonProject = project
+		}
+
+		release, err := upgradeGlobalProject(ctx, c.Global(), params.network)
+		if err != nil {
+			c.LogError("Upgrading global project", "error", err)
+			return errLogged.Wrap(err)
+		}
+		if release != nil {
+			defer release()
 		}
 
 		hc, err = c.Global().EnsureProject(
@@ -134,7 +143,8 @@ func healthdUp(ctx context.Context, p *project.Project, c *client.Client, args h
 		daemonProject = hc.IncusProject()
 
 		// Open before any stack action, as Client.Open documents.
-		if err := hc.Open(); err != nil {
+		err = hc.Open()
+		if err != nil {
 			c.LogError("Opening the healthd project client", "error", err)
 			return errLogged.Wrap(err)
 		}
@@ -206,9 +216,18 @@ func healthdUpGlobal(ctx context.Context, gc *client.GlobalClient, args healthdU
 		stackWorkers: args.Workers,
 	}
 
-	hcProject := systemProject
+	hcProject := globalProject
 	if project, rest, ok := strings.Cut(args.Network, ":"); ok && project != "" && rest != "" && !strings.Contains(rest, ":") {
 		hcProject = project
+	}
+
+	release, err := upgradeGlobalProject(ctx, gc, args.Network)
+	if err != nil {
+		gc.LogError("Upgrading global project", "error", err)
+		return errLogged.Wrap(err)
+	}
+	if release != nil {
+		defer release()
 	}
 
 	hc, err := gc.EnsureProject(
@@ -221,7 +240,8 @@ func healthdUpGlobal(ctx context.Context, gc *client.GlobalClient, args healthdU
 		return errLogged.Wrap(err)
 	}
 
-	if err := hc.Open(); err != nil {
+	err = hc.Open()
+	if err != nil {
 		gc.LogError("Opening the healthd project client", "error", err)
 		return errLogged.Wrap(err)
 	}
@@ -245,9 +265,6 @@ func healthdUpGlobal(ctx context.Context, gc *client.GlobalClient, args healthdU
 // healthdEnsure adds the sidecar to stack, brings it up, and replaces it when
 // the image asked for is newer than the one it runs.
 func healthdEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, params healthdParams) error {
-	// Shared with the hook that applies it, which reads it after the teardown.
-	params.carry = map[string]string{}
-
 	hInst, hResources, err := healthdGetResources(hc, params)
 	if err != nil {
 		hc.LogError("Creating healthd resources", "error", err)
@@ -303,7 +320,7 @@ func healthdEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, 
 
 	fetchImage := !hInst.IsEnsured() ||
 		params.pull == "always" ||
-		healthdNeedsUpgrade(running, wantAlias)
+		sidecarNeedsUpgrade(running, wantAlias)
 
 	// The image and the volume only exist to create the sidecar, and the
 	// volume's Start validates itself against the image we did not fetch. One
@@ -325,15 +342,14 @@ func healthdEnsure(ctx context.Context, hc *client.Client, stack *client.Stack, 
 		}
 	}
 
-	if err := stack.ForActionF(client.ActionEnsure, needed).Run(ctx, client.ActionEnsure, ensureOpts...); err != nil {
+	err = stack.ForActionF(client.ActionEnsure, needed).Run(ctx, client.ActionEnsure, ensureOpts...)
+	if err != nil {
 		hc.LogError("Creating healthd resources", "error", err)
 		return errLogged.Wrap(err)
 	}
 
 	// A newer image means the sidecar is replaced by one built from it.
-	if info := hInst.State().IncusInstance; info != nil && healthdNeedsUpgrade(info.Config["user.image_alias"], wantAlias) {
-		maps.Copy(params.carry, healthdCarriedConfig(info.Config))
-
+	if info := hInst.State().IncusInstance; info != nil && sidecarNeedsUpgrade(info.Config["user.image_alias"], wantAlias) {
 		downStack := client.NewStack(hc, client.StackSortDescending(), client.StackWorkers(params.stackWorkers))
 
 		for _, r := range hResources {

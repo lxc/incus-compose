@@ -338,55 +338,37 @@ Hop A is guarded by a per-alias advisory lock, so two workers - or two separate
 `incus-compose` invocations - cannot pull or build the same alias into the store
 at once, and a force delete cannot race a reader.
 
-The lock lives on a custom storage volume in the cache project, named
-`ic-image-lock` by default (`DefaultLockVolume`, overridable via
-`ClientLockVolume` or `ImageConfig.LockVolume`). It uses
-[VolumeLock](/developer/client/storage_volume#volumelock) with `stale > 0`: the
-holder heartbeats while a slow pull or a long build runs, and a crashed holder
-is reaped rather than wedging the shared cache for everyone.
+Image locking uses the unified [Advisory Locking](/developer/client/locking) system:
+it calls `r.client.Global().Lock(ctx, "image/"+r.cacheAlias(), imageLockStale)` on the global
+`LocksVolume` (`locks` in `globalProject`).
 
-`Lock` is a method on `*StorageVolume`, and a `StorageVolume` only comes from
-`Client.Resource` - which is why the cache has to be carried as a `*Client`
-rather than an `incusClient.InstanceServer` (see
-[Cache Configuration](#cache-configuration)):
+Before acquiring the image lock, `Global().Lock` waits on `LockGlobalProject` to ensure
+no infrastructure upgrade is in flight. Once the global project is clear, it acquires
+the lock on the image path with `stale = 2m`. The holder heartbeats while a slow pull
+or a long build runs, and a crashed holder is reaped rather than wedging the cache for
+everyone.
 
 ```go
-vol, err := cache.Resource(KindStorageVolume, lockVolume, &StorageVolumeConfig{})
-err = RunAction(ctx, vol, ActionEnsure, OptionCreate())
+func (r *Image) lockStore(ctx context.Context) (func(), error) {
+    if r.cache == nil {
+        return func() {}, nil
+    }
 
-sc, err := vol.SFTP()          // caller owns it for the whole critical section
-defer sc.Close()
-
-lock, err := vol.Lock(ctx, sc, lockName(alias), staleAfter)
-defer lock.Unlock()
+    return r.client.Global().Lock(ctx, "image/"+r.cacheAlias(), imageLockStale)
+}
 ```
-
-Two things to know about that API:
-
-- **The lock name is a hash of the cached alias.** Aliases contain characters
-  that are awkward in a path (`docker.io/library/nginx:alpine/arm64`), and a
-  hash sidesteps the question entirely while guaranteeing one file per alias.
-  The platform is in the hashed name, so two architectures of one image do not
-  serialize against each other. `Lock` itself accepts nested names and creates
-  missing parents via `MkdirAll`, so a path-shaped name works too - the image
-  path just does not need one.
-- **The volume appears as `vol-ic-image-lock` on the server.** `StorageVolume`
-  prefixes every volume with `vol-` and sanitizes the rest, so the configured
-  name is the resource name, not the Incus name. That is the same rule as any
-  other compose volume.
-
 One volume holds every lock; the per-alias granularity is one file per alias
-inside it.
+inside it under `image/<alias>`.
 
 ```mermaid
 sequenceDiagram
     participant A as project A
-    participant L as ic-image-lock
+    participant L as locks volume (global)
     participant S as store (cache)
     participant B as project B
 
-    A->>L: lock(alias)
-    B->>L: lock(alias)
+    A->>L: lock(image/alias)
+    B->>L: lock(image/alias)
     Note over B: blocks
     A->>S: miss - build/pull into store
     A->>S: extract OCI config to properties

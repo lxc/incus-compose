@@ -31,6 +31,8 @@ resources: instances, networks, volumes, profiles, and images.
 - [Instance](/developer/client/instance) - Instance resource
 - [Storage Volume](/developer/client/storage_volume) - SFTP access and the
   VolumeLock advisory lock
+- [Locking](/developer/client/locking) - Advisory locking architecture across
+  global infrastructure and resources
 
 See also [Architecture Overview](/developer).
 

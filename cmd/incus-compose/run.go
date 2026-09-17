@@ -255,14 +255,21 @@ func applyRunOptions(service types.ServiceConfig, args runArgs) (types.ServiceCo
 
 // runTools puts the blocking helper where the one-off can run it.
 func runTools(ctx context.Context, c *client.Client, args runArgs) (*client.StorageVolume, string, error) {
-	sys, err := c.Global().EnsureProject(systemProject, client.EnsureProjectWithCreate())
+	sys, err := c.Global().EnsureProject(globalProject, client.EnsureProjectWithCreate())
 	if err != nil {
-		c.LogError("Getting the system project", "project", systemProject, "error", err)
+		c.LogError("Getting the global project", "project", globalProject, "error", err)
 		return nil, "", errLogged.Wrap(err)
 	}
 
+	release, err := c.Global().LockGlobalProject(ctx)
+	if err != nil {
+		c.LogError("Locking the global project", "error", err)
+		return nil, "", errLogged.Wrap(err)
+	}
+	release()
+
 	// Done removes the stopped instance the helpers image was read through.
-	defer sys.WarnError(sys.Done, "Failure during Client.Done() on the system project")
+	defer sys.WarnError(sys.Done, "Failure during Client.Done() on the global project")
 
 	// Resolved once: {version} is what the flag holds, and an error naming that
 	// sends the reader looking for a tag nobody ever asked a registry for.

@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	incusApi "github.com/lxc/incus/v7/shared/api"
+
 	"github.com/lxc/incus-compose/client"
 	"github.com/lxc/incus-compose/internal/testlib"
 	"github.com/lxc/incus-compose/shared"
@@ -73,7 +75,7 @@ func TestE2EHealthdGlobalScope(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, local, "the project must not carry a sidecar of its own")
 
-	hc := projectClient(ctx, t, systemProject)
+	hc := projectClient(ctx, t, globalProject)
 	global, err := hc.InstanceExists(globalHealthdName)
 	require.NoError(t, err)
 	assert.True(t, global, "the shared daemon must exist in its own project")
@@ -232,7 +234,7 @@ func TestE2EHealthdCoexistence(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, local)
 
-	dc := projectClient(ctx, t, systemProject)
+	dc := projectClient(ctx, t, globalProject)
 	global, err := dc.InstanceExists(globalHealthdName)
 	require.NoError(t, err)
 	assert.True(t, global, "the shared daemon must survive a project-scoped healthd down")
@@ -254,7 +256,7 @@ func TestE2EHealthdNoComposeFile(t *testing.T) {
 		return testlib.RunCompose(ctx, t, t.Name(), dir, nil, args...)
 	}
 
-	dc := projectClient(ctx, t, systemProject)
+	dc := projectClient(ctx, t, globalProject)
 
 	// Start from no daemon at all, whatever earlier tests left behind.
 	_, _ = noProject("healthd", "down", "--force")
@@ -306,7 +308,7 @@ func TestE2EHealthdDownNeedsForce(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	dc := projectClient(ctx, t, systemProject)
+	dc := projectClient(ctx, t, globalProject)
 
 	// Two projects carry scope=global, so taking the daemon down is refused:
 	// the tests have no terminal to confirm on.
@@ -366,7 +368,7 @@ func TestE2EHealthdMigratesToGlobal(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, local, "the project sidecar must be gone after the migration")
 
-	dc := projectClient(ctx, t, systemProject)
+	dc := projectClient(ctx, t, globalProject)
 	global, err := dc.InstanceExists(globalHealthdName)
 	require.NoError(t, err)
 	assert.True(t, global)
@@ -421,5 +423,69 @@ func TestE2EPauseSurvivesHealthd(t *testing.T) {
 
 	// A resume is the only event that takes the instance off the shelf the
 	// pause put it on, so this is what proves the daemon is watching again.
+	waitHealthy(t, c, "web-1")
+}
+
+// TestE2EUpgradeNonOVNToOVN simulates a pre-v1.4 installation on an OVN host:
+// legacy bridge icompose0 in project default and a non-OVN globalProject.
+// Upgrading must tear down the legacy bridge, recreate globalProject
+// with features.networks="true", and bring up OVN icompose0 and healthd.
+func TestE2EUpgradeNonOVNToOVN(t *testing.T) {
+	testlib.SkipE2E(t)
+
+	ctx := t.Context()
+	pn := t.Name()
+
+	gc, err := client.NewTestClient(ctx)
+	require.NoError(t, err)
+
+	err = gc.Connect()
+	require.NoError(t, err)
+
+	ovn, err := gc.DetectOVN()
+	require.NoError(t, err)
+	if !ovn {
+		t.Skip("server does not support OVN networks")
+	}
+
+	conn, err := gc.Connection()
+	require.NoError(t, err)
+
+	_ = gc.DeleteProject(globalProject, true)
+	_ = conn.DeleteNetwork(ctx, "default", globalHealthdNetwork)
+
+	err = conn.CreateNetwork(ctx, "default", incusApi.NetworksPost{
+		Name: globalHealthdNetwork,
+		Type: "bridge",
+	})
+	require.NoError(t, err)
+
+	_, err = gc.EnsureProject(globalProject, client.EnsureProjectWithCreate(), client.EnsureProjectWithConfig(map[string]string{
+		"features.networks": "false",
+	}))
+	require.NoError(t, err)
+
+	testlib.CleanupCompose(t, pn, "-f", healthdScopeCompose(t), "down", "--project")
+
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, "-f", healthdScopeCompose(t), "up", "--detach")
+	require.NoError(t, err)
+
+	_, _, err = conn.GetNetwork(ctx, "default", globalHealthdNetwork)
+	assert.Error(t, err, "legacy bridge icompose0 in default must be deleted")
+
+	proj, _, err := conn.GetProject(ctx, globalProject)
+	require.NoError(t, err)
+	assert.Equal(t, "true", proj.Config["features.networks"], "global project must have features.networks")
+
+	net, _, err := conn.GetNetwork(ctx, globalProject, globalHealthdNetwork)
+	require.NoError(t, err)
+	assert.Equal(t, "ovn", net.Type, "icompose0 must be an OVN network")
+
+	dc := projectClient(ctx, t, globalProject)
+	global, err := dc.InstanceExists(globalHealthdName)
+	require.NoError(t, err)
+	assert.True(t, global)
+
+	c := projectClient(ctx, t, pn)
 	waitHealthy(t, c, "web-1")
 }

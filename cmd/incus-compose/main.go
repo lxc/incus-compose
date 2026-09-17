@@ -30,7 +30,7 @@ import (
 // records ownership only; watching is HealthEnabledKey, a separate decision.
 const managedKey = "user.incus-compose.managed"
 
-const systemProject = "incus-compose"
+const globalProject = "incus-compose"
 const locksVolume = "locks"
 
 type noColorKey struct{}
@@ -379,7 +379,7 @@ func newRootCommand() *cli.Command {
 			// }
 
 			opts := []client.ClientOption{
-				client.ClientSystemProject(systemProject),
+				client.ClientGlobalProject(globalProject),
 				client.ClientLocksVolume(locksVolume),
 				client.ClientDescriptionFormat("incus-compose: %s"),
 				client.ClientLogger(logger),
