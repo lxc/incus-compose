@@ -1,4 +1,5 @@
 work/
+AGENTS.local.md
 
 # Its generated with random host only data, still no need to commit.
 /.env
