@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -17,11 +19,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestDialTrustsAnUnknownServerCert pins the one connection property the daemon
-// cannot get from anywhere else: it is handed a URL and a token, so it has no
-// server certificate to pin and has to accept whatever answers. Verifying would
-// fail here, because the test server signs its own.
-func TestDialTrustsAnUnknownServerCert(t *testing.T) {
+// TestDialServerFingerprintVerification pins that dial validates the server
+// certificate against ServerFingerprint.
+func TestDialServerFingerprintVerification(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -36,12 +36,26 @@ func TestDialTrustsAnUnknownServerCert(t *testing.T) {
 	certPEM, keyPEM, err := generateClientCert()
 	require.NoError(t, err)
 
-	conn, err := dial(config{IncusURL: server.URL}, certPEM, keyPEM)
-	require.NoError(t, err)
+	fp := fmt.Sprintf("%x", sha256.Sum256(server.Certificate().Raw))
 
-	got, _, err := conn.GetServer(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, "test", got.Environment.ServerName)
+	t.Run("matching fingerprint connects successfully", func(t *testing.T) {
+		conn, err := dial(config{IncusURL: server.URL, ServerFingerprint: fp}, certPEM, keyPEM)
+		require.NoError(t, err)
+
+		got, _, err := conn.GetServer(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, "test", got.Environment.ServerName)
+	})
+
+	t.Run("mismatched fingerprint fails handshake", func(t *testing.T) {
+		badFP := "0000000000000000000000000000000000000000000000000000000000000000"
+		conn, err := dial(config{IncusURL: server.URL, ServerFingerprint: badFP}, certPEM, keyPEM)
+		require.NoError(t, err)
+
+		_, _, err = conn.GetServer(t.Context())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "server certificate fingerprint mismatch")
+	})
 }
 
 // TestGenerateClientCertIsUsableAsAClientCert pins the properties Incus checks
