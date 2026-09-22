@@ -43,6 +43,7 @@ func TestConfigFromFlags(t *testing.T) {
 
 	got := runFlags(t,
 		"--incus", "https://incus.example:8443",
+		"--server-fingerprint", "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
 		"--token", "a-token",
 		"--project", "one",
 		"--project", "two",
@@ -55,6 +56,7 @@ func TestConfigFromFlags(t *testing.T) {
 	)
 
 	require.Equal(t, "https://incus.example:8443", got.IncusURL)
+	require.Equal(t, "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90", got.ServerFingerprint)
 	require.Equal(t, "a-token", got.Token)
 	require.Equal(t, []string{"one", "two"}, got.Projects)
 	require.Equal(t, "sidecars", got.OwnProject)
@@ -115,15 +117,16 @@ func TestProjectMarker(t *testing.T) {
 // A typo here is invisible until a deployment silently ignores its config.
 func TestConfigFromEnvironment(t *testing.T) {
 	env := map[string]string{
-		"INCUS_COMPOSE_HEALTHD_INCUS":           "https://from-env:8443",
-		"INCUS_COMPOSE_HEALTHD_TOKEN":           "env-token",
-		"INCUS_COMPOSE_HEALTHD_PROJECTS":        "alpha",
-		"INCUS_COMPOSE_HEALTHD_OWN_PROJECT":     "env-sidecars",
-		"INCUS_COMPOSE_HEALTHD_OWN_NAME":        "env-healthd",
-		"INCUS_COMPOSE_HEALTHD_DATA_DIR":        "/env/data",
-		"INCUS_COMPOSE_HEALTHD_SECRETS_DIR":     "/env/secrets",
-		"INCUS_COMPOSE_HEALTHD_WORKERS":         "11",
-		"INCUS_COMPOSE_HEALTHD_RESTART_WORKERS": "4",
+		"INCUS_COMPOSE_HEALTHD_INCUS":              "https://from-env:8443",
+		"INCUS_COMPOSE_HEALTHD_SERVER_FINGERPRINT": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+		"INCUS_COMPOSE_HEALTHD_TOKEN":              "env-token",
+		"INCUS_COMPOSE_HEALTHD_PROJECTS":           "alpha",
+		"INCUS_COMPOSE_HEALTHD_OWN_PROJECT":        "env-sidecars",
+		"INCUS_COMPOSE_HEALTHD_OWN_NAME":           "env-healthd",
+		"INCUS_COMPOSE_HEALTHD_DATA_DIR":           "/env/data",
+		"INCUS_COMPOSE_HEALTHD_SECRETS_DIR":        "/env/secrets",
+		"INCUS_COMPOSE_HEALTHD_WORKERS":            "11",
+		"INCUS_COMPOSE_HEALTHD_RESTART_WORKERS":    "4",
 	}
 
 	for k, v := range env {
@@ -133,6 +136,7 @@ func TestConfigFromEnvironment(t *testing.T) {
 	got := runFlags(t)
 
 	require.Equal(t, "https://from-env:8443", got.IncusURL)
+	require.Equal(t, "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90", got.ServerFingerprint)
 	require.Equal(t, "env-token", got.Token)
 	require.Equal(t, []string{"alpha"}, got.Projects)
 	require.Equal(t, "env-sidecars", got.OwnProject)
@@ -141,6 +145,19 @@ func TestConfigFromEnvironment(t *testing.T) {
 	require.Equal(t, "/env/secrets", got.SecretsDir)
 	require.Equal(t, 11, got.Workers)
 	require.Equal(t, 4, got.RestartWorkers)
+}
+
+// TestRunRequiresServerFingerprint pins that starting without a server fingerprint fails.
+func TestRunRequiresServerFingerprint(t *testing.T) {
+	t.Parallel()
+
+	app := newRootCommand()
+	app.Writer = t.Output()
+	app.ErrWriter = t.Output()
+
+	err := app.Run(t.Context(), []string{"ic-healthd", "run", "--incus", "https://127.0.0.1:8443"})
+	require.Error(t, err)
+	require.EqualError(t, err, "server fingerprint is required")
 }
 
 // TestVersionCommand walks the real command tree, which is the only thing that

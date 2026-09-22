@@ -200,13 +200,14 @@ func TestHealthdSettingsXIncusBeatsTheFloor(t *testing.T) {
 // carried is what a daemon another project set up leaves behind.
 func carried() map[string]string {
 	return map[string]string{
-		envIncus:          "https://10.0.0.1:8443",
-		envWorkers:        "64",
-		envRestartWorkers: "8",
-		envDebug:          "true",
-		envTrace:          "true",
-		"limits.cpu":      "4",
-		"limits.memory":   "512MB",
+		envIncus:             "https://10.0.0.1:8443",
+		envServerFingerprint: "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+		envWorkers:           "64",
+		envRestartWorkers:    "8",
+		envDebug:             "true",
+		envTrace:             "true",
+		"limits.cpu":         "4",
+		"limits.memory":      "512MB",
 	}
 }
 
@@ -243,6 +244,14 @@ func TestHealthdSettingsOverrides(t *testing.T) {
 			},
 			derived: "https://192.168.0.2:8443",
 			want:    map[string]string{envIncus: "https://192.168.0.2:8443"},
+		},
+		{
+			name: "server fingerprint overrides carried fingerprint",
+			params: healthdParams{
+				carry:             carried(),
+				serverFingerprint: "b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1",
+			},
+			want: map[string]string{envServerFingerprint: "b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1"},
 		},
 		{
 			name: "compose workers and restart-workers override the carried pools",

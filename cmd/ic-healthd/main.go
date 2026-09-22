@@ -66,6 +66,11 @@ func newRunCommand() *cli.Command {
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_INCUS"),
 			},
 			&cli.StringFlag{
+				Name:    "server-fingerprint",
+				Usage:   "Server certificate SHA-256 fingerprint",
+				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_SERVER_FINGERPRINT"),
+			},
+			&cli.StringFlag{
 				Name:    "token",
 				Usage:   "Token for registering our cert (use for debugging only)",
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_TOKEN"),
@@ -144,6 +149,10 @@ func newRunCommand() *cli.Command {
 			log := logger(ctx)
 			cfg := configFromCommand(cmd)
 
+			if cfg.ServerFingerprint == "" {
+				return errors.New("server fingerprint is required")
+			}
+
 			log.Info("Version", "version", version.Current(), "pid", os.Getpid())
 
 			redacted := cfg
@@ -163,6 +172,7 @@ func configFromCommand(cmd *cli.Command) config {
 		DataDir:            cmd.String("data-dir"),
 		SecretsDir:         cmd.String("secrets-dir"),
 		IncusURL:           cmd.String("incus"),
+		ServerFingerprint:  cmd.String("server-fingerprint"),
 		Token:              cmd.String("token"),
 		Projects:           cmd.StringSlice("project"),
 		ProjectMarker:      marker,
@@ -196,19 +206,17 @@ func newVersionCommand() *cli.Command {
 	}
 }
 
-// dial opens a connection to the Incus API with the daemon's client cert.
-//
-// The server certificate cannot be pinned: the daemon is handed a URL and a
-// token and has never seen the server before.
+// dial opens a connection to the Incus API with the daemon's client cert,
+// pinned by the server certificate fingerprint.
 func dial(cfg config, certPEM, keyPEM []byte) (*iclient.Connection, error) {
 	return iclient.NewConnection(&iclient.ConfigRemoteInfo{
-		Name:               "incus",
-		Addrs:              []string{cfg.IncusURL},
-		Protocol:           "incus",
-		ClientCert:         string(certPEM),
-		ClientKey:          string(keyPEM),
-		InsecureSkipVerify: true,
-		UserAgent:          "ic-healthd/" + version.Current(),
+		Name:              "incus",
+		Addrs:             []string{cfg.IncusURL},
+		Protocol:          "incus",
+		ClientCert:        string(certPEM),
+		ClientKey:         string(keyPEM),
+		ServerFingerprint: cfg.ServerFingerprint,
+		UserAgent:         "ic-healthd/" + version.Current(),
 	})
 }
 

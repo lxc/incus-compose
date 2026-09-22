@@ -46,13 +46,14 @@ const (
 
 // config holds the healthd configuration.
 type config struct {
-	DataDir    string
-	SecretsDir string
-	IncusURL   string
-	Token      string
-	OwnProject string
-	OwnName    string
-	Projects   []string
+	DataDir           string
+	SecretsDir        string
+	IncusURL          string
+	ServerFingerprint string
+	Token             string
+	OwnProject        string
+	OwnName           string
+	Projects          []string
 
 	// ProjectMarker and ProjectMarkerValue are the project config key and value
 	// that opt a project in when Projects is empty, which ignores both.
