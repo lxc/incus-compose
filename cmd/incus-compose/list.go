@@ -216,7 +216,7 @@ func newListCommand() *cli.Command {
 
 			err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure)
 			if err != nil {
-				c.LogWarn("Ensuring the stack", "error", "err")
+				c.LogWarn("Ensuring the stack", "error", err)
 			}
 
 			titleCaser := cases.Title(language.English)

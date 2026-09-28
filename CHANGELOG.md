@@ -69,6 +69,9 @@ form.
 
 ### Fixed
 
+- `list` now logs the error that ensuring the stack returned, instead of the
+  literal text `error=err`. (by @pikeas)
+
 - Image builds now clean up their temporary rootfs tar archives in `/tmp` when
   the build finishes or fails. Previously, the deletion call on close was
   commented out, leaving multi-megabyte `incus-compose-rootfs-*.tar` files
