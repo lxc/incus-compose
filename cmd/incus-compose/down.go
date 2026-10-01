@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"time"
@@ -27,6 +28,7 @@ type downArgs struct {
 	Writer     io.Writer
 	Reverse    bool
 	NoHealthd  bool
+	NoDNS      bool
 
 	// ReportErrors makes down return a teardown failure instead of only logging
 	// it. `up --recreate` sets it, because it calls down() before the ensure
@@ -108,6 +110,13 @@ func down(ctx context.Context, p *project.Project, c *client.Client, args downAr
 		hc, h, err := healthdResolve(p, c)
 		if err == nil && hc.IncusProject() == c.IncusProject() {
 			stack.Add(h)
+		}
+	}
+
+	if len(args.Services) == 0 && !args.NoDNS {
+		dc, d, err := dnsResolve(p, c)
+		if err == nil && dc.IncusProject() == c.IncusProject() {
+			stack.Add(d)
 		}
 	}
 
@@ -193,6 +202,13 @@ func newDownCommand() *cli.Command {
 				Name:    "rmi",
 				Usage:   `Remove images used by services. "local" for known images - all is currently the same as "local".`,
 				Sources: cli.EnvVars("INCUS_COMPOSE_DOWN_RMI"),
+				Validator: func(v string) error {
+					if v == "" || v == "local" || v == "all" {
+						return nil
+					}
+
+					return errors.New(`must be "local" or "all"`)
+				},
 			},
 			&cli.BoolFlag{
 				Name:    "images",
@@ -214,6 +230,11 @@ func newDownCommand() *cli.Command {
 				Name:    "no-healthd",
 				Usage:   "Don't create healthd sidecar for healthchecks",
 				Sources: cli.EnvVars("INCUS_COMPOSE_NO_HEALTHD"),
+			},
+			&cli.BoolFlag{
+				Name:    "no-dns",
+				Usage:   "Don't stop/remove dns sidecar",
+				Sources: cli.EnvVars("INCUS_COMPOSE_NO_DNS", "INCUS_COMPOSE_DISABLE_DNS"),
 			},
 			&cli.BoolFlag{
 				Name:    "external-healthd",
@@ -246,9 +267,25 @@ func newDownCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
+			if cmd.Args().Len() > 0 {
+				for _, s := range cmd.Args().Slice() {
+					_, ok := p.Services[s]
+					if !ok {
+						err := client.ErrNotFound.WithKindName(client.KindInstance, s)
+						globalClient.LogError("Service not found", "service", s)
+						return errLogged.Wrap(err)
+					}
+				}
+			}
+
 			usesHealthd := !cmd.Bool("no-healthd")
 			if usesHealthd && !healthdInUseByProject(globalClient, p) {
 				usesHealthd = false
+			}
+
+			usesDNS := !cmd.Bool("no-dns")
+			if usesDNS && p.ClientConfig.DNS.Disabled {
+				usesDNS = false
 			}
 
 			// Get the per Project client early, gives early errors if the project does not exists
@@ -286,6 +323,7 @@ func newDownCommand() *cli.Command {
 				Writer:     cmd.Root().Writer,
 				Reverse:    true,
 				NoHealthd:  !usesHealthd,
+				NoDNS:      !usesDNS,
 			})
 		},
 	}

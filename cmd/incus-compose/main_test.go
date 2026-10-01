@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -10,9 +11,11 @@ import (
 
 	"github.com/bradleyjkemp/cupaloy/v2"
 	incusApi "github.com/lxc/incus/v7/shared/api"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/iclient"
 	"github.com/lxc/incus-compose/internal/testlib"
 	"github.com/lxc/incus-compose/project"
 )
@@ -325,6 +328,29 @@ func TestConfigFilterByService(t *testing.T) {
 	}
 }
 
+func TestConfigImagesWithPreStart(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	composePath := filepath.Join(tmpDir, "compose.yaml")
+	content := `name: test-prestart-images
+services:
+  web:
+    image: docker.io/nginx:alpine
+    pre_start:
+      - image: docker.io/busybox:latest
+        command: ["echo", "init"]
+`
+	err := os.WriteFile(composePath, []byte(content), 0o600)
+	require.NoError(t, err)
+
+	stdout, err := testlib.RunCompose(t.Context(), t, "test-images", "", nil, "-f", composePath, "config", "--images")
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	assert.Contains(t, lines, "docker.io/nginx:alpine")
+	assert.Contains(t, lines, "docker.io/busybox:latest")
+}
+
 func TestUpDownUpSimple(t *testing.T) {
 	testlib.SkipLocal(t)
 	t.Parallel()
@@ -487,4 +513,55 @@ func TestDNSCnameAliasAcrossProjects(t *testing.T) {
 	require.NoError(t, err)
 
 	snapshotter.SnapshotT(t, testlib.Strip(testlib.StripIPv6Lines(net.Config["raw.dnsmasq"])))
+}
+
+// TestDNSAliasesWhenContainerNameMatchesServiceName reproduces issue #206 where
+// aliases are not written to raw.dnsmasq when every service sets container_name
+// equal to its service name.
+func TestDNSAliasesWhenContainerNameMatchesServiceName(t *testing.T) {
+	testlib.SkipLocal(t)
+	t.Parallel()
+
+	ctx := t.Context()
+	pn := t.Name()
+
+	dir := testlib.WriteTempFiles(t, map[string]string{
+		"compose.yaml": `services:
+  web:
+    image: docker.io/library/nginx:alpine
+    container_name: web
+    networks:
+      default:
+        aliases:
+          - web.mydomain.lan
+
+  client:
+    image: docker.io/library/busybox:glibc
+    container_name: client
+`,
+	})
+	compose := filepath.Join(dir, "compose.yaml")
+
+	testlib.CleanupCompose(t, pn, "-f", compose, "down", "--project")
+
+	_, err := testlib.RunCompose(ctx, t, pn, "", nil, "-f", compose, "up", "--detach")
+	require.NoError(t, err)
+
+	c := projectClient(ctx, t, pn)
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	updates, err := conn.ExecInstance(ctx, c.IncusProject(), "client", incusApi.InstanceExecPost{
+		Command: []string{"wget", "-q", "--spider", "http://web.mydomain.lan"},
+	}, &iclient.InstanceExecArgs{Stdout: stdout, Stderr: stderr})
+	require.NoError(t, err)
+
+	op, err := iclient.WaitOperation(ctx, updates)
+	require.NoError(t, err)
+
+	code, ok := op.Metadata["return"].(float64)
+	require.True(t, ok, "no exit code in metadata: %+v", op.Metadata)
+	require.Equal(t, 0, int(code), "wget failed: stdout=%q, stderr=%q", stdout.String(), stderr.String())
 }

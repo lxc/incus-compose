@@ -135,9 +135,9 @@ func newUpCommand() *cli.Command {
 				Sources: cli.EnvVars("INCUS_COMPOSE_DNS_IMAGE"),
 			},
 			&cli.BoolFlag{
-				Name:    "disable-dns",
+				Name:    "no-dns",
 				Usage:   "Don't start or configure DNS for the project",
-				Sources: cli.EnvVars("INCUS_COMPOSE_DISABLE_DNS"),
+				Sources: cli.EnvVars("INCUS_COMPOSE_NO_DNS", "INCUS_COMPOSE_DISABLE_DNS"),
 			},
 			&cli.StringFlag{
 				Name:    "network-driver",
@@ -204,6 +204,8 @@ func newUpCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 			defer c.WarnError(c.Done, "Failure during Client.Done()")
+
+			c.SetSleepImage(resolveImageVersion(cmd.String("sleep-image")))
 
 			err = c.Open()
 			if err != nil {
@@ -342,7 +344,11 @@ func newUpCommand() *cli.Command {
 			}
 
 			var dnsConfigs map[string]string
-			usesDNS := !p.ClientConfig.DNS.Disabled && !cmd.Bool("disable-dns")
+			if cmd.Bool("no-dns") {
+				p.ClientConfig.DNS.Disabled = true
+			}
+
+			usesDNS := !p.ClientConfig.DNS.Disabled
 			if usesDNS {
 				err = dnsUp(ctx, p, c, dnsUpArgs{
 					Image:   cmd.String("dns-image"),

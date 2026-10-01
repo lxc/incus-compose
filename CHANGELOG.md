@@ -25,12 +25,17 @@ form.
   `x-incus-compose.uplink` (or `parent`) extension to configure uplink networks.
   Existing projects and servers without OVN continue to use bridge networks. (by
   @jochumdev)
-- Service-name DNS resolution now works on OVN networks. incus-compose peers
-  each project network to the shared `ic-dns` and scopes it with a hidden
-  network ACL, so a service name like `database` resolves with no compose
-  change. OVN networks also get a default ACL posture matching docker compose:
-  instances on the same network reach each other, nothing else may initiate in,
-  outbound is allowed. (by @jochumdev)
+- Service-name and alias DNS resolution now works on OVN networks. incus-compose
+  peers each project network to the shared `ic-dns` and scopes it with a hidden
+  network ACL, so service names and network aliases resolve with no compose
+  change. Network aliases are assigned to the first replica when scaled to
+  prevent contested collisions in `ic-dns`. OVN networks also get a default ACL
+  posture matching docker compose: instances on the same network reach each
+  other, nothing else may initiate in, outbound is allowed. (by @jochumdev)
+- `--no-dns` / `INCUS_COMPOSE_NO_DNS` flag on `up` and `down`, and
+  `x-incus-compose.dns.disabled` compose option to opt out of DNS sidecar
+  creation/configuration on `up` and stop/removal of project-scoped sidecars on
+  `down`. (by @jochumdev)
 - `ic-dns`: A new split-horizon authoritative DNS daemon for Incus instances,
   built on the new `ievent` event framework and CoreDNS. Resolves instance names
   dynamically within per-project or shared zones (`.incus`), serving records
@@ -51,6 +56,18 @@ form.
 - Running ic-healthd by hand can now present an already-trusted certificate
   (`--client-cert` with `--client-key`) or connect as a remote from the Incus
   CLI configuration (`--remote` with `--use-remote`). (by @jochumdev)
+- Support for Compose Specification lifecycle hooks (`pre_start` and
+  `post_start`) on services. `pre_start` runs ephemeral init containers sharing
+  the service's volumes and tmpfs mounts before the main service starts,
+  supporting `command`, `image`, `user`, `privileged`, `working_dir`,
+  `environment`, and `per_replica`. Runner containers are deleted on success and
+  retained stopped on failure for inspection. `post_start` executes commands
+  non-interactively inside the running service container after startup and
+  before healthcheck evaluation, supporting `command`, `user`, `privileged`,
+  `working_dir`, and `environment`. (by @jochumdev)
+- Configurable tools volume, mount path, and sleep helper image options on
+  `client.Client` (`ClientToolsVolume`, `ClientToolsMount`, `ClientSleepImage`)
+  with runtime getters and setters. (by @jochumdev)
 
 ### Changed
 
@@ -65,7 +82,26 @@ form.
   is unchanged - the same flags, environment variables and status writes, and
   `healthd reload` still forces a full resync. (by @jochumdev)
 
-## [Unreleased-main]
+- Refactor the `run` command in `cmd/incus-compose/run.go` to use
+  `client.Client` abstractions (`c.EnsureTools()`, `c.ToolsMount()`,
+  `c.SleepImage()`, and `c.Resource()`) instead of raw Incus API and `iclient`
+  calls. (by @jochumdev)
+
+### Fixed
+
+- Network `aliases` are now flushed to `raw.dnsmasq` when all services in a
+  project set `container_name` equal to their service key. Previously, DNS alias
+  flushing was only triggered during instance address registration, which was
+  skipped when the container name matched the service name. (by @Tofil,
+  @jochumdev, #206)
+- `down --rmi` now validates its argument (`local` or `all`), preventing
+  subsequent flags (such as `--volumes`) or invalid values from being silently
+  consumed. (by @pikeas, @jochumdev, #220)
+- `down` now validates service names passed as arguments against declared
+  services in the Compose project, returning an error if a service does not
+  exist rather than silently doing nothing. (by @pikeas, @jochumdev, #221)
+
+## [v1.3.4] - 2026-09-17
 
 ### Fixed
 
