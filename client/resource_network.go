@@ -396,24 +396,25 @@ func (r *Network) Delete(ctx context.Context, opts ...Option) error {
 // Non-bridge networks are skipped: raw.dnsmasq is a bridge-only option.
 // Setting raw.dnsmasq disables AppArmor for the dnsmasq process (not containers).
 // The update is idempotent: if the resulting config is unchanged, dnsmasq is not restarted.
-func (r *Network) updateDNSAliases(ctx context.Context, ownedServices []string, newIPs map[string][]string) error {
+// It reports whether raw.dnsmasq was updated.
+func (r *Network) updateDNSAliases(ctx context.Context, ownedServices []string, newIPs map[string][]string) (bool, error) {
 	if !r.IsEnsured() {
-		return nil
+		return false, nil
 	}
 
 	conn, err := r.client.GlobalConnection()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	net, etag, err := conn.GetNetwork(ctx, incusApi.ProjectDefaultName, r.incusName)
 	if err != nil {
-		return fmt.Errorf("reading network %q: %w", r.Name(), err)
+		return false, fmt.Errorf("reading network %q: %w", r.Name(), err)
 	}
 
 	if net.Type != "bridge" {
 		r.client.LogDebug("skipping service DNS records: network is not a bridge", "network", r.Name(), "type", net.Type)
-		return nil
+		return false, nil
 	}
 
 	cAddresses, cCnames, cExtra := DNSmasqParse(net.Config["raw.dnsmasq"])
@@ -480,7 +481,7 @@ func (r *Network) updateDNSAliases(ctx context.Context, ownedServices []string, 
 
 	// Check same config.
 	if net.Config["raw.dnsmasq"] == raw {
-		return nil
+		return false, nil
 	}
 
 	put := net.Writable()
@@ -493,11 +494,12 @@ func (r *Network) updateDNSAliases(ctx context.Context, ownedServices []string, 
 		put.Config["raw.dnsmasq"] = raw
 	}
 
-	if err := conn.UpdateNetwork(ctx, incusApi.ProjectDefaultName, r.incusName, put, etag); err != nil {
-		return fmt.Errorf("updating dnsmasq records for network %q: %w", r.Name(), err)
+	err = conn.UpdateNetwork(ctx, incusApi.ProjectDefaultName, r.incusName, put, etag)
+	if err != nil {
+		return false, fmt.Errorf("updating dnsmasq records for network %q: %w", r.Name(), err)
 	}
 
-	return nil
+	return true, nil
 }
 
 var (
