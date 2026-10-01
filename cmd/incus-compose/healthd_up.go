@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mattn/go-isatty"
@@ -99,6 +100,7 @@ func healthdUp(ctx context.Context, p *project.Project, c *client.Client, args h
 
 	// hc owns the sidecar, which for global scope is not this project.
 	hc := c
+	daemonProject := c.IncusProject()
 
 	if params.global {
 		// Before the marking below, or both daemons watch this project at once.
@@ -111,14 +113,21 @@ func healthdUp(ctx context.Context, p *project.Project, c *client.Client, args h
 		if exists {
 			c.LogInfo("Replacing the project healthd with the shared one")
 
-			if err := healthdTeardown(ctx, c, false, params.timeout); err != nil {
+			err := healthdTeardown(ctx, c, false, params.timeout)
+			if err != nil {
 				c.LogError("Removing the project healthd", "error", err)
 				return errLogged.Wrap(err)
 			}
 		}
 
+		daemonProject = systemProject
+		project, rest, ok := strings.Cut(params.network, ":")
+		if ok && project != "" && rest != "" && !strings.Contains(rest, ":") {
+			daemonProject = project
+		}
+
 		hc, err = c.Global().EnsureProject(
-			systemProject,
+			daemonProject,
 			client.EnsureProjectWithCreate(),
 			client.EnsureProjectWithConfig(map[string]string{managedKey: "true"}),
 		)
@@ -127,8 +136,11 @@ func healthdUp(ctx context.Context, p *project.Project, c *client.Client, args h
 			return errLogged.Wrap(err)
 		}
 
+		daemonProject = hc.IncusProject()
+
 		// Open before any stack action, as Client.Open documents.
-		if err := hc.Open(); err != nil {
+		err = hc.Open()
+		if err != nil {
 			c.LogError("Opening the healthd project client", "error", err)
 			return errLogged.Wrap(err)
 		}
@@ -136,7 +148,11 @@ func healthdUp(ctx context.Context, p *project.Project, c *client.Client, args h
 	}
 
 	// After the teardown, so nothing watches the project in between.
-	err = c.Global().AddMissingProjectConfig(p.Name, map[string]string{shared.HealthScopeKey: scope})
+	scopeConfig := map[string]string{shared.HealthScopeKey: scope}
+	if params.global {
+		scopeConfig[shared.HealthProjectKey] = daemonProject
+	}
+	err = c.Global().AddMissingProjectConfig(p.Name, scopeConfig)
 	if err != nil {
 		c.LogError("Marking the project's healthd scope", "error", err)
 		return errLogged.Wrap(err)
@@ -195,8 +211,14 @@ func healthdUpGlobal(ctx context.Context, gc *client.GlobalClient, args healthdU
 		stackWorkers: args.Workers,
 	}
 
+	hcProject := systemProject
+	project, rest, ok := strings.Cut(args.Network, ":")
+	if ok && project != "" && rest != "" && !strings.Contains(rest, ":") {
+		hcProject = project
+	}
+
 	hc, err := gc.EnsureProject(
-		systemProject,
+		hcProject,
 		client.EnsureProjectWithCreate(),
 		client.EnsureProjectWithConfig(map[string]string{managedKey: "true"}),
 	)
@@ -205,7 +227,8 @@ func healthdUpGlobal(ctx context.Context, gc *client.GlobalClient, args healthdU
 		return errLogged.Wrap(err)
 	}
 
-	if err := hc.Open(); err != nil {
+	err = hc.Open()
+	if err != nil {
 		gc.LogError("Opening the healthd project client", "error", err)
 		return errLogged.Wrap(err)
 	}

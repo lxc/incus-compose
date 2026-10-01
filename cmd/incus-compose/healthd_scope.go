@@ -48,9 +48,15 @@ func healthdClient(p *project.Project, c *client.Client) (*client.Client, string
 		return c, scope, nil
 	}
 
-	hc, err := c.Global().EnsureProject(systemProject)
+	targetProject := systemProject
+	daemonProject := projectConfig[shared.HealthProjectKey]
+	if daemonProject != "" {
+		targetProject = daemonProject
+	}
+
+	hc, err := c.Global().EnsureProject(targetProject)
 	if err != nil {
-		return nil, "", fmt.Errorf("getting the %s project: %w", systemProject, err)
+		return nil, "", fmt.Errorf("getting the %s project: %w", targetProject, err)
 	}
 
 	return hc, scope, nil
