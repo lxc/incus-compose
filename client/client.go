@@ -481,6 +481,10 @@ func (c *Client) healthdTarget() (*iclient.Connection, string, string, error) {
 	conn, project := c.incus, c.incusProject
 	if cfg[shared.HealthScopeKey] == shared.HealthScopeGlobal {
 		conn, project = c.globalClient.incus, c.config.SystemProject
+		daemonProject := cfg[shared.HealthProjectKey]
+		if daemonProject != "" {
+			project = daemonProject
+		}
 	}
 
 	instances, err := conn.GetInstances(c.ctx, project, nil)
