@@ -11,6 +11,16 @@ final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced
 form.
 
+## [Unreleased]
+
+### Fixed
+
+- Network `aliases` are now flushed to `raw.dnsmasq` when all services in a
+  project set `container_name` equal to their service key. Previously, DNS alias
+  flushing was only triggered during instance address registration, which was
+  skipped when the container name matched the service name. (by @Tofil,
+  @jochumdev, #206)
+
 ## [v1.3.4] - 2026-09-17
 
 ### Added
