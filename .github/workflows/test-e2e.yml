@@ -63,6 +63,9 @@ jobs:
         run: |
           just purge-projects || true
           just purge-networks || true
+          echo yes | incus project rm -f incus-compose || true
+          echo yes | incus project rm -f incus-compose-cache || true
+          echo yes | incus project rm -f incus-compose-tests-cache || true
 
       - name: Set version
         run: |
