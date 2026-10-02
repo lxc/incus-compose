@@ -349,7 +349,12 @@ func (r *Instance) WaitIPs(ctx context.Context, timeout time.Duration) ([]Interf
 				continue
 			}
 
-			ips = append(ips, InterfaceIPs{Network: device["network"], IPv4s: iPv4s, IPv6s: iPv6s})
+			netName := device["network"]
+			if netName == "" {
+				netName = device["parent"]
+			}
+
+			ips = append(ips, InterfaceIPs{Network: netName, IPv4s: iPv4s, IPv6s: iPv6s})
 		}
 
 		if len(ips) > 0 && !r.missingIPv6(ips, networkIpv6) {

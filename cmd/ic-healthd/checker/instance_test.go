@@ -19,11 +19,6 @@ func TestParseInstanceConfigSelects(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name:    "ignored wins over a valid healthcheck",
-			config:  healthKeys(map[string]string{"ignore": "true", "test": `["CMD","true"]`}),
-			wantErr: ErrInstanceIgnored,
-		},
-		{
 			name:    "no test and no restart policy",
 			config:  healthKeys(nil),
 			wantErr: ErrInstanceNoHealthcheck,

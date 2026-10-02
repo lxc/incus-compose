@@ -103,7 +103,6 @@ user.healthcheck.timeout         5s
 user.healthcheck.retries         3
 user.healthcheck.status          unknown | stopped | starting | healthy | unhealthy
 user.healthcheck.restart         always | on-failure | unless-stopped
-user.healthcheck.ignore          true
 ```
 
 These keys are visible in `incus config show <instance>`.
@@ -162,11 +161,6 @@ services:
     x-incus:
       user.healthcheck.enabled: "false"
 ```
-
-`user.healthcheck.ignore: "true"` also excludes an instance, from discovery and
-from every event handler. incus-compose sets it on the ic-healthd sidecar so it
-does not watch itself. For a normal service prefer `enabled: "false"` - it says
-the same thing in the same namespace as the rest of the healthcheck config.
 
 ## Scope: One Daemon Or One Per Project
 
@@ -763,12 +757,9 @@ Default image: `ghcr.io/lxc/incus-compose/ic-healthd:{version}`
 Override with `--healthd-image` flag or `INCUS_COMPOSE_HEALTHD_IMAGE` env var.
 
 The container is named `ic-healthd` for the shared daemon,
-`{project}-ic-healthd` for a project-scoped one, and carries two tags:
-`user.healthcheck.ignore=true`, so ic-healthd skips itself during discovery and
-every event handler, and `user.healthcheck.daemon=true`, which incus-compose
-uses to locate the sidecar instance (`healthd logs`/`restart`/etc.) - `ignore`
-is a general opt-out any instance can carry, so it can't double as the sidecar's
-own identifying marker.
+`{project}-ic-healthd` for a project-scoped one, and carries
+`user.healthcheck.daemon=true`, which incus-compose uses to locate the sidecar
+instance (`healthd logs`/`restart`/etc.).
 
 Both `incus-compose up` and `incus-compose healthd up` upgrade the daemon for
 you: when the image you ask for is a _newer_ release than the one it is running,

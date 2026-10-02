@@ -921,6 +921,107 @@ func TestUnleasedInstanceIsReadAgain(t *testing.T) {
 	assert.Equal(t, before, h.lists.Load(), "one address-less instance cost a whole-fleet pass")
 }
 
+// TestVMWithoutAgentDoesNotRetry: a VM running without an agent will not receive
+// addresses via agent or lease, so it must settle immediately without retry loops.
+func TestVMWithoutAgentDoesNotRetry(t *testing.T) {
+	t.Parallel()
+
+	h := seeded(t, 1, 1)
+
+	h.mu.Lock()
+	for i := range h.fleet.Instances {
+		h.fleet.Instances[i].Type = "virtual-machine"
+	}
+	for _, state := range h.fleet.States {
+		state.Processes = -1
+	}
+	h.leaseless = true
+	h.mu.Unlock()
+
+	before := h.readsOf("p", testlib.InstanceName(0))
+
+	h.send(incusapi.EventLifecycleInstanceUpdated, "p", testlib.InstanceName(0))
+
+	served := h.next()
+	require.NoError(t, served.Err(), "the read landed, it just found no address")
+
+	// Allow retry timer window to pass if any were scheduled.
+	time.Sleep(100 * time.Millisecond)
+
+	assert.Equal(t, before+1, h.readsOf("p", testlib.InstanceName(0)), "a VM without an agent was retried")
+}
+
+// TestInstanceFilter ensures only instances matching the Instance filter option
+// are enriched, stored in state, and emitted downstream.
+func TestInstanceFilter(t *testing.T) {
+	t.Parallel()
+
+	h := newFixture(t, Instance(func(i *incusapi.Instance) bool {
+		return i.Name == "served"
+	}))
+
+	fleet := testlib.NewProject("p", 0, 1)
+	fleet.Project.Config[iutil.FeaturesNetworks] = "true"
+	h.setFleet(fleet)
+	h.collect(2)
+
+	h.send(incusapi.EventLifecycleInstanceStarted, "p", "served")
+	served := h.next()
+	require.Equal(t, "served", served.Name())
+	require.NotNil(t, served.Instance())
+	assert.NotNil(t, h.p.state.instance("p", "served"))
+
+	h.send(incusapi.EventLifecycleInstanceStarted, "p", "ignored")
+
+	select {
+	case ev := <-h.out:
+		t.Fatalf("unexpected event emitted for ignored instance: %v", ev)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	assert.Nil(t, h.p.state.instance("p", "ignored"))
+}
+
+// TestInstanceFilterDropWhenUnserved ensures an instance previously served is
+// deleted from state and downstream receives an update event without an
+// instance when the instance is no longer served.
+func TestInstanceFilterDropWhenUnserved(t *testing.T) {
+	t.Parallel()
+
+	var serve atomic.Bool
+	serve.Store(true)
+
+	h := newFixture(t, Instance(func(i *incusapi.Instance) bool {
+		return serve.Load()
+	}))
+
+	fleet := testlib.NewProject("p", 0, 1)
+	fleet.Project.Config[iutil.FeaturesNetworks] = "true"
+	h.setFleet(fleet)
+	h.collect(2)
+
+	h.send(incusapi.EventLifecycleInstanceStarted, "p", "inst-1")
+	ev := h.next()
+	require.Equal(t, "inst-1", ev.Name())
+	require.NotNil(t, ev.Instance())
+	assert.NotNil(t, h.p.state.instance("p", "inst-1"))
+
+	serve.Store(false)
+	h.send(incusapi.EventLifecycleInstanceUpdated, "p", "inst-1")
+
+	evUpdate := h.next()
+	require.Equal(t, "inst-1", evUpdate.Name())
+	assert.Nil(t, evUpdate.Instance())
+	assert.Nil(t, h.p.state.instance("p", "inst-1"))
+
+	h.send(incusapi.EventLifecycleInstanceUpdated, "p", "inst-1")
+	select {
+	case ev := <-h.out:
+		t.Fatalf("unexpected event after instance dropped: %v", ev)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 // TestFanOutOverAnUnchangedFleetEmitsNothing is what the archive is for: a network
 // that moved is one event, not one per instance sitting on it, when what those
 // instances look like has not changed.

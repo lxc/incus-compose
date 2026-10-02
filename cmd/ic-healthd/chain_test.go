@@ -12,6 +12,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/lxc/incus-compose/ievent/iutil"
+	"github.com/lxc/incus-compose/shared"
 )
 
 func TestParseMarker(t *testing.T) {
@@ -251,4 +252,29 @@ func TestServeable(t *testing.T) {
 	cfg = newConfig()
 	cfg.ProjectMarker = ""
 	require.Nil(t, serveable(cfg))
+}
+
+// TestInstanceServes pins which instances healthd watches: only instances with
+// user.healthcheck.enabled set to "true".
+func TestInstanceServes(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	fn := instanceServes(logger)
+
+	require.False(t, fn(nil))
+
+	inst := &incusApi.Instance{Name: "web-1"}
+	require.False(t, fn(inst))
+
+	inst.Config = map[string]string{shared.HealthEnabledKey: "true"}
+	require.True(t, fn(inst))
+
+	inst.Config = map[string]string{shared.HealthEnabledKey: "false"}
+	require.False(t, fn(inst))
+
+	// Expanded config (from profile) works too.
+	inst.Config = map[string]string{}
+	inst.ExpandedConfig = map[string]string{shared.HealthEnabledKey: "true"}
+	require.True(t, fn(inst))
 }

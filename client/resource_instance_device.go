@@ -137,8 +137,18 @@ func (d *InstanceDevice) ToIncusDevice() (string, map[string]string, error) {
 
 func (d *InstanceDevice) toNicDevice() (map[string]string, error) {
 	networkName := ""
+	var unmanaged bool
+	var netType string
+
 	if d.Config.Network != nil {
 		networkName = d.Config.Network.IncusName()
+		if netResource, ok := d.Config.Network.(*Network); ok {
+			incusNet := netResource.State().IncusNetwork
+			if incusNet != nil && !incusNet.Managed {
+				unmanaged = true
+				netType = incusNet.Type
+			}
+		}
 	} else if d.Config.NetworkName != "" {
 		networkName = d.Config.NetworkName
 	} else if _, hasNicType := d.Config.Extensions["nictype"]; !hasNicType {
@@ -153,7 +163,19 @@ func (d *InstanceDevice) toNicDevice() (map[string]string, error) {
 		"type": "nic",
 		"name": d.Name,
 	}
-	if networkName != "" {
+
+	if unmanaged {
+		nicType := "macvlan"
+		switch netType {
+		case "bridge":
+			nicType = "bridged"
+		case "physical":
+			nicType = "physical"
+		}
+
+		device["nictype"] = nicType
+		device["parent"] = networkName
+	} else if networkName != "" {
 		device["network"] = networkName
 	}
 

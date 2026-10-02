@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	incusapi "github.com/lxc/incus/v7/shared/api"
+	incusutil "github.com/lxc/incus/v7/shared/util"
 
 	"github.com/lxc/incus-compose/cmd/ic-healthd/checker"
 	"github.com/lxc/incus-compose/ievent/enricher"
@@ -40,6 +41,7 @@ func chain(logger *slog.Logger, cfg *config) ([]iutil.Plugin, []runner) {
 
 	add(enricher.New(logger,
 		enricher.Project(serves(logger, cfg)),
+		enricher.Instance(instanceServes(logger)),
 		enricher.Metrics(cfg.Metrics),
 	))
 
@@ -97,6 +99,27 @@ func serves(logger *slog.Logger, cfg *config) func(*incusapi.Project) bool {
 			logger.Log(context.Background(), shared.LevelTrace, "Watching project", "project", p.Name)
 		}
 		return serve
+	}
+}
+
+// instanceServes decides which instances this daemon watches: watching is
+// opt-in, so only instances with user.healthcheck.enabled set to true are
+// served.
+func instanceServes(logger *slog.Logger) func(*incusapi.Instance) bool {
+	return func(i *incusapi.Instance) bool {
+		if i == nil {
+			return false
+		}
+
+		enabled := incusutil.IsTrue(i.Config[shared.HealthEnabledKey]) ||
+			incusutil.IsTrue(i.ExpandedConfig[shared.HealthEnabledKey])
+		if !enabled {
+			logger.Log(context.Background(), shared.LevelTrace, "Not watching instance, healthcheck not enabled", "instance", i.Name)
+
+			return false
+		}
+
+		return true
 	}
 }
 

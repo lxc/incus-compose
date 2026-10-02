@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
+	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/stretchr/testify/require"
 )
 
@@ -365,4 +366,107 @@ func TestCustomDevice(t *testing.T) {
 		"gputype": "physical",
 		"pci":     "0000:01:00.0",
 	}, config)
+}
+
+func testUnmanagedNetwork(name, netType string, managed bool) *Network {
+	net := &Network{
+		BaseResource: NewBaseResource(KindNetwork, name, PriorityNetwork),
+		incusName:    name,
+		composeName:  name,
+		Config:       NetworkConfig{External: true},
+	}
+	net.state.Store(&NetworkState{
+		IncusNetwork: &incusApi.Network{
+			Name:    name,
+			Type:    netType,
+			Managed: managed,
+		},
+	})
+
+	return net
+}
+
+func TestNicDevices_UnmanagedNetworkAutoTranslate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		net        *Network
+		extensions map[string]string
+		want       map[string]string
+	}{
+		{
+			name: "unmanaged bridge becomes bridged NIC",
+			net:  testUnmanagedNetwork("br0", "bridge", false),
+			want: map[string]string{
+				"type":    "nic",
+				"name":    "eth0",
+				"nictype": "bridged",
+				"parent":  "br0",
+			},
+		},
+		{
+			name: "unmanaged physical becomes physical NIC",
+			net:  testUnmanagedNetwork("eth0", "physical", false),
+			want: map[string]string{
+				"type":    "nic",
+				"name":    "eth0",
+				"nictype": "physical",
+				"parent":  "eth0",
+			},
+		},
+		{
+			name: "unmanaged unknown/macvlan becomes macvlan NIC",
+			net:  testUnmanagedNetwork("vlan10", "unknown", false),
+			want: map[string]string{
+				"type":    "nic",
+				"name":    "eth0",
+				"nictype": "macvlan",
+				"parent":  "vlan10",
+			},
+		},
+		{
+			name: "managed network uses network property",
+			net:  testUnmanagedNetwork("incusbr0", "bridge", true),
+			want: map[string]string{
+				"type":    "nic",
+				"name":    "eth0",
+				"network": "incusbr0",
+			},
+		},
+		{
+			name: "unmanaged bridge preserves user extensions",
+			net:  testUnmanagedNetwork("br0", "bridge", false),
+			extensions: map[string]string{
+				"hwaddr": "00:11:22:33:44:55",
+			},
+			want: map[string]string{
+				"type":    "nic",
+				"name":    "eth0",
+				"nictype": "bridged",
+				"parent":  "br0",
+				"hwaddr":  "00:11:22:33:44:55",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			device := InstanceDevice{
+				Name: "eth0",
+				Config: InstanceDeviceConfig{
+					DeviceType: InstanceDeviceTypeNic,
+					Network:    tt.net,
+					Extensions: tt.extensions,
+				},
+			}
+
+			name, config, err := device.ToIncusDevice()
+			require.NoError(t, err)
+			require.Equal(t, "eth0", name)
+			require.Equal(t, tt.want, config)
+		})
+	}
 }

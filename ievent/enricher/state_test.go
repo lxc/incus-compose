@@ -175,6 +175,31 @@ func TestPutInstance(t *testing.T) {
 			wantNets: []string{"p/net0"},
 			wantIPv4: []string{"10.0.0.10"},
 		},
+		{
+			name: "a VM without an agent uses static ipv4.address on NIC device when state has no address",
+			change: func(p *testlib.Project) {
+				p.Instances[0].Type = "virtual-machine"
+				p.Instances[0].ExpandedDevices["eth0"]["ipv4.address"] = "10.0.0.99"
+				eth0 := p.States[p.Instances[0].Name].Network["eth0"]
+				eth0.Addresses = nil
+				p.States[p.Instances[0].Name].Network["eth0"] = eth0
+			},
+			running:  true,
+			wantNets: []string{"p/net0"},
+			wantIPv4: []string{"10.0.0.99"},
+		},
+		{
+			name: "a VM without an agent and no address produces empty address list",
+			change: func(p *testlib.Project) {
+				p.Instances[0].Type = "virtual-machine"
+				eth0 := p.States[p.Instances[0].Name].Network["eth0"]
+				eth0.Addresses = nil
+				p.States[p.Instances[0].Name].Network["eth0"] = eth0
+			},
+			running:  true,
+			wantNets: []string{"p/net0"},
+			wantIPv4: []string{},
+		},
 	}
 
 	for _, tc := range tests {

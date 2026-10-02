@@ -273,7 +273,6 @@ func healthdGetResources(c *client.Client, params healthdParams) (*client.Instan
 			"limits.memory":                    defaultHealthdMemoryLimit,
 			client.HealthKeyPrefix + "restart": "unless-stopped", // Needed for instance.Start to wait for it.
 			client.HealthKeyPrefix + "daemon":  "true",
-			client.HealthKeyPrefix + "ignore":  "true",
 			managedKey:                         "true",
 		},
 		Resources: []client.Resource{img},

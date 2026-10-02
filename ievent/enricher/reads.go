@@ -138,14 +138,44 @@ func hasAddresses(state *incusapi.InstanceState) bool {
 	return false
 }
 
+// isVMWithoutAgent reports whether the instance is a virtual machine running
+// without an active Incus agent.
+func isVMWithoutAgent(inst *incusapi.Instance, state *incusapi.InstanceState) bool {
+	if inst == nil || inst.Type != string(incusapi.InstanceTypeVM) {
+		return false
+	}
+
+	if state != nil && state.Processes > 0 {
+		return false
+	}
+
+	if inst.Config != nil && inst.Config["volatile.last_state.agent"] == "STARTED" {
+		return false
+	}
+
+	if inst.ExpandedConfig != nil && inst.ExpandedConfig["volatile.last_state.agent"] == "STARTED" {
+		return false
+	}
+
+	return true
+}
+
 // incusReader reads one instance and its state through the connection. When
 // interfaces are requested, it polls until global IP addresses appear or the
 // timeout expires.
-func incusReader(logger *slog.Logger, conn *iclient.Connection, ipTimeout time.Duration) readFunc {
+func incusReader(logger *slog.Logger, conn *iclient.Connection, ipTimeout time.Duration, servesInstance func(*incusapi.Instance) bool) readFunc {
 	return func(ctx context.Context, project, name string, wantInterfaces bool, waitForRunning bool) (*incusapi.Instance, *incusapi.InstanceState, error) {
 		inst, _, err := conn.GetInstance(ctx, project, name, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("reading instance %s/%s: %w", project, name, err)
+		}
+
+		if inst == nil {
+			return nil, nil, nil
+		}
+
+		if servesInstance != nil && !servesInstance(&inst.Instance) {
+			return &inst.Instance, nil, nil
 		}
 
 		state, _, err := conn.GetInstanceState(ctx, project, name)
@@ -154,7 +184,7 @@ func incusReader(logger *slog.Logger, conn *iclient.Connection, ipTimeout time.D
 		}
 
 		if !waitForRunning {
-			if !wantInterfaces || inst.StatusCode != incusapi.Running || state.StatusCode != incusapi.Running || !hasNICDevices(&inst.Instance) || hasAddresses(state) {
+			if !wantInterfaces || inst.StatusCode != incusapi.Running || state.StatusCode != incusapi.Running || !hasNICDevices(&inst.Instance) || hasAddresses(state) || isVMWithoutAgent(&inst.Instance, state) {
 				return &inst.Instance, state, nil
 			}
 		} else {
@@ -172,11 +202,13 @@ func incusReader(logger *slog.Logger, conn *iclient.Connection, ipTimeout time.D
 		for {
 			select {
 			case <-pollCtx.Done():
-				logger.Warn("timed out waiting for instance",
-					"project", project,
-					"instance", name,
-					"timeout", ipTimeout,
-				)
+				if !isVMWithoutAgent(&inst.Instance, state) {
+					logger.Warn("timed out waiting for instance",
+						"project", project,
+						"instance", name,
+						"timeout", ipTimeout,
+					)
+				}
 
 				return &inst.Instance, state, nil
 

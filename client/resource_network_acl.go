@@ -105,6 +105,10 @@ func (r *Network) ensureACLs(ctx context.Context) error {
 		return ErrNotEnsured
 	}
 
+	if !net.Managed {
+		return nil
+	}
+
 	acls := []incusApi.NetworkACLsPost{}
 	if net.Type == "ovn" {
 		acls = append(acls, r.defaultACL())
@@ -441,6 +445,11 @@ func (r *Network) RemovePeer(ctx context.Context, name string) error {
 // whose other side does not exist yet stays pending until it does.
 func (r *Network) ensurePeers(ctx context.Context) error {
 	if r.Type(ctx) != "ovn" || len(r.Config.Peers) == 0 {
+		return nil
+	}
+
+	net := r.State().IncusNetwork
+	if net != nil && !net.Managed {
 		return nil
 	}
 
