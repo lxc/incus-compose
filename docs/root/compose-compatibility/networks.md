@@ -102,7 +102,15 @@ uses the first one that exists in Incus:
 If none of the candidates match an existing network, `up` fails with a not-found
 error.
 
+**Unmanaged networks** — When an external network references an unmanaged host
+network (e.g. `br0` or a physical interface where Incus reports `MANAGED: NO`),
+incus-compose automatically translates the instance NIC to use
+`nictype: bridged` (or `physical` / `macvlan`) with `parent: <name>` instead of
+`network: <name>`.
+
 _Since: v1.2.0_
+
+_Changed: v1.4.0 Unmanaged network resolution. _
 
 ## Automatic DHCP Ranges
 

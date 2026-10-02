@@ -15,6 +15,13 @@ form.
 
 ### Added
 
+- External networks referencing an unmanaged host network (such as an unmanaged
+  bridge `br0` where Incus reports `MANAGED: NO`) are now automatically
+  translated to `nictype: bridged` (or `physical` / `macvlan`) with
+  `parent: <name>` on the instance device instead of `network: <name>`, allowing
+  direct attachment to unmanaged host bridges via standard compose `networks:`
+  declarations. (by @jochumdev)
+
 - Support for OVN networks as the default network driver for newly created
   projects when Incus supports OVN. Includes `--network-driver` /
   `INCUS_COMPOSE_NETWORK_DRIVER` and `--network-uplink` /
