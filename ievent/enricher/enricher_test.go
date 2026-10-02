@@ -921,6 +921,36 @@ func TestUnleasedInstanceIsReadAgain(t *testing.T) {
 	assert.Equal(t, before, h.lists.Load(), "one address-less instance cost a whole-fleet pass")
 }
 
+// TestVMWithoutAgentDoesNotRetry: a VM running without an agent will not receive
+// addresses via agent or lease, so it must settle immediately without retry loops.
+func TestVMWithoutAgentDoesNotRetry(t *testing.T) {
+	t.Parallel()
+
+	h := seeded(t, 1, 1)
+
+	h.mu.Lock()
+	for i := range h.fleet.Instances {
+		h.fleet.Instances[i].Type = "virtual-machine"
+	}
+	for _, state := range h.fleet.States {
+		state.Processes = -1
+	}
+	h.leaseless = true
+	h.mu.Unlock()
+
+	before := h.readsOf("p", testlib.InstanceName(0))
+
+	h.send(incusapi.EventLifecycleInstanceUpdated, "p", testlib.InstanceName(0))
+
+	served := h.next()
+	require.NoError(t, served.Err(), "the read landed, it just found no address")
+
+	// Allow retry timer window to pass if any were scheduled.
+	time.Sleep(100 * time.Millisecond)
+
+	assert.Equal(t, before+1, h.readsOf("p", testlib.InstanceName(0)), "a VM without an agent was retried")
+}
+
 // TestFanOutOverAnUnchangedFleetEmitsNothing is what the archive is for: a network
 // that moved is one event, not one per instance sitting on it, when what those
 // instances look like has not changed.

@@ -311,9 +311,17 @@ func (s *state) interfaces(
 
 		networks[iutil.NetworkKey(project, w.Name())] = w
 
-		found = append(found, iutil.NewInstanceInterface(project, w.Name(), w.Managed(),
-			addresses(iface, netip.Addr.Is4),
-			addresses(iface, netip.Addr.Is6)))
+		v4 := addresses(iface, netip.Addr.Is4)
+		if len(v4) == 0 {
+			v4 = parseIP(devices[device]["ipv4.address"], netip.Addr.Is4)
+		}
+
+		v6 := addresses(iface, netip.Addr.Is6)
+		if len(v6) == 0 {
+			v6 = parseIP(devices[device]["ipv6.address"], netip.Addr.Is6)
+		}
+
+		found = append(found, iutil.NewInstanceInterface(project, w.Name(), w.Managed(), v4, v6))
 	}
 
 	// Sorted, so two reads of one instance compare equal whatever order the
@@ -413,6 +421,34 @@ func addresses(iface incusapi.InstanceStateNetwork, family func(netip.Addr) bool
 	slices.Sort(out)
 
 	return out
+}
+
+// parseIP parses a static IP address or CIDR notation into an address string if
+// it matches the family.
+func parseIP(raw string, family func(netip.Addr) bool) []string {
+	if raw == "" {
+		return nil
+	}
+
+	addr, err := netip.ParseAddr(raw)
+	if err == nil {
+		if family(addr) {
+			return []string{addr.String()}
+		}
+
+		return nil
+	}
+
+	prefix, err := netip.ParsePrefix(raw)
+	if err != nil {
+		return nil
+	}
+
+	if family(prefix.Addr()) {
+		return []string{prefix.Addr().String()}
+	}
+
+	return nil
 }
 
 // deleteInstance removes one instance. This is what a delete does, and half of

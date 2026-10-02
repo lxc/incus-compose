@@ -754,6 +754,16 @@ func (p *Plugin) patchState(
 
 	// No lease yet, or a state read that could not be made.
 	if i.Running() && !addressed(i) {
+		if isVMWithoutAgent(inst, instanceState) {
+			p.retries.done(project, name)
+
+			if p.opts.TTL > 0 {
+				p.retries.at(project, name, p.opts.TTL)
+			}
+
+			return i, true
+		}
+
 		p.retries.soon(project, name)
 
 		return i, true

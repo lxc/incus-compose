@@ -110,6 +110,12 @@ form.
 
 ### Fixed
 
+- `ievent/enricher`: Virtual machines running without an active Incus agent
+  (e.g., VMs without `incus-agent` installed or running) are now handled cleanly.
+  Enricher avoids polling for IP addresses when the VM is already running without
+  an agent, suppresses misleading timeout warnings, falls back to static IP
+  definitions on NIC devices, and settles immediately without getting trapped in
+  an infinite retry loop. (by @jochumdev)
 - Network `aliases` are now flushed to `raw.dnsmasq` when all services in a
   project set `container_name` equal to their service key. Previously, DNS alias
   flushing was only triggered during instance address registration, which was
