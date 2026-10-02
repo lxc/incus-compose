@@ -163,11 +163,19 @@ func isVMWithoutAgent(inst *incusapi.Instance, state *incusapi.InstanceState) bo
 // incusReader reads one instance and its state through the connection. When
 // interfaces are requested, it polls until global IP addresses appear or the
 // timeout expires.
-func incusReader(logger *slog.Logger, conn *iclient.Connection, ipTimeout time.Duration) readFunc {
+func incusReader(logger *slog.Logger, conn *iclient.Connection, ipTimeout time.Duration, servesInstance func(*incusapi.Instance) bool) readFunc {
 	return func(ctx context.Context, project, name string, wantInterfaces bool, waitForRunning bool) (*incusapi.Instance, *incusapi.InstanceState, error) {
 		inst, _, err := conn.GetInstance(ctx, project, name, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("reading instance %s/%s: %w", project, name, err)
+		}
+
+		if inst == nil {
+			return nil, nil, nil
+		}
+
+		if servesInstance != nil && !servesInstance(&inst.Instance) {
+			return &inst.Instance, nil, nil
 		}
 
 		state, _, err := conn.GetInstanceState(ctx, project, name)

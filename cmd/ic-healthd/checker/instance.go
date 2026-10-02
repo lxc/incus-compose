@@ -207,10 +207,6 @@ func getInstance(ctx context.Context, conn *iclient.Connection, project string, 
 }
 
 func parseInstanceConfig(config map[string]string, running bool) (*instanceConfig, error) {
-	if util.IsTrue(config[shared.HealthIgnoreKey]) {
-		return nil, ErrInstanceIgnored
-	}
-
 	wantsChecking := config[shared.HealthKeyPrefix+"test"] != "" ||
 		slices.Contains(shared.RestartPolicies, config[shared.HealthKeyPrefix+"restart"])
 
@@ -841,8 +837,7 @@ func handleInstanceResult(ctx context.Context, logger *slog.Logger, conn *iclien
 			// checked and will not be.
 			logger.Warn("Not watching an instance that has a healthcheck but is not enabled",
 				"instance", res.name, "key", shared.HealthEnabledKey)
-		case errors.Is(res.err, ErrInstanceIgnored),
-			errors.Is(res.err, ErrInstanceNoHealthcheck):
+		case errors.Is(res.err, ErrInstanceNoHealthcheck):
 			// Nothing to say: these are the normal reasons to skip.
 		default:
 			logger.Error("Discover failed", "instance", res.name, "error", res.err)

@@ -22,9 +22,6 @@ const (
 	// HealthStoppedKey when "true" means healthchecking is stopped.
 	HealthStoppedKey = HealthKeyPrefix + "stopped"
 
-	// HealthIgnoreKey opts an instance out of health checking entirely.
-	HealthIgnoreKey = HealthKeyPrefix + "ignore"
-
 	// HealthScopeKey names the daemon watching a project. Missing means neither.
 	HealthScopeKey = HealthKeyPrefix + "scope"
 

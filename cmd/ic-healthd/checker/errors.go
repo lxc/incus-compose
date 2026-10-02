@@ -2,9 +2,6 @@ package checker
 
 import "github.com/lxc/incus-compose/ievent/iutil"
 
-// ErrInstanceIgnored indicates an instance is ignored.
-var ErrInstanceIgnored = iutil.NewError("instance is ignored")
-
 // ErrInstanceNoHealthcheck indicates an instance has no healthcheck.
 var ErrInstanceNoHealthcheck = iutil.NewError("instance has no healthcheck")
 

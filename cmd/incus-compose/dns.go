@@ -317,7 +317,6 @@ func dnsGetResources(c *client.Client, params dnsParams) (*client.Instance, []cl
 			"limits.cpu.allowance":             defaultDNSCPU,
 			"limits.memory":                    defaultDNSMemoryLimit,
 			shared.HealthKeyPrefix + "restart": "unless-stopped",
-			shared.HealthIgnoreKey:             "true",
 			shared.DNSDaemonScopeKey:           params.scope,
 			managedKey:                         "true",
 		},

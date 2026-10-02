@@ -15,6 +15,12 @@ form.
 
 ### Added
 
+- `ievent/enricher`: Add optional
+  `enricher.Instance(func(*incusapi.Instance) bool)` option alongside
+  `enricher.Project` to allow consumers to filter instances early based on
+  instance metadata or labels, skipping state reads, IP timeout polling, and
+  downstream event emission for ignored instances. (by @jochumdev)
+
 - External networks referencing an unmanaged host network (such as an unmanaged
   bridge `br0` where Incus reports `MANAGED: NO`) are now automatically
   translated to `nictype: bridged` (or `physical` / `macvlan`) with
@@ -78,6 +84,10 @@ form.
 
 ### Changed
 
+- `ic-healthd`: Filter instances early in the enricher using `enricher.Instance`
+  so only instances with `user.healthcheck.enabled: "true"` are enriched and
+  processed. (by @jochumdev)
+
 - `healthd status` now format output with status, IPv4 and IPv6 addresses, and
   optional Prometheus metrics queried directly via `incus port-forward` and
   HTTP, add `--port` to override the HTTP port (default: 9153),
@@ -108,14 +118,20 @@ form.
   subcommands (`up`, `run`, `pull`, `healthd up`/`down`, `dns up`). Images are
   resolved centrally on initialization. (by @jochumdev)
 
+### Removed
+
+- `ic-healthd`: Remove deprecated `user.healthcheck.ignore`
+  (`shared.HealthIgnoreKey`) tag and check; instance watching is strictly opt-in
+  via `user.healthcheck.enabled`. (by @jochumdev)
+
 ### Fixed
 
 - `ievent/enricher`: Virtual machines running without an active Incus agent
-  (e.g., VMs without `incus-agent` installed or running) are now handled cleanly.
-  Enricher avoids polling for IP addresses when the VM is already running without
-  an agent, suppresses misleading timeout warnings, falls back to static IP
-  definitions on NIC devices, and settles immediately without getting trapped in
-  an infinite retry loop. (by @jochumdev)
+  (e.g., VMs without `incus-agent` installed or running) are now handled
+  cleanly. Enricher avoids polling for IP addresses when the VM is already
+  running without an agent, suppresses misleading timeout warnings, falls back
+  to static IP definitions on NIC devices, and settles immediately without
+  getting trapped in an infinite retry loop. (by @jochumdev)
 - Network `aliases` are now flushed to `raw.dnsmasq` when all services in a
   project set `container_name` equal to their service key. Previously, DNS alias
   flushing was only triggered during instance address registration, which was

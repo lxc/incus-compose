@@ -141,6 +141,7 @@ type options struct {
 	StoreInterval time.Duration
 	TTL           time.Duration
 	Project       func(p *incusapi.Project) bool
+	Instance      func(i *incusapi.Instance) bool
 	StoreFile     string
 	Metrics       bool
 }
@@ -186,6 +187,16 @@ func TTL(d time.Duration) Option { return func(o *options) { o.TTL = d } }
 //	})
 func Project(fn func(p *incusapi.Project) bool) Option {
 	return func(o *options) { o.Project = fn }
+}
+
+// Instance sets which instances the binary serves. Nil serves every instance in
+// a served project:
+//
+//	enricher.Instance(func(i *incusapi.Instance) bool {
+//		return i.Config["user.label.caddy"] != ""
+//	})
+func Instance(fn func(i *incusapi.Instance) bool) Option {
+	return func(o *options) { o.Instance = fn }
 }
 
 // StoreFile is the file path to the cold store file, use an empty one to disable.
@@ -291,7 +302,7 @@ func (p *Plugin) Setup(args iutil.SetupArgs) error {
 	p.args = args
 
 	if p.reads.read == nil {
-		p.reads.read = incusReader(p.logger, args.Conn, p.opts.IPTimeout)
+		p.reads.read = incusReader(p.logger, args.Conn, p.opts.IPTimeout, p.opts.Instance)
 	}
 
 	if p.reads.readNet == nil {
@@ -547,6 +558,9 @@ func (p *Plugin) settleRead(ctx context.Context, res result) {
 		return
 	}
 
+	had := p.state.instance(c.project, c.name) != nil
+	unserved := p.opts.Instance != nil && res.instance != nil && !p.opts.Instance(res.instance)
+
 	inst, landed := p.patchState(ctx, c.project, c.name, res.instance, res.state, res.err)
 	if landed {
 		p.updateMetrics()
@@ -559,6 +573,12 @@ func (p *Plugin) settleRead(ctx context.Context, res result) {
 			// Not filed: the next read compares against the last answer there
 			// was, not one that did not land.
 			p.q.settle(it, it.ev.WithFailed(errRead))
+
+			continue
+		}
+
+		if unserved && !had {
+			p.q.trash(it)
 
 			continue
 		}
@@ -737,6 +757,14 @@ func (p *Plugin) patchState(
 		p.retries.soon(project, name)
 
 		return nil, false
+	}
+
+	if p.opts.Instance != nil && inst != nil && !p.opts.Instance(inst) {
+		p.state.deleteInstance(project, name)
+		p.retries.done(project, name)
+		p.archive.forget(project, name)
+
+		return nil, true
 	}
 
 	i, missing := p.state.setInstance(inst, instanceState)

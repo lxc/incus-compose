@@ -938,7 +938,7 @@ func TestUpdatedReportsAStoppedInstance(t *testing.T) {
 func TestDiscoverResultIgnoresUninterestingInstances(t *testing.T) {
 	t.Parallel()
 
-	for _, err := range []error{ErrInstanceIgnored, ErrInstanceNoHealthcheck} {
+	for _, err := range []error{ErrInstanceNoHealthcheck} {
 		t.Run(err.Error(), func(t *testing.T) {
 			t.Parallel()
 
