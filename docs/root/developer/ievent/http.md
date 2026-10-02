@@ -1,10 +1,10 @@
 ---
-date: 2026-08-28T01:33:50.000Z
+date: 2026-08-28T01:33:50Z
 dateCreated: 2026-08-14T11:46:35Z
 leafwiki_id: 6GWeLtUDg
 leafwiki_title: http
 leafwiki_created_at: "2026-08-14T11:46:35Z"
-leafwiki_updated_at: "2026-08-28T01:33:50.000000000Z"
+leafwiki_updated_at: "2026-08-28T01:33:50Z"
 leafwiki_creator_id: system
 leafwiki_last_author_id: system
 ---
@@ -28,7 +28,7 @@ the chain.
 `/metrics` needs no coupling at all: every plugin registers through `promauto`,
 which is the default registry, which is what `promhttp` serves.
 
-`/ready` is the interesting one. [[developer/ievent/dns|dns]] raises `dns/ready`
+`/ready` is the interesting one. [[developer/dns|dns]] raises `dns/ready`
 through `Command` for whoever is watching, and what http latches on is the
 `ChainState` the enricher stamps on `enricher/sweep-end` - one path, in order
 against the events that caused it, which is the same argument the end of a round

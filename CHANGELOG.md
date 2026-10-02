@@ -42,7 +42,7 @@ form.
   based on querier network visibility and client subnet (RFC 7871 ECS). Supports
   UDP and TCP on port 53, zone transfers (`--allow-transfer`), upstream
   forwarding (`--forward`), configurable TTL, and Prometheus metrics and health
-  endpoints on `:8080` (or `--http`). Projects opt in via `--project-marker`
+  endpoints on `:9153` (or `--http`). Projects opt in via `--project-marker`
   (defaulting to `user.label.dns.scope=global`), an explicit `--project` list,
   or serve all visible projects with `--project-marker ""`. (by @jochumdev)
 - `ievent`: A pluggable event pipeline framework for Incus lifecycle events,
@@ -66,10 +66,20 @@ form.
   before healthcheck evaluation, supporting `command`, `user`, `privileged`,
   `working_dir`, and `environment`. (by @jochumdev)
 - Configurable tools volume, mount path, and sleep helper image options on
-  `client.Client` (`ClientToolsVolume`, `ClientToolsMount`, `ClientSleepImage`)
-  with runtime getters and setters. (by @jochumdev)
+  `client.GlobalClient` (`ClientToolsVolume`, `ClientToolsMount`,
+  `ClientSleepImage`). (by @jochumdev)
 
 ### Changed
+
+- `healthd status` now format output with status, IPv4 and IPv6 addresses, and
+  optional Prometheus metrics queried directly via `incus port-forward` and
+  HTTP, add `--port` to override the HTTP port (default: 9153),
+  `--format <text|json>` (default: `text`), and `--metrics` to include
+  Prometheus metrics in the report. (by @jochumdev)
+
+- The global network `icompose0` now configures DHCP ranges after creation to
+  reserve addresses for static IP assignment, and the global DNS sidecar is
+  assigned a static `.53` address within that reserved range. (by @jochumdev)
 
 - Require incus 7.0.2+ LTS or 7.5+ both unreleased at the time of writing, we
   need various recent bugfixes (by @jochumdev)
@@ -83,9 +93,13 @@ form.
   `healthd reload` still forces a full resync. (by @jochumdev)
 
 - Refactor the `run` command in `cmd/incus-compose/run.go` to use
-  `client.Client` abstractions (`c.EnsureTools()`, `c.ToolsMount()`,
-  `c.SleepImage()`, and `c.Resource()`) instead of raw Incus API and `iclient`
-  calls. (by @jochumdev)
+  `client.Client` abstractions (`c.EnsureTools()`, `c.Config().ToolsMount`,
+  `c.Config().SleepImage`, and `c.Resource()`) instead of raw Incus API and
+  `iclient` calls. (by @jochumdev)
+
+- Remove `--healthd-image`, `--sleep-image`, and `--dns-image` CLI flags from
+  subcommands (`up`, `run`, `pull`, `healthd up`/`down`, `dns up`). Images are
+  resolved centrally on initialization. (by @jochumdev)
 
 ### Fixed
 

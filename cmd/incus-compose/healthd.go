@@ -80,6 +80,7 @@ type healthdParams struct {
 	// workers and restartWorkers size the daemon's pools; 0 keeps its defaults.
 	workers        int
 	restartWorkers int
+	noMetrics      bool
 
 	// xIncus is Incus instance config for the sidecar, e.g. limits.*.
 	xIncus map[string]string
@@ -93,6 +94,7 @@ const (
 	envRestartWorkers    = "environment.INCUS_COMPOSE_HEALTHD_RESTART_WORKERS"
 	envDebug             = "environment.INCUS_COMPOSE_HEALTHD_DEBUG"
 	envTrace             = "environment.INCUS_COMPOSE_HEALTHD_TRACE"
+	envHealthdMetrics    = "environment.INCUS_COMPOSE_HEALTHD_METRICS"
 )
 
 // healthdSettings builds this run's healthd settings from flags, compose configuration and defaults.
@@ -116,6 +118,11 @@ func healthdSettings(params healthdParams, incusURL string, debug bool) map[stri
 	}
 	if params.trace {
 		settings[envTrace] = "true"
+	}
+	if params.noMetrics {
+		settings[envHealthdMetrics] = "false"
+	} else {
+		settings[envHealthdMetrics] = "true"
 	}
 
 	maps.Copy(settings, params.xIncus)
@@ -588,43 +595,6 @@ func healthdResolve(p *project.Project, c *client.Client) (*client.Client, *clie
 	}
 
 	return hc, inst, nil
-}
-
-func newHealthdStatusCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "status",
-		Usage: "Prints the status of healthd",
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			globalClient, err := clientFromContext(ctx)
-			if err != nil {
-				return err
-			}
-			if err := globalClient.Connect(); err != nil {
-				return err
-			}
-
-			target, done, err := resolveHealthdTarget(ctx, cmd, globalClient)
-			if err != nil {
-				globalClient.LogError("Finding healthd", "error", err)
-				return errLogged.Wrap(err)
-			}
-			defer done()
-
-			err = client.RunAction(ctx, target.instance, client.ActionEnsure)
-			if err != nil {
-				return fmt.Errorf("while fetching healthd: %w", err)
-			}
-
-			state := target.instance.State()
-			if state == nil {
-				return errors.New("no healthd state after fetch")
-			}
-
-			_, _ = fmt.Fprint(cmd.Root().Writer, state.IncusInstance.Config[shared.HealthStatusKey])
-
-			return nil
-		},
-	}
 }
 
 func newHealthdCommand() *cli.Command {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/internal/testlib"
 	"github.com/lxc/incus-compose/project"
 	"github.com/lxc/incus-compose/shared"
 )
@@ -201,6 +203,7 @@ func TestDNSSettings(t *testing.T) {
 			listen:            ":5353",
 			http:              ":9154",
 			forward:           []string{"1.1.1.1", "8.8.8.8"},
+			allowTransfer:     []string{"10.0.0.0/24", "192.168.1.0/24"},
 			suffix:            "test.incus",
 			ttl:               10,
 			noMetrics:         true,
@@ -210,23 +213,15 @@ func TestDNSSettings(t *testing.T) {
 		settings := dnsSettings(params, "https://10.0.0.1:8443", true)
 
 		assert.Equal(t, "https://10.0.0.1:8443", settings[envDNSIncus])
-		assert.Equal(t, "https://10.0.0.1:8443", settings["environment.DNS_INCUS"])
 		assert.Equal(t, "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90", settings[envDNSServerFingerprint])
-		assert.Equal(t, "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90", settings["environment.DNS_SERVER_FINGERPRINT"])
 		assert.Equal(t, ":5353", settings[envDNSListen])
-		assert.Equal(t, ":5353", settings["environment.DNS_LISTEN"])
 		assert.Equal(t, ":9154", settings[envDNSHTTP])
-		assert.Equal(t, ":9154", settings["environment.DNS_HTTP"])
 		assert.Equal(t, "1.1.1.1,8.8.8.8", settings[envDNSForward])
-		assert.Equal(t, "1.1.1.1,8.8.8.8", settings["environment.DNS_FORWARD"])
+		assert.Equal(t, "10.0.0.0/24,192.168.1.0/24", settings[envDNSAllowTransfer])
 		assert.Equal(t, "test.incus", settings[envDNSSuffix])
-		assert.Equal(t, "test.incus", settings["environment.DNS_SUFFIX"])
 		assert.Equal(t, "10", settings[envDNSTTL])
-		assert.Equal(t, "10", settings["environment.DNS_TTL"])
 		assert.Equal(t, "false", settings[envDNSMetrics])
-		assert.Equal(t, "false", settings["environment.DNS_METRICS"])
 		assert.Equal(t, "DEBUG", settings[envDNSLog])
-		assert.Equal(t, "DEBUG", settings["environment.DNS_LOG"])
 		assert.Equal(t, shared.DNSScopeKey+"="+shared.DNSScopeGlobal, settings[envDNSProjectMarker])
 	})
 
@@ -241,8 +236,9 @@ func TestDNSSettings(t *testing.T) {
 		settings := dnsSettings(params, "https://10.0.0.1:8443", false)
 
 		assert.Equal(t, "true", settings[envDNSRestricted])
-		assert.Equal(t, "true", settings["environment.DNS_RESTRICTED"])
 		assert.Equal(t, ":9153", settings[envDNSHTTP])
+		assert.Equal(t, "true", settings[envDNSMetrics])
+		assert.Empty(t, settings[envDNSAllowTransfer])
 	})
 
 	t.Run("multi-project scope settings", func(t *testing.T) {
@@ -256,9 +252,21 @@ func TestDNSSettings(t *testing.T) {
 		settings := dnsSettings(params, "https://10.0.0.1:8443", false)
 
 		assert.Equal(t, shared.DNSScopeKey+"=alpha,beta", settings[envDNSProjectMarker])
-		assert.Equal(t, shared.DNSScopeKey+"=alpha,beta", settings["environment.DNS_PROJECT_MARKER"])
 		assert.Empty(t, settings[envDNSProjects])
 		assert.Empty(t, settings[envDNSRestricted])
+	})
+
+	t.Run("trace logging", func(t *testing.T) {
+		t.Parallel()
+
+		params := dnsParams{
+			trace: true,
+			carry: map[string]string{},
+		}
+
+		settings := dnsSettings(params, "https://10.0.0.1:8443", false)
+
+		assert.Equal(t, "TRACE", settings[envDNSLog])
 	})
 }
 
@@ -352,20 +360,16 @@ func TestUpCommandDNSFlags(t *testing.T) {
 	cmd := newUpCommand()
 	require.NotNil(t, cmd)
 
-	var hasNoDNS, hasDNSImage bool
+	var hasNoDNS bool
 	for _, f := range cmd.Flags {
 		for _, name := range f.Names() {
-			switch name {
-			case "no-dns":
+			if name == "no-dns" {
 				hasNoDNS = true
-			case "dns-image":
-				hasDNSImage = true
 			}
 		}
 	}
 
 	assert.True(t, hasNoDNS, "up command should have --no-dns flag")
-	assert.True(t, hasDNSImage, "up command should have --dns-image flag")
 }
 
 func TestDownCommandDNSFlags(t *testing.T) {
@@ -418,4 +422,110 @@ services:
 
 	assert.Equal(t, "10.0.0.53", inst.Config.Extensions["oci.dns.nameservers"])
 	assert.Equal(t, "shop.incus", inst.Config.Extensions["oci.dns.search"])
+}
+
+func TestDNSInstance_GlobalStaticIP(t *testing.T) {
+	testlib.SkipLocal(t)
+	t.Parallel()
+
+	ctx := t.Context()
+	gc, err := client.NewTestClient(ctx)
+	require.NoError(t, err)
+
+	c, err := gc.EnsureProject(globalProject)
+	require.NoError(t, err)
+
+	params := dnsParams{
+		global: true,
+		image:  "ghcr.io/lxc/incus-compose/ic-dns:latest",
+		scope:  shared.DNSScopeGlobal,
+	}
+
+	inst, _, err := dnsGetResources(c, params)
+	require.NoError(t, err)
+
+	err = client.RunAction(ctx, inst, client.ActionEnsure, client.OptionCreate())
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_ = client.RunAction(context.WithoutCancel(ctx), inst, client.ActionDelete)
+	})
+
+	var eth0 *client.InstanceDevice
+	for i := range inst.Config.Devices {
+		if inst.Config.Devices[i].Name == "eth0" {
+			eth0 = &inst.Config.Devices[i]
+			break
+		}
+	}
+	require.NotNil(t, eth0)
+	require.NotEmpty(t, eth0.Config.Extensions["ipv4.address"])
+	assert.Contains(t, eth0.Config.Extensions["ipv4.address"], ".53/")
+	assert.NotEmpty(t, eth0.Config.Extensions["ipv4.gateway"])
+}
+
+func TestCalcIPv4DNSAddress(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		cidr        string
+		want        string
+		wantGateway string
+		wantErr     bool
+	}{
+		{
+			name:        "/24 bridge address",
+			cidr:        "10.100.0.1/24",
+			want:        "10.100.0.53/24",
+			wantGateway: "10.100.0.1",
+		},
+		{
+			name:        "/24 network address",
+			cidr:        "10.100.0.0/24",
+			want:        "10.100.0.53/24",
+			wantGateway: "10.100.0.1",
+		},
+		{
+			name:        "/16 address",
+			cidr:        "172.16.0.1/16",
+			want:        "172.16.0.53/16",
+			wantGateway: "172.16.0.1",
+		},
+		{
+			name:        "/26 address (fits 53)",
+			cidr:        "192.168.1.0/26",
+			want:        "192.168.1.53/26",
+			wantGateway: "192.168.1.1",
+		},
+		{
+			name:    "/27 address (too small for 53)",
+			cidr:    "192.168.1.0/27",
+			wantErr: true,
+		},
+		{
+			name:    "invalid CIDR",
+			cidr:    "not-a-cidr",
+			wantErr: true,
+		},
+		{
+			name:    "IPv6 CIDR",
+			cidr:    "fd42::1/64",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, gw, err := calcIPv4DNSAddress(tt.cidr)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.wantGateway, gw)
+		})
+	}
 }

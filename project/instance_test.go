@@ -757,7 +757,6 @@ func TestInstanceConfigMinimal(t *testing.T) {
 	// Only the default restart policy is applied.
 	assert.Equal(t, map[string]string{
 		"boot.autostart":                   "false",
-		"raw.lxc":                          "lxc.start.delay = 1\n",
 		"user.label.incus-compose.project": "project1",
 		"user.label.incus-compose.service": "web",
 	}, config)
@@ -2323,8 +2322,8 @@ func TestServiceToInstancePreStart(t *testing.T) {
 		assert.Equal(t, "pre_start", runner.Config.Extensions["user.incus-compose.hook"])
 		assert.Equal(t, "0", runner.Config.Extensions["user.incus-compose.hook.index"])
 
-		// Runner is also in returned resources
-		assert.Contains(t, res1, runner)
+		// Runner is only in PreRun, not in returned resources
+		assert.NotContains(t, res1, runner)
 
 		// Replica 2 does not have PreRun when per_replica is false
 		c2 := client.NewOfflineClient(t.Context(), "test")

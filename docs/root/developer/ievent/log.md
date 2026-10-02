@@ -1,10 +1,10 @@
 ---
-date: 2026-08-28T01:33:50.000Z
+date: 2026-08-28T01:33:50Z
 dateCreated: 2026-08-14T11:46:35Z
 leafwiki_id: I7ZeYt8vgz
 leafwiki_title: log
 leafwiki_created_at: "2026-08-14T11:46:35Z"
-leafwiki_updated_at: "2026-08-28T01:33:50.000000000Z"
+leafwiki_updated_at: "2026-08-28T01:33:50Z"
 leafwiki_creator_id: system
 leafwiki_last_author_id: system
 ---
@@ -20,9 +20,9 @@ the chain: wherever this sits, it sees what was dropped and by whom.
 
 Which makes it the one plugin worth listing **more than once** - before
 [[developer/ievent/debounce|debounce]] it reports what Incus sent, and after
-[[developer/ievent/dns|dns]] it reports what became of each one. A line per
-position is how you see ordering and what a position cost, and it is noise
-otherwise, which is why `--trace` adds positions rather than raising a level.
+[[developer/dns|dns]] it reports what became of each one. A line per position is
+how you see ordering and what a position cost, and it is noise otherwise, which
+is why `--trace` adds positions rather than raising a level.
 
 Listing it multiple times means separate constructions, not one value listed
 repeatedly - that would have `Setup` called on it multiple times and a later

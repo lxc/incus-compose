@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strconv"
@@ -68,6 +69,8 @@ type dnsParams struct {
 	projectMarker     string
 	timeout           time.Duration
 	stackWorkers      int
+	allowTransfer     []string
+	trace             bool
 
 	global bool
 	xIncus map[string]string
@@ -91,6 +94,7 @@ const (
 	envDNSListen            = "environment.INCUS_COMPOSE_DNS_LISTEN"
 	envDNSHTTP              = "environment.INCUS_COMPOSE_DNS_HTTP"
 	envDNSForward           = "environment.INCUS_COMPOSE_DNS_FORWARD"
+	envDNSAllowTransfer     = "environment.INCUS_COMPOSE_DNS_ALLOW_TRANSFER"
 	envDNSSuffix            = "environment.INCUS_COMPOSE_DNS_SUFFIX"
 	envDNSTTL               = "environment.INCUS_COMPOSE_DNS_TTL"
 	envDNSDataDir           = "environment.INCUS_COMPOSE_DNS_DATA_DIR"
@@ -107,45 +111,47 @@ func dnsSettings(params dnsParams, incusURL string, debug bool) map[string]strin
 	settings := map[string]string{}
 	maps.Copy(settings, params.carry)
 
-	set := func(k1, k2, v string) {
-		settings[k1] = v
-		settings[k2] = v
-	}
-
-	if params.incus != nil || (settings[envDNSIncus] == "" && settings["environment.DNS_INCUS"] == "") {
-		set(envDNSIncus, "environment.DNS_INCUS", incusURL)
+	if params.incus != nil || settings[envDNSIncus] == "" {
+		settings[envDNSIncus] = incusURL
 	}
 	if params.serverFingerprint != "" {
-		set(envDNSServerFingerprint, "environment.DNS_SERVER_FINGERPRINT", params.serverFingerprint)
+		settings[envDNSServerFingerprint] = params.serverFingerprint
 	}
-	set(envDNSDataDir, "environment.DNS_DATA_DIR", "/var/lib/dns-incus")
-	set(envDNSSecretsDir, "environment.DNS_SECRETS_DIR", "/run/secrets")
+	settings[envDNSDataDir] = "/var/lib/dns-incus"
+	settings[envDNSSecretsDir] = "/run/secrets"
 
 	httpAddr := ":9153"
 	if params.http != "" {
 		httpAddr = params.http
 	}
-	set(envDNSHTTP, "environment.DNS_HTTP", httpAddr)
+	settings[envDNSHTTP] = httpAddr
 
 	if params.listen != "" {
-		set(envDNSListen, "environment.DNS_LISTEN", params.listen)
+		settings[envDNSListen] = params.listen
 	}
 	if len(params.forward) > 0 {
 		fw := strings.Join(params.forward, ",")
-		set(envDNSForward, "environment.DNS_FORWARD", fw)
+		settings[envDNSForward] = fw
+	}
+	if len(params.allowTransfer) > 0 {
+		settings[envDNSAllowTransfer] = strings.Join(params.allowTransfer, ",")
 	}
 	if params.suffix != "" {
-		set(envDNSSuffix, "environment.DNS_SUFFIX", params.suffix)
+		settings[envDNSSuffix] = params.suffix
 	}
 	if params.ttl > 0 {
 		ttlStr := strconv.Itoa(int(params.ttl))
-		set(envDNSTTL, "environment.DNS_TTL", ttlStr)
+		settings[envDNSTTL] = ttlStr
 	}
 	if params.noMetrics {
-		set(envDNSMetrics, "environment.DNS_METRICS", "false")
+		settings[envDNSMetrics] = "false"
+	} else {
+		settings[envDNSMetrics] = "true"
 	}
-	if debug {
-		set(envDNSLog, "environment.DNS_LOG", "DEBUG")
+	if params.trace {
+		settings[envDNSLog] = "TRACE"
+	} else if debug {
+		settings[envDNSLog] = "DEBUG"
 	}
 
 	if params.global {
@@ -153,16 +159,16 @@ func dnsSettings(params dnsParams, incusURL string, debug bool) map[string]strin
 		if marker == "" {
 			marker = shared.DNSScopeKey + "=" + shared.DNSScopeGlobal
 		}
-		set(envDNSProjectMarker, "environment.DNS_PROJECT_MARKER", marker)
+		settings[envDNSProjectMarker] = marker
 	} else {
 		if params.scope == shared.DNSScopeProject {
-			set(envDNSRestricted, "environment.DNS_RESTRICTED", "true")
+			settings[envDNSRestricted] = "true"
 		} else if params.scope != "" {
 			marker := params.projectMarker
 			if marker == "" {
 				marker = shared.DNSScopeKey + "=" + params.scope
 			}
-			set(envDNSProjectMarker, "environment.DNS_PROJECT_MARKER", marker)
+			settings[envDNSProjectMarker] = marker
 		}
 	}
 
@@ -404,7 +410,6 @@ func dnsGetResources(c *client.Client, params dnsParams) (*client.Instance, []cl
 		maps.Copy(inst.Config.Extensions, dnsSettings(params, incusURL, c.IsDebugging()))
 		if token != "" {
 			inst.Config.Extensions["environment.INCUS_COMPOSE_DNS_TOKEN"] = token
-			inst.Config.Extensions["environment.DNS_TOKEN"] = token
 		}
 
 		inst.Config.Files = append(inst.Config.Files, client.InstanceFile{
@@ -422,11 +427,68 @@ func dnsGetResources(c *client.Client, params dnsParams) (*client.Instance, []cl
 				Extensions:  map[string]string{},
 			},
 		}
-		if params.ipv4Address != "" {
-			eth0.Config.Extensions["ipv4.address"] = params.ipv4Address
+
+		var gateway4 string
+		ipv4 := params.ipv4Address
+		if ipv4 == "" && network.IncusName() == globalDNSNetwork {
+			cfg := network.State().IncusNetwork.Config
+			if cfg != nil && cfg["ipv4.address"] != "" && cfg["ipv4.address"] != "none" {
+				dnsCIDR, gw, err := calcIPv4DNSAddress(cfg["ipv4.address"])
+				if err != nil {
+					return fmt.Errorf("calculating dns IPv4 address: %w", err)
+				}
+
+				ipv4 = dnsCIDR
+				gateway4 = gw
+			}
+		} else if ipv4 != "" {
+			cfg := network.State().IncusNetwork.Config
+			if cfg != nil && cfg["ipv4.address"] != "" && cfg["ipv4.address"] != "none" {
+				prefix, err := netip.ParsePrefix(cfg["ipv4.address"])
+				if err == nil {
+					if prefix.Addr() == prefix.Masked().Addr() {
+						gateway4 = prefix.Addr().Next().String()
+					} else {
+						gateway4 = prefix.Addr().String()
+					}
+					if !strings.Contains(ipv4, "/") {
+						ipv4 = fmt.Sprintf("%s/%d", ipv4, prefix.Bits())
+					}
+				}
+			}
 		}
-		if params.ipv6Address != "" {
-			eth0.Config.Extensions["ipv6.address"] = params.ipv6Address
+
+		if ipv4 != "" {
+			eth0.Config.Extensions["ipv4.address"] = ipv4
+		}
+		if gateway4 != "" {
+			eth0.Config.Extensions["ipv4.gateway"] = gateway4
+		}
+
+		var gateway6 string
+		ipv6 := params.ipv6Address
+		if ipv6 != "" {
+			cfg := network.State().IncusNetwork.Config
+			if cfg != nil && cfg["ipv6.address"] != "" && cfg["ipv6.address"] != "none" {
+				prefix6, err := netip.ParsePrefix(cfg["ipv6.address"])
+				if err == nil {
+					if prefix6.Addr() == prefix6.Masked().Addr() {
+						gateway6 = prefix6.Addr().Next().String()
+					} else {
+						gateway6 = prefix6.Addr().String()
+					}
+					if !strings.Contains(ipv6, "/") {
+						ipv6 = fmt.Sprintf("%s/%d", ipv6, prefix6.Bits())
+					}
+				}
+			}
+		}
+
+		if ipv6 != "" {
+			eth0.Config.Extensions["ipv6.address"] = ipv6
+		}
+		if gateway6 != "" {
+			eth0.Config.Extensions["ipv6.gateway"] = gateway6
 		}
 		inst.Config.Devices = append(inst.Config.Devices, eth0)
 		inst.Config.Extensions["oci.entrypoint"] = "/usr/local/sbin/ic-dns run"
@@ -435,6 +497,43 @@ func dnsGetResources(c *client.Client, params dnsParams) (*client.Instance, []cl
 	})
 
 	return inst, []client.Resource{img, volume}, nil
+}
+
+// calcIPv4DNSAddress calculates the static .53 DNS CIDR and gateway for an IPv4 network CIDR.
+func calcIPv4DNSAddress(cidr string) (string, string, error) {
+	prefix, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return "", "", fmt.Errorf("parsing IPv4 CIDR %q: %w", cidr, err)
+	}
+
+	if !prefix.Addr().Is4() {
+		return "", "", fmt.Errorf("CIDR %q is not IPv4", cidr)
+	}
+
+	bits := prefix.Bits()
+	if bits > 26 {
+		return "", "", fmt.Errorf("IPv4 prefix /%d too small for static .53 address (need at most /26)", bits)
+	}
+
+	var gateway string
+	if prefix.Addr() == prefix.Masked().Addr() {
+		gateway = prefix.Addr().Next().String()
+	} else {
+		gateway = prefix.Addr().String()
+	}
+
+	dnsIP := addIPv4Offset(prefix.Masked().Addr(), 53)
+	dnsCIDR := fmt.Sprintf("%s/%d", dnsIP, bits)
+
+	return dnsCIDR, gateway, nil
+}
+
+func addIPv4Offset(addr netip.Addr, offset uint64) netip.Addr {
+	b := addr.As4()
+	v := uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
+	v += uint32(offset)
+
+	return netip.AddrFrom4([4]byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)})
 }
 
 func parseDNSNetwork(c *client.Client, network string, global bool) (sidecarNetworkRef, error) {

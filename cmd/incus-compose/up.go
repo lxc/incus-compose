@@ -97,18 +97,6 @@ func newUpCommand() *cli.Command {
 				Sources: cli.EnvVars("INCUS_COMPOSE_EXTERNAL_HEALTHD"),
 			},
 			&cli.StringFlag{
-				Name:    "healthd-image",
-				Usage:   `Healthd OCI image to use; {version} is replaced with the incus-compose version`,
-				Value:   DefaultHealthdImage,
-				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_IMAGE"),
-			},
-			&cli.StringFlag{
-				Name:    "sleep-image",
-				Usage:   "Image the `run` helper comes from",
-				Value:   DefaultSleepImage,
-				Sources: cli.EnvVars("INCUS_COMPOSE_SLEEP_IMAGE"),
-			},
-			&cli.StringFlag{
 				Name:    "healthd-binary",
 				Usage:   "Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)",
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_BINARY"),
@@ -127,12 +115,6 @@ func newUpCommand() *cli.Command {
 				Name:    "healthd-scope",
 				Usage:   "Which healthd watches this project: `global` (shared, in its own project) or `project` (a sidecar of its own); loses to a scope the project already carries",
 				Sources: cli.EnvVars("INCUS_COMPOSE_HEALTHD_SCOPE"),
-			},
-			&cli.StringFlag{
-				Name:    "dns-image",
-				Usage:   "ic-dns image",
-				Value:   DefaultDNSImage,
-				Sources: cli.EnvVars("INCUS_COMPOSE_DNS_IMAGE"),
 			},
 			&cli.BoolFlag{
 				Name:    "no-dns",
@@ -205,13 +187,13 @@ func newUpCommand() *cli.Command {
 			}
 			defer c.WarnError(c.Done, "Failure during Client.Done()")
 
-			c.SetSleepImage(resolveImageVersion(cmd.String("sleep-image")))
-
 			err = c.Open()
 			if err != nil {
 				globalClient.LogError("Opening the project client", "error", err)
 				return errLogged.Wrap(err)
 			}
+
+			c.LogDebug("Running on network type", "type", c.NetworkType())
 
 			// The recreate client has own errors it ignores and it registers
 			// its own hooks (DNSWatcher).
@@ -277,9 +259,6 @@ func newUpCommand() *cli.Command {
 				Services:        cmd.Args().Slice(),
 				WithDeps:        !cmd.Bool("no-deps"),
 				IgnoreBuildable: true,
-				HealthdImage:    cmd.String("healthd-image"),
-				SleepImage:      cmd.String("sleep-image"),
-				DNSImage:        cmd.String("dns-image"),
 				Pull:            pullMode,
 				Scale:           scale,
 				Workers:         cmd.Root().Int("workers"),
@@ -327,7 +306,7 @@ func newUpCommand() *cli.Command {
 			if usesHealthd && !cmd.Bool("external-healthd") {
 				err = healthdUp(ctx, p, c, healthdUpArgs{
 					Binary:  cmd.String("healthd-binary"),
-					Image:   cmd.String("healthd-image"),
+					Image:   healthdImage(),
 					Incus:   cmd.String("healthd-incus"),
 					Network: cmd.String("healthd-network"),
 					Scope:   cmd.String("healthd-scope"),
@@ -351,11 +330,12 @@ func newUpCommand() *cli.Command {
 			usesDNS := !p.ClientConfig.DNS.Disabled
 			if usesDNS {
 				err = dnsUp(ctx, p, c, dnsUpArgs{
-					Image:   cmd.String("dns-image"),
+					Image:   dnsImage(),
 					Pull:    cmd.String("pull"),
 					Timeout: cmd.Duration("timeout"),
 					Workers: cmd.Root().Int("workers"),
 					Debug:   cmd.Root().Bool("debug"),
+					Trace:   cmd.Root().Bool("trace"),
 					Writer:  cmd.Root().Writer,
 				})
 				if err != nil {
@@ -377,7 +357,11 @@ func newUpCommand() *cli.Command {
 						zone = p.Name + "." + project.DefaultDNSZoneSuffix
 					}
 				}
-				err = c.Global().UpdateProjectConfig(p.Name, map[string]string{shared.DNSZoneKey: zone})
+				dnsProjectConfig := map[string]string{shared.DNSZoneKey: zone}
+				if p.ClientConfig.DNS.Transfer || len(p.ClientConfig.DNS.AllowTransfer) > 0 {
+					dnsProjectConfig[shared.DNSTransferKey] = "true"
+				}
+				err = c.Global().UpdateProjectConfig(p.Name, dnsProjectConfig)
 				if err != nil {
 					c.LogError("Updating project dns zone", "error", err)
 					return errLogged.Wrap(err)
