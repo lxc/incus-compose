@@ -92,6 +92,9 @@ type ClientConfig struct {
 
 	// ToolsMount is the mount path for helper tools.
 	ToolsMount string
+
+	// AllowRemoteMounts permits pass-through bind mounts on a remote Incus server.
+	AllowRemoteMounts bool
 }
 
 // ClientOption is a functional option for configuring the Client.
@@ -167,6 +170,11 @@ func ClientGlobalProject(n string) ClientOption {
 // ClientLocksVolume sets the storage volume name holding advisory locks in GlobalProject.
 func ClientLocksVolume(n string) ClientOption {
 	return func(c *ClientConfig) { c.LocksVolume = n }
+}
+
+// ClientAllowRemoteMounts permits pass-through bind mounts on a remote Incus server.
+func ClientAllowRemoteMounts(allow bool) ClientOption {
+	return func(c *ClientConfig) { c.AllowRemoteMounts = allow }
 }
 
 // GlobalClient provides a high-level interface to Incus operations.
@@ -365,8 +373,8 @@ func NewTestClient(ctx context.Context) (*GlobalClient, error) {
 
 // NewOfflineClient creates a disconnected project client for resource planning.
 // It can create in-memory resources, but cannot run Incus operations.
-func NewOfflineClient(ctx context.Context, projectName string) *Client {
-	gc := New(ctx)
+func NewOfflineClient(ctx context.Context, projectName string, opts ...ClientOption) *Client {
+	gc := New(ctx, opts...)
 	gc.unix = true
 	config := gc.config
 	config.DescriptionFormat = fmt.Sprintf(config.DescriptionFormat, projectName) + ":%s"
@@ -835,11 +843,14 @@ func (c *GlobalClient) EnsureProject(name string, opts ...EnsureProjectOption) (
 	}
 
 	// Check if already known
+	c.mu.Lock()
 	for _, p := range c.projects {
 		if p != nil && p.project == name {
+			c.mu.Unlock()
 			return p, nil
 		}
 	}
+	c.mu.Unlock()
 
 	p, err := c.getProject(name)
 	if err == nil {
@@ -924,31 +935,29 @@ func (c *GlobalClient) DeleteProject(name string, force bool) error {
 		return err
 	}
 
-	// Delete networks - they are global, not project-scoped
-	for _, p := range c.projects {
+	var projClient *Client
+	c.mu.Lock()
+	for i, p := range c.projects {
 		if p.project == name {
-			// Delete networks first - they are global, not project-scoped
-			networks, err := ByKind[*Network](p.resources.all(), KindNetwork)
-			if err != nil {
-				c.LogWarn("Deleting networks", "error", err)
-				continue
-			}
+			projClient = p
+			c.projects = append(c.projects[:i], c.projects[i+1:]...)
+			break
+		}
+	}
+	c.mu.Unlock()
 
+	// Delete networks - they are global, not project-scoped
+	if projClient != nil {
+		networks, err := ByKind[*Network](projClient.resources.all(), KindNetwork)
+		if err != nil {
+			c.LogWarn("Deleting networks", "error", err)
+		} else {
 			for _, n := range networks {
 				err = RunAction(c.ctx, n, ActionDelete, OptionForce())
 				if err != nil {
 					c.LogWarn("Deleting network", "network", n, "error", err)
 				}
 			}
-			break
-		}
-	}
-
-	// Remove from cache
-	for i, p := range c.projects {
-		if p.project == name {
-			c.projects = append(c.projects[:i], c.projects[i+1:]...)
-			break
 		}
 	}
 
