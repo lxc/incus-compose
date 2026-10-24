@@ -2602,3 +2602,21 @@ func TestServiceToInstance_DNSAliases(t *testing.T) {
 		assert.False(t, hasAliases2, "replica 2 must not have user.label.dns.aliases")
 	})
 }
+
+func TestServiceToInstanceConfigHash(t *testing.T) {
+	t.Parallel()
+
+	service := types.ServiceConfig{Name: "web", Image: "docker.io/nginx:alpine"}
+	p := &types.Project{Services: types.Services{"web": service}}
+
+	t.Run("service", func(t *testing.T) {
+		t.Parallel()
+		c := client.NewOfflineClient(t.Context(), "test")
+		inst, _, err := serviceToInstance(c, p, "web", &ResourcesOptions{}, 1, 1)
+		require.NoError(t, err)
+
+		want, err := ServiceConfigHash(service)
+		require.NoError(t, err)
+		assert.Equal(t, want, inst.Config.ConfigHash)
+	})
+}

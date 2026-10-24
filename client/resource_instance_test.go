@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -173,6 +174,7 @@ func TestInstanceEnsureAddsMissingConfigOnly(t *testing.T) {
 	// Declare one new key, and a different value for one already carried.
 	inst.Config.Extensions["user.added.later"] = "true"
 	inst.Config.Extensions["user.keep.me"] = "changed"
+	inst.Config.ConfigHash = "v1:later"
 
 	require.NoError(t, RunAction(ctx, inst, ActionEnsure))
 
@@ -185,6 +187,7 @@ func TestInstanceEnsureAddsMissingConfigOnly(t *testing.T) {
 	require.Equal(t, "original", got.Config["user.keep.me"],
 		"a changed value still needs --recreate; keys are compared, values are not")
 	require.Equal(t, "set-by-hand", got.Config["user.theirs"], "a key nobody declared must survive")
+	require.NotContains(t, got.Config, ConfigHashKey, "the hash is written at create only, never added to an older instance")
 }
 
 // TestInstanceConfigPatchOnlyTouchesNamedKeys pins the semantics
@@ -665,4 +668,32 @@ func TestInstancePauseUnpause(t *testing.T) {
 	assert.Equal(t, "false", inst.State().IncusInstance.Config[HealthStoppedKey])
 
 	assert.ErrorIs(t, RunAction(ctx, inst, ActionUnpause), ErrNotPaused)
+}
+
+func TestInstanceConfigChanged(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		state  *InstanceState
+		config string
+		want   bool
+	}{
+		{name: "no state", state: &InstanceState{}, config: "v1:a"},
+		{name: "no label", state: &InstanceState{IncusInstance: &incusApi.Instance{}}, config: "v1:a"},
+		{name: "equal", state: &InstanceState{IncusInstance: &incusApi.Instance{Config: map[string]string{ConfigHashKey: "v1:a"}}}, config: "v1:a"},
+		{name: "differ", state: &InstanceState{IncusInstance: &incusApi.Instance{Config: map[string]string{ConfigHashKey: "v1:b"}}}, config: "v1:a", want: true},
+		{name: "empty config hash", state: &InstanceState{IncusInstance: &incusApi.Instance{Config: map[string]string{ConfigHashKey: "v1:b"}}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			inst := &Instance{Config: InstanceConfig{ConfigHash: tt.config}}
+			inst.state.Store(tt.state)
+
+			require.Equal(t, tt.want, inst.ConfigChanged())
+		})
+	}
 }

@@ -58,6 +58,9 @@ type InstanceFile struct {
 	Overwrite bool
 }
 
+// ConfigHashKey is the instance label holding the hash of its service.
+const ConfigHashKey = "user.label.incus-compose.config-hash"
+
 // InstanceConfig configures instance creation.
 type InstanceConfig struct {
 	// ServiceName represents the compose service name.
@@ -68,6 +71,9 @@ type InstanceConfig struct {
 
 	// Image is the OCI image to create the instance from.
 	Image string
+
+	// ConfigHash is the service hash, empty for one-offs and internal instances.
+	ConfigHash string
 
 	// Ensured Resources that this instance depends on.
 	Resources []Resource
@@ -251,6 +257,18 @@ func (r *Instance) IsEnsured() bool {
 // never written into, so the result stays consistent for as long as it is held.
 func (r *Instance) State() *InstanceState {
 	return r.state.Load()
+}
+
+// ConfigChanged reports whether the instance's hash label differs; no label is not a change.
+func (r *Instance) ConfigChanged() bool {
+	info := r.State().IncusInstance
+	if info == nil || r.Config.ConfigHash == "" {
+		return false
+	}
+
+	hash, ok := info.Config[ConfigHashKey]
+
+	return ok && hash != r.Config.ConfigHash
 }
 
 // clearState forgets the fetched instance.
@@ -693,6 +711,12 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 
 	// Store the image name
 	config["user.image_alias"] = image.IncusName()
+
+	// Deliberately not an Extension: addMissingConfig would stamp it on an
+	// older instance and mark a drifted one current.
+	if r.Config.ConfigHash != "" {
+		config[ConfigHashKey] = r.Config.ConfigHash
+	}
 
 	// A healthcheck the compose file declares replaces the image's, disabled or
 	// not, so the image is only read where compose said nothing about health.

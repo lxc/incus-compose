@@ -29,6 +29,9 @@ incus-compose ps [SERVICE...]
 | `--format`      | table (default) or json                                          |
 | `--with-deps`   | Also list linked services (depends_on) - incus-compose extension |
 
+The table marks an instance created from an older service config
+`(config changed)`; `--format json` carries `config_hash` and `config_changed`.
+
 ## config
 
 Validate and render compose file.
@@ -37,18 +40,19 @@ Validate and render compose file.
 incus-compose config [SERVICE...]
 ```
 
-| Option           | Description                              |
-| ---------------- | ---------------------------------------- |
-| `--format`       | yaml (default) or json                   |
-| `-q`, `--quiet`  | Validate only                            |
-| `--services`     | List services                            |
-| `--volumes`      | List volumes                             |
-| `--networks`     | List networks                            |
-| `--profiles`     | List profiles                            |
-| `--images`       | List images                              |
-| `--environment`  | Print environment used for interpolation |
-| `--variables`    | Print model variables and default values |
-| `-o`, `--output` | Save to file                             |
+| Option           | Description                                  |
+| ---------------- | -------------------------------------------- |
+| `--format`       | yaml (default) or json                       |
+| `-q`, `--quiet`  | Validate only                                |
+| `--services`     | List services                                |
+| `--volumes`      | List volumes                                 |
+| `--networks`     | List networks                                |
+| `--profiles`     | List profiles                                |
+| `--images`       | List images                                  |
+| `--hash`         | Config hash of the services (`'*'` or `a,b`) |
+| `--environment`  | Print environment used for interpolation     |
+| `--variables`    | Print model variables and default values     |
+| `-o`, `--output` | Save to file                                 |
 
 ## logs
 

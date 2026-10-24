@@ -356,8 +356,17 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		instanceFiles = files
 	}
 
+	var configHash string
+	if oneOff == nil {
+		configHash, err = ServiceConfigHash(service)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
 	instCfg := &client.InstanceConfig{
 		ServiceName:   service.Name,
+		ConfigHash:    configHash,
 		NoAutoVolumes: options.noAutoVolumes,
 		Image:         image.Name(),
 		Resources:     instanceResources,
