@@ -18,7 +18,8 @@ form.
 - Instances carry a `user.label.incus-compose.config-hash` label with the hash
   of their service. `up --recreate-changed` recreates only the drifted ones,
   `config --hash` prints the hash of the current file, and `ps` marks changed
-  instances (`config_changed` in JSON). Plain `up` logs a warning.
+  instances (`config_changed` in JSON). Plain `up` logs a warning. (by
+  @tallica)
 
 - Disk and tmpfs mount targets that are symlinks in the container rootfs (common
   in `nix-containers` images such as `/etc/caddy` pointing into `/nix/store`)
