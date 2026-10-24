@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/compose-spec/compose-go/v2/types"
@@ -77,6 +78,11 @@ func newConfigCommand() *cli.Command {
 				Sources: cli.EnvVars("INCUS_COMPOSE_CONFIG_VARIABLES"),
 			},
 			&cli.StringFlag{
+				Name:    "hash",
+				Usage:   `Print the config hash of the given services, '*' (quoted) for all (comma separated)`,
+				Sources: cli.EnvVars("INCUS_COMPOSE_CONFIG_HASH"),
+			},
+			&cli.StringFlag{
 				Name:    "output",
 				Aliases: []string{"o"},
 				Usage:   "Save to file (default to stdout)",
@@ -130,6 +136,33 @@ func newConfigCommand() *cli.Command {
 				sort.Strings(names)
 				for _, name := range names {
 					_, _ = fmt.Fprintln(writer, name)
+				}
+				return nil
+			}
+
+			hashOf := cmd.String("hash")
+			if hashOf != "" {
+				names := strings.Split(hashOf, ",")
+				if hashOf == "*" {
+					names = names[:0]
+					for name := range p.Services {
+						names = append(names, name)
+					}
+					sort.Strings(names)
+				}
+
+				for _, name := range names {
+					service, ok := p.Services[name]
+					if !ok {
+						return fmt.Errorf("no such service: %s", name)
+					}
+
+					hash, err := project.ServiceConfigHash(service)
+					if err != nil {
+						return err
+					}
+
+					_, _ = fmt.Fprintf(writer, "%s %s\n", name, hash)
 				}
 				return nil
 			}

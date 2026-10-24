@@ -255,6 +255,13 @@ recreates instances removed by an earlier `--scale` and tears down extras added
 by one. Use `--scale` (or edit `deploy.replicas`) to change the persistent
 count.
 
+## Recreating on Change
+
+Docker Compose recreates a container when its service config changed. A plain
+`incus-compose up` does not: it leaves existing instances alone and only logs a
+warning. `up --recreate-changed` is the equivalent, and recreates only the
+services whose config differs from what the instance was created from.
+
 ## DNS Resolution
 
 After `up`, both the **service name** and the **instance name** resolve inside

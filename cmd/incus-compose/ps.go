@@ -103,6 +103,9 @@ func newPsCommand() *cli.Command {
 				Image     string   `json:"image,omitempty"`
 				Status    string   `json:"status,omitempty"`
 				Addresses []string `json:"addresses,omitempty"`
+
+				ConfigHash    string `json:"config_hash,omitempty"`
+				ConfigChanged bool   `json:"config_changed,omitempty"`
 			}
 
 			entries := []psEntry{}
@@ -164,6 +167,8 @@ func newPsCommand() *cli.Command {
 
 					entry.Status = state.Status
 					entry.Image = inst.Config.Image
+					entry.ConfigHash = base.Config[client.ConfigHashKey]
+					entry.ConfigChanged = inst.ConfigChanged()
 
 					// collect addresses
 					for _, nw := range state.Network {
@@ -295,6 +300,11 @@ func newPsCommand() *cli.Command {
 				tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 				_, _ = fmt.Fprintln(tw, "NAME\tSERVICE\tINCUS_NAME\tIMAGE\tSTATUS\tADDRESSES")
 				for _, e := range entries {
+					status := e.Status
+					if e.ConfigChanged {
+						status += " (config changed)"
+					}
+
 					addrs := ""
 					if len(e.Addresses) > 0 {
 						addrs = e.Addresses[0]
@@ -307,7 +317,7 @@ func newPsCommand() *cli.Command {
 						e.Service,
 						e.IncusName,
 						e.Image,
-						e.Status,
+						status,
 						addrs,
 					)
 				}

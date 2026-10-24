@@ -24,6 +24,7 @@ incus-compose up [SERVICE...]
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `-d`, `--detach`       | Detached mode: run containers in the background                                                                                                                                                                                                    |
 | `--recreate`           | Recreate containers even if they exist                                                                                                                                                                                                             |
+| `--recreate-changed`   | Recreate only the containers whose service config changed since they were created                                                                                                                                                                  |
 | `--no-start`           | Don't start containers after creating; implies `--detach`                                                                                                                                                                                          |
 | `--pull`               | Pull policy: `always` (refresh from the registry, recreating instances the refresh moved off their image), `missing`/`policy` (use the store if present), `never` (never contact a registry; fail when the image is not stored); default: `policy` |
 | `--build`              | Rebuild build-configured service images before starting containers, recreating the instances that use them                                                                                                                                         |
@@ -62,6 +63,22 @@ service is left alone; `--recreate` is how you recreate the whole project. See
 replaced is torn down and made again from the new one. Only what the pull itself
 replaced counts - under every other policy a running instance keeps the image it
 was created from, even when the compose file now names a different one.
+
+`--recreate-changed` recreates the instances whose service config differs from
+what they were created from. Every instance carries the hash of its service in
+the `user.label.incus-compose.config-hash` label, and `config --hash` prints the
+hash of the current file. The hash covers the service as written, `x-incus` and
+`x-incus-compose` blocks included, but not `build`, `pull_policy`, `scale`,
+`depends_on`, `profiles` or `deploy.replicas`, and not a new image behind an
+unchanged tag (that is `--pull always`). Nothing outside the service counts
+either: the top-level `x-incus-compose` block, the network, volume, secret and
+config definitions, and the contents of secret and config files. The service is
+hashed after interpolation and path resolution, so moving the project directory
+or changing a variable the file interpolates marks its instances changed.
+`config --hash '*'` (quoted, or the shell expands it) prints every service.
+Without the flag `up` leaves the instances alone and logs a warning. Instances
+created before this version have no label and are never treated as changed. `ps`
+marks drifted instances `(config changed)`.
 
 _Since: v1.3.0_
 
@@ -105,6 +122,7 @@ flags that deliberately have none.
 
 | Command   | Variable                              | Flag                   | Description                               |
 | --------- | ------------------------------------- | ---------------------- | ----------------------------------------- |
+| `up`      | `INCUS_COMPOSE_UP_RECREATE_CHANGED`   | `--recreate-changed`   | Recreate containers whose service changed |
 | `up`      | `INCUS_COMPOSE_UP_NO_START`           | `--no-start`           | Don't start containers after creating     |
 | `up`      | `INCUS_COMPOSE_UP_TIMEOUT`            | `--timeout`            | Timeout for stopping/starting a service   |
 | `up`      | `INCUS_COMPOSE_UP_DEPENDENCY_TIMEOUT` | `--dependency-timeout` | Max wait for `service_healthy` depends_on |
