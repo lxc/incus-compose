@@ -128,6 +128,9 @@ form.
 
 ### Fixed
 
+- `build` now works on macOS instead of erroring with "the build command is only
+  available on linux". (by @tallica)
+
 - Network `aliases` are now flushed to `raw.dnsmasq` when all services in a
   project set `container_name` equal to their service key. Previously, DNS alias
   flushing was only triggered during instance address registration, which was

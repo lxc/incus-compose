@@ -1,4 +1,4 @@
-//go:build !unix || darwin
+//go:build windows
 
 package main
 
@@ -34,7 +34,7 @@ func newBuildCommand() *cli.Command {
 			},
 		},
 		Action: func(_ context.Context, _ *cli.Command) error {
-			return errors.New("the build command is only available on linux")
+			return errors.New("the build command is not available on windows")
 		},
 	}
 }

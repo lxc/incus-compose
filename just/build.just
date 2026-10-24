@@ -12,14 +12,14 @@ build: _build-deps
     VERSION=$(source .env; echo "${VERSION:-}")
     if [[ -z ${VERSION} ]]; then
         VERSION="`git describe --tags --always --long --dirty="-dirty"`"
-        sed -i -e 's|export VERSION=".*"|export VERSION="'${VERSION}'"|g' .env
+        sed -i.bak -e 's|export VERSION=".*"|export VERSION="'${VERSION}'"|g' .env && rm .env.bak
     fi
 
     IC_SUBNET=$(source .env; echo "${IC_SUBNET:-}")
     if [[ -z "${IC_SUBNET:-}" ]]; then
       hash=$(printf '%s' "${PWD}" | cksum | cut -d' ' -f1)
       IC_SUBNET="10.$(( (hash / 256) % 256 )).$(( hash % 256 ))"
-      sed -i -e 's|export IC_SUBNET=".*"|export IC_SUBNET="'${IC_SUBNET}'"|g' .env
+      sed -i.bak -e 's|export IC_SUBNET=".*"|export IC_SUBNET="'${IC_SUBNET}'"|g' .env && rm .env.bak
     fi
 
     go install -C ./cmd/incus-compose -ldflags="-X github.com/lxc/incus-compose/cmd/incus-compose/version.Version=v${VERSION#v}"
