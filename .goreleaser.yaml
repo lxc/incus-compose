@@ -136,7 +136,7 @@ dockers_v2:
   - id: ic-sleep
     ids:
       - "ic-sleep"
-    dockerfile: container/ic-sleep/Dockerfile.goreleaser
+    dockerfile: container/ic-sleep/Containerfile.goreleaser
     images:
       - "ghcr.io/lxc/incus-compose/ic-sleep"
     tags:
