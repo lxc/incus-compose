@@ -129,7 +129,9 @@ func TestNilMarshalsAsNull(t *testing.T) {
 func TestNothingIsWritableThroughAnAccessor(t *testing.T) {
 	t.Parallel()
 
-	held := NewInstance(true, "", map[string]string{"a": "1"}, nil, []InstanceInterface{
+	held := NewInstance(true, "node1", map[string]string{"a": "1"}, map[string]map[string]string{
+		"eth0": {"type": "nic", "network": "net0"},
+	}, []InstanceInterface{
 		NewInstanceInterface("p", "net0", true, []string{"10.0.0.2"}, nil),
 	}, map[string]*Network{
 		NetworkKey("p", "net0"): NewNetwork("net0", "p", true, "10.0.0.1/24", ""),
@@ -146,6 +148,10 @@ func TestNothingIsWritableThroughAnAccessor(t *testing.T) {
 	config := maps.Collect(ev.Instance().Config())
 	config["a"] = "moved"
 
+	for _, dev := range ev.Instance().Devices() {
+		dev["network"] = "moved"
+	}
+
 	assert.Equal(t, []string{"10.0.0.2"},
 		slices.Collect(func(yield func(string) bool) {
 			for iface := range held.Interfaces() {
@@ -160,4 +166,7 @@ func TestNothingIsWritableThroughAnAccessor(t *testing.T) {
 	got, ok := held.ConfigValue("a")
 	require.True(t, ok)
 	assert.Equal(t, "1", got, "a configuration key moved under the state that holds it")
+
+	assert.Equal(t, map[string]map[string]string{"eth0": {"type": "nic", "network": "net0"}},
+		maps.Collect(held.Devices()), "a device moved under the state that holds it")
 }

@@ -357,6 +357,73 @@ func TestPutInstanceConfig(t *testing.T) {
 	}
 }
 
+// TestSetInstanceKeepsPlacement is what a consumer routing by cluster member
+// reads: the member the instance runs on, and its devices, expanded first so
+// profile-supplied ones are seen.
+func TestSetInstanceKeepsPlacement(t *testing.T) {
+	t.Parallel()
+
+	disk := map[string]string{"type": "disk", "path": "/data", "pool": "default", "source": "data"}
+
+	tests := []struct {
+		name         string
+		change       func(p *testlib.Project)
+		wantLocation string
+		wantDevices  []string
+	}{
+		{
+			name:        "off a cluster there is no member",
+			wantDevices: []string{"eth0"},
+		},
+		{
+			name: "the member is carried",
+			change: func(p *testlib.Project) {
+				p.Instances[0].Location = "node2"
+			},
+			wantLocation: "node2",
+			wantDevices:  []string{"eth0"},
+		},
+		{
+			name: "the expanded devices win, so profile devices are seen",
+			change: func(p *testlib.Project) {
+				p.Instances[0].Devices["data"] = disk
+				p.Instances[0].ExpandedDevices["data"] = disk
+			},
+			wantDevices: []string{"data", "eth0"},
+		},
+		{
+			name: "the instance's own answer when nothing was expanded",
+			change: func(p *testlib.Project) {
+				p.Instances[0].Devices["data"] = disk
+				p.Instances[0].ExpandedDevices = nil
+			},
+			wantDevices: []string{"data"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			p := testlib.NewProject("p", 1, 1)
+			if tc.change != nil {
+				tc.change(p)
+			}
+
+			m := newState("")
+			storeNetworks(m, p.Networks)
+
+			inst := p.Instances[0]
+
+			got, _ := m.setInstance(&inst, p.States[inst.Name])
+			require.NotNil(t, got)
+
+			assert.Equal(t, tc.wantLocation, got.Location())
+			assert.Equal(t, tc.wantDevices, slices.Sorted(maps.Keys(maps.Collect(got.Devices()))))
+		})
+	}
+}
+
 func TestNewNetwork(t *testing.T) {
 	t.Parallel()
 
