@@ -22,7 +22,7 @@ func TestInstanceRoundTrip(t *testing.T) {
 	}{
 		{
 			name: "a running instance on one network",
-			in: NewInstance(true, map[string]string{"user.label.a": "1"}, []InstanceInterface{
+			in: NewInstance(true, "node1", map[string]string{"user.label.a": "1"}, map[string]map[string]string{"eth0": {"type": "nic", "network": "net0"}}, []InstanceInterface{
 				NewInstanceInterface("p", "net0", true, []string{"10.0.0.2"}, []string{"fd42::2"}),
 			}, map[string]*Network{
 				NetworkKey("p", "net0"): NewNetwork("net0", "p", true, "10.0.0.1/24", "fd42::1/64"),
@@ -32,11 +32,11 @@ func TestInstanceRoundTrip(t *testing.T) {
 			// The three empties are different answers, and a round trip that
 			// turned any of them into another would be a lie about the fleet.
 			name: "a stopped instance sits nowhere",
-			in:   NewInstance(false, map[string]string{}, nil, nil),
+			in:   NewInstance(false, "", map[string]string{}, nil, nil, nil),
 		},
 		{
 			name: "a NIC up before its lease holds no address",
-			in: NewInstance(true, nil, []InstanceInterface{
+			in: NewInstance(true, "", nil, nil, []InstanceInterface{
 				NewInstanceInterface("p", "net0", true, nil, nil),
 			}, map[string]*Network{
 				NetworkKey("p", "net0"): NewNetwork("net0", "p", true, "10.0.0.1/24", ""),
@@ -44,7 +44,7 @@ func TestInstanceRoundTrip(t *testing.T) {
 		},
 		{
 			name: "an unmanaged bridge still keys records",
-			in: NewInstance(true, nil, []InstanceInterface{
+			in: NewInstance(true, "", nil, nil, []InstanceInterface{
 				NewInstanceInterface("default", "br0", false, []string{"10.9.0.2"}, nil),
 			}, map[string]*Network{
 				NetworkKey("default", "br0"): NewNetwork("br0", "default", false, "", ""),
@@ -129,7 +129,7 @@ func TestNilMarshalsAsNull(t *testing.T) {
 func TestNothingIsWritableThroughAnAccessor(t *testing.T) {
 	t.Parallel()
 
-	held := NewInstance(true, map[string]string{"a": "1"}, []InstanceInterface{
+	held := NewInstance(true, "", map[string]string{"a": "1"}, nil, []InstanceInterface{
 		NewInstanceInterface("p", "net0", true, []string{"10.0.0.2"}, nil),
 	}, map[string]*Network{
 		NetworkKey("p", "net0"): NewNetwork("net0", "p", true, "10.0.0.1/24", ""),

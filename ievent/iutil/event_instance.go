@@ -99,7 +99,11 @@ func (n *InstanceInterface) UnmarshalJSON(b []byte) error {
 // Instance is what one Instance read amounted to.
 type Instance struct {
 	running bool
-	config  map[string]string
+
+	// location is the cluster member the instance runs on, empty off a cluster.
+	location string
+	config   map[string]string
+	devices  map[string]map[string]string
 
 	interfaces []InstanceInterface
 
@@ -110,17 +114,21 @@ type Instance struct {
 	networks map[string]*Network
 }
 
-// NewInstance builds one instance read. It takes ownership of both maps and the
+// NewInstance builds one instance read. It takes ownership of the maps and the
 // slice - do not reuse them.
 func NewInstance(
 	running bool,
+	location string,
 	config map[string]string,
+	devices map[string]map[string]string,
 	interfaces []InstanceInterface,
 	networks map[string]*Network,
 ) *Instance {
 	return &Instance{
 		running:    running,
+		location:   location,
 		config:     config,
+		devices:    devices,
 		interfaces: interfaces,
 		networks:   networks,
 	}
@@ -134,6 +142,31 @@ func (i *Instance) Running() bool {
 	}
 
 	return i.running
+}
+
+// Location is the cluster member the instance runs on, or empty off a cluster.
+func (i *Instance) Location() string {
+	if i == nil {
+		return ""
+	}
+
+	return i.location
+}
+
+// Devices is every device, expanded, by name. Each device is cloned, so
+// writing to one is not on offer.
+func (i *Instance) Devices() iter.Seq2[string, map[string]string] {
+	return func(yield func(string, map[string]string) bool) {
+		if i == nil {
+			return
+		}
+
+		for name, dev := range i.devices {
+			if !yield(name, maps.Clone(dev)) {
+				return
+			}
+		}
+	}
 }
 
 // ConfigValue is one configuration key, which is what a consumer looking for
@@ -223,6 +256,8 @@ func (i *Instance) Equal(other *Instance) bool {
 	}
 
 	if i.running != other.running ||
+		i.location != other.location ||
+		!maps.EqualFunc(i.devices, other.devices, maps.Equal[map[string]string, map[string]string]) ||
 		!maps.Equal(i.config, other.config) ||
 		!slices.EqualFunc(i.interfaces, other.interfaces, (InstanceInterface).equal) ||
 		!maps.EqualFunc(i.networks, other.networks, (*Network).equal) {
@@ -239,6 +274,8 @@ func (i *Instance) EqualNoNets(other *Instance) bool {
 	}
 
 	if i.running != other.running ||
+		i.location != other.location ||
+		!maps.EqualFunc(i.devices, other.devices, maps.Equal[map[string]string, map[string]string]) ||
 		!maps.Equal(i.config, other.config) {
 		return false
 	}
@@ -247,17 +284,21 @@ func (i *Instance) EqualNoNets(other *Instance) bool {
 }
 
 type instanceJSON struct {
-	Running    bool                `json:"running"`
-	Config     map[string]string   `json:"config,omitempty"`
-	Interfaces []InstanceInterface `json:"interfaces,omitempty"`
-	Networks   map[string]*Network `json:"networks,omitempty"`
+	Running    bool                         `json:"running"`
+	Location   string                       `json:"location,omitempty"`
+	Config     map[string]string            `json:"config,omitempty"`
+	Devices    map[string]map[string]string `json:"devices,omitempty"`
+	Interfaces []InstanceInterface          `json:"interfaces,omitempty"`
+	Networks   map[string]*Network          `json:"networks,omitempty"`
 }
 
 // MarshalJSON writes the wire form, since the fields it is built from are unexported.
 func (i Instance) MarshalJSON() ([]byte, error) {
 	return json.Marshal(instanceJSON{
 		Running:    i.running,
+		Location:   i.location,
 		Config:     i.config,
+		Devices:    i.devices,
 		Interfaces: i.interfaces,
 		Networks:   i.networks,
 	})
@@ -274,7 +315,9 @@ func (i *Instance) UnmarshalJSON(b []byte) error {
 
 	*i = Instance{
 		running:    v.Running,
+		location:   v.Location,
 		config:     v.Config,
+		devices:    v.Devices,
 		interfaces: v.Interfaces,
 		networks:   v.Networks,
 	}

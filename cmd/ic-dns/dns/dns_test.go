@@ -90,7 +90,7 @@ func read(project string, running bool, config map[string]string, nets map[strin
 			iutil.NewInstanceInterface(p, name, true, sits.addrs, nil))
 	}
 
-	return iutil.NewInstance(running, config, interfaces, networks)
+	return iutil.NewInstance(running, "", config, nil, interfaces, networks)
 }
 
 // enriched is one instance event as the enricher hands it over: read, running,
