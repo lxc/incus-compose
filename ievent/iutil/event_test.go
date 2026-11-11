@@ -253,6 +253,44 @@ func TestEqualWithoutNets(t *testing.T) {
 
 // TestEqualNil pins the one comparison with nothing to compare: the first event
 // about a subject has no predecessor, and it is news.
+// TestEqualPlacement pins where the instance runs and what is attached to it as
+// part of the read: an instance moved to another member is news, with or
+// without its networks.
+func TestEqualPlacement(t *testing.T) {
+	t.Parallel()
+
+	read := func(location string, devices map[string]map[string]string) *Instance {
+		return NewInstance(true, location, map[string]string{"user.label.a": "1"}, devices, nil, nil)
+	}
+
+	nic := map[string]map[string]string{"eth0": {"type": "nic", "network": "net0"}}
+	base := read("node1", nic)
+
+	cases := []struct {
+		name  string
+		other *Instance
+		equal bool
+	}{
+		{name: "the same read twice", other: read("node1", map[string]map[string]string{"eth0": {"type": "nic", "network": "net0"}}), equal: true},
+		{name: "moved to another member", other: read("node2", nic)},
+		{name: "off a cluster now", other: read("", nic)},
+		{name: "a device attached", other: read("node1", map[string]map[string]string{
+			"eth0": {"type": "nic", "network": "net0"},
+			"data": {"type": "disk", "path": "/data", "pool": "default", "source": "data"},
+		})},
+		{name: "a device changed", other: read("node1", map[string]map[string]string{"eth0": {"type": "nic", "network": "net1"}})},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tc.equal, base.Equal(tc.other), "Equal")
+			assert.Equal(t, tc.equal, base.EqualNoNets(tc.other), "EqualNoNets")
+		})
+	}
+}
+
 func TestEqualNil(t *testing.T) {
 	t.Parallel()
 

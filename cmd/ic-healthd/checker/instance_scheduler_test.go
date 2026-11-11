@@ -128,7 +128,7 @@ func (s *scheduler) eventRead(action string, name string, running bool, keys map
 		return
 	}
 
-	read := iutil.NewInstance(running, keys, []iutil.InstanceInterface{}, map[string]*iutil.Network{})
+	read := iutil.NewInstance(running, "", keys, nil, []iutil.InstanceInterface{}, map[string]*iutil.Network{})
 	ev := iutil.NewEvent(time.Now(), action, s.project, name, "").WithInstance(read, false)
 	handleInstanceEvent(s.ctx, s.logger, s.conn, s.instances, s.results, ev)
 }

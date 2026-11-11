@@ -245,7 +245,12 @@ func (s *state) setInstance(
 		}
 	}
 
-	i := iutil.NewInstance(inst.StatusCode == incusapi.Running, held, interfaces, networks)
+	devices := inst.ExpandedDevices
+	if len(devices) == 0 {
+		devices = inst.Devices
+	}
+
+	i := iutil.NewInstance(inst.StatusCode == incusapi.Running, inst.Location, held, maps.Clone(devices), interfaces, networks)
 
 	s.project(inst.Project).instances[inst.Name] = i
 

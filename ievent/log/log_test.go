@@ -41,7 +41,7 @@ func TestNameIsThePosition(t *testing.T) {
 func TestHandlePassesEverythingOn(t *testing.T) {
 	t.Parallel()
 
-	inst := iutil.NewInstance(true, map[string]string{"user.label.a": "1"},
+	inst := iutil.NewInstance(true, "", map[string]string{"user.label.a": "1"}, nil,
 		[]iutil.InstanceInterface{
 			iutil.NewInstanceInterface("p", "net0", true, []string{"10.0.0.2"}, nil),
 		},
