@@ -52,7 +52,12 @@ flowchart TD
 The three addressable services attach to the pre-existing `incusbr0`:
 `compose.incus.yaml` marks the `default` network `external: true` and names it,
 so incus-compose never creates or deletes it. The addresses, netmask and gateway
-all come from `.env`.
+all come from `.env`. On an OVN-enabled Incus server, set
+`INCUS_COMPOSE_NETWORK_DRIVER=bridge` (or
+`x-incus-compose.network.driver: bridge`) and configure a project-scoped
+`ic-dns` on that bridge (`x-incus-compose.dns.scope: project` and
+`x-incus-compose.dns.network: "${NETWORK}"`), as managed external bridges cannot
+be used in an OVN project or reach the global OVN `ic-dns` on `icompose0`.
 
 `compose.incus.yaml` also clears the published ports of `pdns` and `pdns-admin`
 with `ports: !reset []`. On Incus each service has an address of its own, so

@@ -31,7 +31,11 @@ The files for this example are on
 
 Both attach to the pre-existing `incusbr0`: `compose.incus.yaml` marks the
 `default` network `external: true` and names it, so incus-compose never creates
-or deletes it. The addresses, netmask and gateway all come from `.env`.
+or deletes it. The addresses, netmask and gateway all come from `.env`. On an
+OVN-enabled Incus server, pass `--network-driver bridge --no-dns` on `up` (or
+set `x-incus-compose.network.driver: bridge` and
+`x-incus-compose.dns.disabled: true`), as managed external bridges cannot be
+used in an OVN project or reach the global OVN `ic-dns` on `icompose0`.
 
 Both also mount `sites/` read-only, so either one can serve the static site.
 
