@@ -163,15 +163,15 @@ services:
 | `transfer`       | boolean         | `false`            | Explicitly opt the project zone into transfers (`user.label.dns.transfer=true`) without configuring sidecar CIDRs (useful when sharing a global sidecar).                             |
 | `forwarders`     | list of strings | `/etc/resolv.conf` | Upstream DNS server(s) (`ip`, `ip:port`, or `resolv.conf` path) for external domains. Defaults to the sidecar's `/etc/resolv.conf` when omitted or empty.                             |
 
-:::warning On an OVN-capable Incus server, the shared `global` `ic-dns` sidecar
-runs on the OVN `icompose0` network and reaches project networks via OVN network
-peering. Instances on `bridge` networks (such as custom bridges with
-`x-incus-compose.network.driver: bridge` or external bridges like `incusbr0`)
-cannot reach `icompose0`, so mixing the global OVN `ic-dns` with bridge networks
-leaves DNS unreachable. Bridge projects on an OVN server must either run a
-dedicated sidecar (`scope: project`, plus `network:` when not using `default`)
-or disable `ic-dns` (`disabled: true` / `--no-dns`) to use the bridge's built-in
-`dnsmasq`. :::
+> **Warning:** On an OVN-capable Incus server, the shared `global` `ic-dns`
+> sidecar runs on the OVN `icompose0` network and reaches project networks via
+> OVN network peering. Instances on `bridge` networks (such as custom bridges
+> with `x-incus-compose.network.driver: bridge` or external bridges like
+> `incusbr0`) cannot reach `icompose0`, so mixing the global OVN `ic-dns` with
+> bridge networks leaves DNS unreachable. Bridge projects on an OVN server must
+> either run a dedicated sidecar (`scope: project`, plus `network:` when not
+> using `default`) or disable `ic-dns` (`disabled: true` / `--no-dns`) to use
+> the bridge's built-in `dnsmasq`.
 
 ---
 
