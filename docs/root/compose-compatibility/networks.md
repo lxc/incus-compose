@@ -64,6 +64,14 @@ networks:
       uplink: incusbr0
 ```
 
+:::warning OVN and bridge networks cannot be mixed in the same project. On an
+OVN-capable server, the shared global `ic-dns` sidecar runs on the OVN
+`icompose0` network, which bridge networks cannot reach; projects using
+`driver: bridge` on an OVN server must either set
+`x-incus-compose.dns.scope: project` (plus `dns.network` when not using the
+`default` network) or disable `ic-dns` with `x-incus-compose.dns.disabled: true`
+(`--no-dns`). See [DNS (ic-dns)](/dns). :::
+
 **Incus clusters without OVN:** When connected to an Incus cluster and using a
 `bridge` network, incus-compose automatically performs Incus's two-phase
 per-member network creation across all online cluster members (passing
@@ -77,7 +85,23 @@ volumes onto the connected cluster member.
 Mark a network as `external: true` to attach services to a pre-existing Incus
 network. incus-compose will never create or delete an external network.
 
+:::warning Managed external networks (such as `incusbr0` or
+`<project>:<network>` bridges) live in Incus's `default` project and cannot be
+used in an OVN project (`features.networks=true`), nor mixed with OVN networks
+in the same project. On an OVN-capable server, set
+`x-incus-compose.network.driver: bridge` (or pass `--network-driver bridge` on
+the first `up`), and either disable the global OVN `ic-dns`
+(`dns.disabled: true` / `--no-dns`) or run a project-scoped `ic-dns`
+(`dns.scope: project`). For cross-project traffic between OVN networks, use
+[Network ACLs](#network-acls) with `<project>:<network>` peering instead. :::
+
 ```yaml
+x-incus-compose:
+  network:
+    driver: bridge
+  dns:
+    disabled: true # or scope: project (with network: shared)
+
 networks:
   shared:
     external: true
