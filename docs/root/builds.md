@@ -229,11 +229,11 @@ builds, and give services that build different content different names. The
 `localhost/<service>` fallback has no project prefix, so relying on it means two
 projects that both have a service called `web` share one entry.
 
-:::warning Because a cache hit skips the builder entirely, editing your
-Dockerfile or build context does **not** trigger a rebuild on its own - the
-image name is unchanged, so the cached image still matches. Use `--build` to
-force one, or bump the tag in `image:`. This mirrors `docker compose`, where an
-existing image is reused until you pass `--build`. :::
+> **Warning:** Because a cache hit skips the builder entirely, editing your
+> Dockerfile or build context does **not** trigger a rebuild on its own - the
+> image name is unchanged, so the cached image still matches. Use `--build` to
+> force one, or bump the tag in `image:`. This mirrors `docker compose`, where
+> an existing image is reused until you pass `--build`.
 
 Set `no_cache: true` on the service's `build:` block to skip the shared cache
 and import straight into the project instead. The service then rebuilds in every
