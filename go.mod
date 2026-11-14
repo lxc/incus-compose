@@ -1,6 +1,6 @@
 module github.com/lxc/incus-compose
 
-go 1.27.4
+go 1.26.9
 
 require (
 	github.com/KimMachineGun/automemlimit v1.0.1
@@ -59,7 +59,6 @@ require (
 	github.com/go-fed/httpsig v1.1.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
-	github.com/google/go-github/v86 v86.0.0 // indirect
 	github.com/google/go-github/v93 v93.0.0 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect

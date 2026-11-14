@@ -17,8 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # https://stackoverflow.com/a/79780883/3368468
-  GOTOOLCHAIN: "go1.27.0+auto"
+  # Build with exactly the Go that setup-go installed; go.mod only states the minimum.
+  GOTOOLCHAIN: local
   REPORTS_DIR: reports
 
 jobs:
@@ -41,7 +41,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version: "1.27.x"
+          check-latest: true
           cache: false
 
       - name: ghcr-login

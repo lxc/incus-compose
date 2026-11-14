@@ -20,8 +20,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # https://stackoverflow.com/a/79780883/3368468
-  GOTOOLCHAIN: "go1.27.0+auto"
+  # Build with exactly the Go that setup-go installed; go.mod only states the minimum.
+  GOTOOLCHAIN: local
   REPORTS_DIR: reports
   PROJECT_ROOT: ${{ github.workspace }}
   INCUS_COMPOSE_NETWORK_UPLINK: "incusbr0"
@@ -43,7 +43,8 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version: "1.27.x"
+          check-latest: true
           cache: false
 
       - name: Incus version

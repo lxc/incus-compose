@@ -12,11 +12,13 @@ func hashTestService() types.ServiceConfig {
 	a, b := "1", "2"
 
 	return types.ServiceConfig{
-		Name:        "web",
-		Image:       "docker.io/nginx:alpine",
-		Command:     types.ShellCommand{"nginx", "-g", "daemon off;"},
-		Environment: types.MappingWithEquals{"A": &a, "B": &b},
-		Extensions:  map[string]any{"x-incus": map[string]any{"limits.cpu": "2"}},
+		Name: "web",
+		ContainerSpec: types.ContainerSpec{
+			Image:       "docker.io/nginx:alpine",
+			Command:     types.ShellCommand{"nginx", "-g", "daemon off;"},
+			Environment: types.MappingWithEquals{"A": &a, "B": &b},
+		},
+		Extensions: map[string]any{"x-incus": map[string]any{"limits.cpu": "2"}},
 	}
 }
 

@@ -646,8 +646,8 @@ func TestServiceGraphOrdersDependencies(t *testing.T) {
 
 	services := types.Services{
 		"db":  {Name: "db"},
-		"api": {Name: "api", DependsOn: types.DependsOnConfig{"db": types.ServiceDependency{}}},
-		"web": {Name: "web", DependsOn: types.DependsOnConfig{"api": types.ServiceDependency{}}},
+		"api": {Name: "api", WorkloadSpec: types.WorkloadSpec{DependsOn: types.DependsOnConfig{"db": types.ServiceDependency{}}}},
+		"web": {Name: "web", WorkloadSpec: types.WorkloadSpec{DependsOn: types.DependsOnConfig{"api": types.ServiceDependency{}}}},
 	}
 
 	order, err := ServiceGraph(services, false)
@@ -664,8 +664,8 @@ func TestServiceGraphReturnsEdgeErrors(t *testing.T) {
 
 	// Cycles are still an error.
 	_, err := ServiceGraph(types.Services{
-		"api": {Name: "api", DependsOn: types.DependsOnConfig{"web": types.ServiceDependency{}}},
-		"web": {Name: "web", DependsOn: types.DependsOnConfig{"api": types.ServiceDependency{}}},
+		"api": {Name: "api", WorkloadSpec: types.WorkloadSpec{DependsOn: types.DependsOnConfig{"web": types.ServiceDependency{}}}},
+		"web": {Name: "web", WorkloadSpec: types.WorkloadSpec{DependsOn: types.DependsOnConfig{"api": types.ServiceDependency{}}}},
 	}, false)
 	assert.Error(t, err)
 }
@@ -675,7 +675,7 @@ func TestServiceGraphSkipsMissingDependency(t *testing.T) {
 
 	// A dependency not present in the service set is silently skipped (filtered subset case).
 	order, err := ServiceGraph(types.Services{
-		"api": {Name: "api", DependsOn: types.DependsOnConfig{"db": types.ServiceDependency{}}},
+		"api": {Name: "api", WorkloadSpec: types.WorkloadSpec{DependsOn: types.DependsOnConfig{"db": types.ServiceDependency{}}}},
 	}, false)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"api"}, order)
@@ -1079,8 +1079,10 @@ func TestResourcesNetworkDriverFallsBackToBridgeWithout75Extension(t *testing.T)
 		Name: "test",
 		Services: types.Services{
 			"web": {
-				Name:  "web",
-				Image: "alpine",
+				Name: "web",
+				ContainerSpec: types.ContainerSpec{
+					Image: "alpine",
+				},
 			},
 		},
 	}
@@ -1102,8 +1104,10 @@ func TestResourcesNetworkDriverFallsBackToBridgeWithout75Extension(t *testing.T)
 			Name: "test",
 			Services: types.Services{
 				"web": {
-					Name:  "web",
-					Image: "alpine",
+					Name: "web",
+					ContainerSpec: types.ContainerSpec{
+						Image: "alpine",
+					},
 				},
 			},
 		}

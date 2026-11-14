@@ -681,9 +681,9 @@ func TestInstanceConfigChanged(t *testing.T) {
 	}{
 		{name: "no state", state: &InstanceState{}, config: "v1:a"},
 		{name: "no label", state: &InstanceState{IncusInstance: &incusApi.Instance{}}, config: "v1:a"},
-		{name: "equal", state: &InstanceState{IncusInstance: &incusApi.Instance{Config: map[string]string{ConfigHashKey: "v1:a"}}}, config: "v1:a"},
-		{name: "differ", state: &InstanceState{IncusInstance: &incusApi.Instance{Config: map[string]string{ConfigHashKey: "v1:b"}}}, config: "v1:a", want: true},
-		{name: "empty config hash", state: &InstanceState{IncusInstance: &incusApi.Instance{Config: map[string]string{ConfigHashKey: "v1:b"}}}},
+		{name: "equal", state: &InstanceState{IncusInstance: &incusApi.Instance{InstancePut: incusApi.InstancePut{Config: map[string]string{ConfigHashKey: "v1:a"}}}}, config: "v1:a"},
+		{name: "differ", state: &InstanceState{IncusInstance: &incusApi.Instance{InstancePut: incusApi.InstancePut{Config: map[string]string{ConfigHashKey: "v1:b"}}}}, config: "v1:a", want: true},
+		{name: "empty config hash", state: &InstanceState{IncusInstance: &incusApi.Instance{InstancePut: incusApi.InstancePut{Config: map[string]string{ConfigHashKey: "v1:b"}}}}},
 	}
 
 	for _, tt := range tests {

@@ -151,8 +151,10 @@ func TestNetworkACLCompilation(t *testing.T) {
 
 		service := types.ServiceConfig{
 			Name: "db",
-			Networks: map[string]*types.ServiceNetworkConfig{
-				"backend": {},
+			ContainerSpec: types.ContainerSpec{
+				Networks: map[string]*types.ServiceNetworkConfig{
+					"backend": {},
+				},
 			},
 		}
 
@@ -248,8 +250,10 @@ func TestNetworkACLCompilation(t *testing.T) {
 
 		service := types.ServiceConfig{
 			Name: "db",
-			Networks: map[string]*types.ServiceNetworkConfig{
-				"backend": {},
+			ContainerSpec: types.ContainerSpec{
+				Networks: map[string]*types.ServiceNetworkConfig{
+					"backend": {},
+				},
 			},
 		}
 
@@ -331,8 +335,10 @@ func TestNetworkACLCompilation(t *testing.T) {
 					},
 				}
 				service := types.ServiceConfig{
-					Name:     "svc",
-					Networks: map[string]*types.ServiceNetworkConfig{netName: {}},
+					Name: "svc",
+					ContainerSpec: types.ContainerSpec{
+						Networks: map[string]*types.ServiceNetworkConfig{netName: {}},
+					},
 				}
 
 				_, _, err := instanceNetworkDevices(c, p, service, "svc-1")
