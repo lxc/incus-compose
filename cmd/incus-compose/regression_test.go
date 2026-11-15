@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -9,7 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/incustrust"
 	"github.com/lxc/incus-compose/internal/testlib"
+	"github.com/lxc/incus-compose/shared"
 )
 
 // TestNoDanglingNetworksAfterDown is a regression test for the project default
@@ -184,4 +187,157 @@ func TestE2EGlobalProjectFlag(t *testing.T) {
 	locks, err := c.Resource(client.KindStorageVolume, locksVolume, &client.StorageVolumeConfig{})
 	require.NoError(t, err)
 	require.NoError(t, client.RunAction(ctx, locks, client.ActionEnsure), "the locks are not in the global project given")
+}
+
+// TestE2EUpRestrictedCertificate is a regression test for #127: `up` with a
+// certificate restricted to the projects it uses. Incus hides the server
+// config from such a certificate, which is where core.https_address lives.
+func TestE2EUpRestrictedCertificate(t *testing.T) {
+	t.Parallel()
+	testlib.SkipE2E(t)
+
+	ctx := t.Context()
+	pn := t.Name()
+	// A bridge lives in the default project, which a restricted certificate
+	// cannot create networks in, so it attaches to one the admin made. The
+	// service is named for this test: Incus refuses an instance DNS name a
+	// parallel test already holds on the shared bridge. DNS is off because
+	// its sidecar enrolls with a trust token, which only an unrestricted
+	// certificate can mint, and its wiring lives in the default project.
+	dir := testlib.WriteTempFiles(t, map[string]string{
+		"compose.yaml": `x-incus:
+  features.networks: "false"
+
+x-incus-compose:
+  dns:
+    disabled: true
+
+services:
+  restricted:
+    image: docker.io/alpine:edge
+    networks:
+      - br0
+
+networks:
+  br0:
+    external: true
+    x-incus-compose:
+      network: incusbr0
+`})
+	compose := filepath.Join(dir, "compose.yaml")
+
+	gc, err := client.NewTestClient(context.Background())
+	require.NoError(t, err)
+
+	if !gc.IsRemote() {
+		t.Skip("a restricted certificate needs an https remote")
+	}
+
+	conn, err := gc.Connection()
+	require.NoError(t, err)
+
+	_, _, err = conn.GetNetwork(ctx, incusApi.ProjectDefaultName, "incusbr0")
+	if err != nil {
+		t.Skipf("No incusbr0: %v", err)
+	}
+
+	testlib.CleanupCompose(t, pn, "-f", compose, "down", "--project")
+
+	// A restricted certificate cannot create or edit projects, so the admin
+	// hands one over the way `up` would have made it, marks included.
+	_, err = gc.EnsureProject(testlib.ProjectName(pn),
+		client.EnsureProjectWithCreate(),
+		client.EnsureProjectWithConfig(map[string]string{
+			"features.networks":     "false",
+			managedKey:              "true",
+			shared.HealthEnabledKey: "true",
+		}),
+	)
+	require.NoError(t, err)
+
+	cache := os.Getenv("INCUS_COMPOSE_IMAGE_CACHE")
+	if cache == "" {
+		cache = client.DefaultCacheProject
+	}
+
+	// The cache and the global project, which holds the image locks, are
+	// shared across projects, so the admin grants them rather than the
+	// certificate creating them.
+	for _, p := range []string{cache, defaultGlobalProject} {
+		_, err = gc.EnsureProject(p, client.EnsureProjectWithCreate())
+		require.NoError(t, err)
+	}
+
+	info, err := conn.GetConnectionInfo(ctx)
+	require.NoError(t, err)
+
+	name := "ic-test-" + client.SanitizeProjectName(pn)
+	projects := []string{client.SanitizeProjectName(testlib.ProjectName(pn)), cache, defaultGlobalProject}
+
+	t.Cleanup(func() {
+		certs, err := conn.GetCertificates(context.Background())
+		if err != nil {
+			return
+		}
+
+		for _, cert := range certs {
+			if cert.Name == name {
+				_ = conn.DeleteCertificate(context.Background(), cert.Fingerprint)
+			}
+		}
+	})
+
+	// A token operation never finishes, only its first update carries the token.
+	tokenCtx, release := context.WithCancel(ctx)
+	updates, err := conn.CreateCertificateToken(tokenCtx, incusApi.CertificatesPost{
+		CertificatePut: incusApi.CertificatePut{
+			Name:       name,
+			Type:       "client",
+			Restricted: true,
+			Projects:   projects,
+		},
+		Token: true,
+	})
+	require.NoError(t, err)
+
+	opAPI, ok := <-updates
+	release()
+	require.True(t, ok, "the certificate token operation reported nothing")
+
+	token, err := opAPI.ToCertificateAddToken()
+	require.NoError(t, err)
+
+	certDir := t.TempDir()
+	_, err = incustrust.Enroll(ctx, incustrust.Config{
+		Name:              name,
+		URL:               info.URL,
+		ServerFingerprint: info.CertificateFingerprint,
+		DataDir:           certDir,
+		Restricted:        true,
+		Projects:          projects,
+	}, token.String())
+	require.NoError(t, err)
+
+	restricted := []string{
+		"--server-url", info.URL,
+		"--client-cert-file", filepath.Join(certDir, incustrust.CertFile),
+		"--client-key-file", filepath.Join(certDir, incustrust.KeyFile),
+		"--server-fingerprint", info.CertificateFingerprint,
+		"-f", compose,
+	}
+
+	// healthd enrolls with a trust token too, which only an unrestricted
+	// certificate can mint; a hoster runs it for the project instead.
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil,
+		append(restricted, "up", "--detach", "--no-healthd")...)
+	require.NoError(t, err)
+
+	// Not --project: deleting the project is the admin's, like creating it.
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil,
+		append(restricted, "down", "--no-healthd")...)
+	require.NoError(t, err)
+
+	names, err := conn.GetInstanceNames(ctx, client.SanitizeProjectName(testlib.ProjectName(pn)), nil)
+	require.NoError(t, err)
+	require.Empty(t, names, "down left instances behind")
 }
