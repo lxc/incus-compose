@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/avast/retry-go/v5"
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/stretchr/testify/require"
 
@@ -52,8 +55,20 @@ func testProject(t *testing.T, prefix string) *client.Client {
 			t.Errorf("closing client for project %s: %v", name, err)
 		}
 
+		// Canceling the daemon abandons its calls, not the operations Incus has
+		// already started: a status write can still hold an instance lock here.
+		err = retry.New(
+			retry.Attempts(20),
+			retry.Delay(250*time.Millisecond),
+			retry.LastErrorOnly(true),
+			retry.RetryIf(func(err error) bool {
+				return errors.Is(err, iclient.ErrInstanceBusy)
+			}),
+		).Do(func() error {
+			return gc.DeleteProject(name, true)
+		})
+
 		// A test that renames its project leaves nothing behind under this one.
-		err = gc.DeleteProject(name, true)
 		if err != nil && !incusApi.StatusErrorCheck(err, http.StatusNotFound) {
 			t.Errorf("deleting project %s: %v", name, err)
 		}
