@@ -50,7 +50,8 @@ All advisory locks are stored on a dedicated Incus storage volume named `locks`
 
 The volume lives in the **global project** (`client.DefaultGlobalProject`,
 default `"incus-client"`, configurable via `ClientGlobalProject` or
-`ClientConfig.GlobalProject`).
+`ClientConfig.GlobalProject`). The CLI sets it from `--global-project`, default
+`"incus-compose"`.
 
 Locks are managed over SFTP through
 [`StorageVolume.Lock`](/developer/client/storage_volume#volumelock):
