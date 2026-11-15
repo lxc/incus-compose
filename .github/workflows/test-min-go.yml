@@ -1,0 +1,47 @@
+name: Test minimum Go
+
+# Ensures the module still builds with the minimum Go version declared in
+# go.mod (distro packagers rely on it), while releases use the latest 1.27.x.
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # Never switch toolchains; use exactly the version from go.mod.
+  GOTOOLCHAIN: local
+
+jobs:
+  test-min-go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          # Reads the `go` directive, i.e. the minimum supported version.
+          go-version-file: go.mod
+
+      - name: Go version
+        run: go version
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: |
+          go vet ./...
+          go vet -tags e2e ./...
+
+      # Most tests need a live Incus server, so only compile them here.
+      - name: Compile tests
+        run: |
+          go test -count=1 -run '^$' ./...
+          go test -tags e2e -count=1 -run '^$' ./...

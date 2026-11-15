@@ -45,11 +45,13 @@ func TestDNSIPAddresses_FromDevicesFallback(t *testing.T) {
 
 	state := &client.InstanceState{
 		IncusInstance: &incusApi.Instance{
-			Devices: map[string]map[string]string{
-				"eth0": {
-					"type":         "nic",
-					"ipv4.address": "10.100.0.53/24",
-					"ipv6.address": "fd42::53/64",
+			InstancePut: incusApi.InstancePut{
+				Devices: map[string]map[string]string{
+					"eth0": {
+						"type":         "nic",
+						"ipv4.address": "10.100.0.53/24",
+						"ipv6.address": "fd42::53/64",
+					},
 				},
 			},
 		},

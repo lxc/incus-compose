@@ -85,8 +85,10 @@ func TestFilterResources(t *testing.T) {
 		Services: types.Services{
 			"web": types.ServiceConfig{
 				Name: "web",
-				DependsOn: types.DependsOnConfig{
-					"db": types.ServiceDependency{Condition: types.ServiceConditionStarted},
+				WorkloadSpec: types.WorkloadSpec{
+					DependsOn: types.DependsOnConfig{
+						"db": types.ServiceDependency{Condition: types.ServiceConditionStarted},
+					},
 				},
 			},
 			"db": types.ServiceConfig{Name: "db"},

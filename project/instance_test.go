@@ -89,24 +89,26 @@ func TestCheckEntrypoint(t *testing.T) {
 
 	// Both explicitly empty leaves nothing to exec.
 	err := checkEntrypoint(types.ServiceConfig{
-		Name:       "web",
-		Entrypoint: types.ShellCommand{},
+		Name:          "web",
+		ContainerSpec: types.ContainerSpec{Entrypoint: types.ShellCommand{}},
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "web")
 
 	// An explicitly empty entrypoint is fine as long as a command remains.
 	require.NoError(t, checkEntrypoint(types.ServiceConfig{
-		Name:       "web",
-		Entrypoint: types.ShellCommand{},
-		Command:    types.ShellCommand{"httpd"},
+		Name: "web",
+		ContainerSpec: types.ContainerSpec{
+			Entrypoint: types.ShellCommand{},
+			Command:    types.ShellCommand{"httpd"},
+		},
 	}))
 
 	// An unset entrypoint is never an error, with or without a command.
 	require.NoError(t, checkEntrypoint(types.ServiceConfig{Name: "web"}))
 	require.NoError(t, checkEntrypoint(types.ServiceConfig{
-		Name:    "web",
-		Command: types.ShellCommand{"httpd"},
+		Name:          "web",
+		ContainerSpec: types.ContainerSpec{Command: types.ShellCommand{"httpd"}},
 	}))
 }
 
@@ -419,22 +421,26 @@ func TestInstanceConfig(t *testing.T) {
 	val := "bar"
 	retries := uint64(3)
 	service := types.ServiceConfig{
-		Name:        "web",
-		Environment: types.MappingWithEquals{"FOO": &val, "SKIP": nil},
-		Labels:      types.Labels{"com.example": "x"},
-		Command:     types.ShellCommand{"/bin/sh", "-c", "echo hi"},
-		Restart:     "always",
-		DNS:         types.StringList{"8.8.8.8", "1.1.1.1"},
-		DNSSearch:   types.StringList{"example.com"},
-		DomainName:  "example.com",
+		Name: "web",
+		ContainerSpec: types.ContainerSpec{
+			Environment: types.MappingWithEquals{"FOO": &val, "SKIP": nil},
+			Labels:      types.Labels{"com.example": "x"},
+			Command:     types.ShellCommand{"/bin/sh", "-c", "echo hi"},
+			DNS:         types.StringList{"8.8.8.8", "1.1.1.1"},
+			DNSSearch:   types.StringList{"example.com"},
+			DomainName:  "example.com",
+		},
+		WorkloadSpec: types.WorkloadSpec{
+			HealthCheck: &types.HealthCheckConfig{
+				Test:    types.HealthCheckTest{"CMD", "curl", "-f", "http://localhost"},
+				Retries: &retries,
+			},
+		},
+		Restart: "always",
 		Deploy: &types.DeployConfig{
 			Resources: types.Resources{
 				Limits: &types.Resource{NanoCPUs: 2, MemoryBytes: 512 << 20},
 			},
-		},
-		HealthCheck: &types.HealthCheckConfig{
-			Test:    types.HealthCheckTest{"CMD", "curl", "-f", "http://localhost"},
-			Retries: &retries,
 		},
 	}
 
@@ -522,9 +528,11 @@ func TestInstanceConfigHealthCheckDisable(t *testing.T) {
 			t.Parallel()
 
 			config, err := instanceConfig(c, types.ServiceConfig{
-				Name:        "web",
-				Restart:     tt.restart,
-				HealthCheck: tt.check,
+				Name:    "web",
+				Restart: tt.restart,
+				WorkloadSpec: types.WorkloadSpec{
+					HealthCheck: tt.check,
+				},
 			}, "", nil)
 			require.NoError(t, err)
 
@@ -693,9 +701,11 @@ func TestInstanceConfigResourceLimits(t *testing.T) {
 			t.Parallel()
 
 			service := types.ServiceConfig{
-				Name:     "web",
-				CPUS:     tt.cpus,
-				MemLimit: tt.memLimit,
+				Name: "web",
+				ContainerSpec: types.ContainerSpec{
+					CPUS:     tt.cpus,
+					MemLimit: tt.memLimit,
+				},
 			}
 			if tt.limits != nil {
 				service.Deploy = &types.DeployConfig{
@@ -730,9 +740,11 @@ func TestInstanceConfigSysctls(t *testing.T) {
 
 	service := types.ServiceConfig{
 		Name: "web",
-		Sysctls: types.Mapping{
-			"net.ipv4.conf.all.src_valid_mark": "1",
-			"net.ipv6.conf.all.disable_ipv6":   "0",
+		ContainerSpec: types.ContainerSpec{
+			Sysctls: types.Mapping{
+				"net.ipv4.conf.all.src_valid_mark": "1",
+				"net.ipv6.conf.all.disable_ipv6":   "0",
+			},
 		},
 	}
 
@@ -789,8 +801,10 @@ func TestInstanceDependencyWaits(t *testing.T) {
 	t.Run("scale from options", func(t *testing.T) {
 		t.Parallel()
 		p := &types.Project{Services: types.Services{"db": {Name: "db"}}}
-		service := types.ServiceConfig{Name: "web", DependsOn: types.DependsOnConfig{
-			"db": {Condition: types.ServiceConditionHealthy},
+		service := types.ServiceConfig{Name: "web", WorkloadSpec: types.WorkloadSpec{
+			DependsOn: types.DependsOnConfig{
+				"db": {Condition: types.ServiceConditionHealthy},
+			},
 		}}
 		deps := instanceDependencyWaits(nil, p, service, &ResourcesOptions{Scale: map[string]int{"db": 2}})
 		assert.Equal(t, map[string]string{
@@ -803,8 +817,10 @@ func TestInstanceDependencyWaits(t *testing.T) {
 		t.Parallel()
 		reps := 3
 		p := &types.Project{Services: types.Services{"db": {Name: "db", Deploy: &types.DeployConfig{Replicas: &reps}}}}
-		service := types.ServiceConfig{Name: "web", DependsOn: types.DependsOnConfig{
-			"db": {Condition: types.ServiceConditionHealthy},
+		service := types.ServiceConfig{Name: "web", WorkloadSpec: types.WorkloadSpec{
+			DependsOn: types.DependsOnConfig{
+				"db": {Condition: types.ServiceConditionHealthy},
+			},
 		}}
 		deps := instanceDependencyWaits(nil, p, service, &ResourcesOptions{})
 		assert.Equal(t, map[string]string{
@@ -817,8 +833,10 @@ func TestInstanceDependencyWaits(t *testing.T) {
 	t.Run("container name", func(t *testing.T) {
 		t.Parallel()
 		p := &types.Project{Services: types.Services{"db": {Name: "db", ContainerName: "mydb"}}}
-		service := types.ServiceConfig{Name: "web", DependsOn: types.DependsOnConfig{
-			"db": {Condition: types.ServiceConditionHealthy},
+		service := types.ServiceConfig{Name: "web", WorkloadSpec: types.WorkloadSpec{
+			DependsOn: types.DependsOnConfig{
+				"db": {Condition: types.ServiceConditionHealthy},
+			},
 		}}
 		deps := instanceDependencyWaits(nil, p, service, &ResourcesOptions{})
 		assert.Equal(t, map[string]string{"mydb": client.HealthStatusHealthy}, deps)
@@ -827,8 +845,10 @@ func TestInstanceDependencyWaits(t *testing.T) {
 	t.Run("non-healthy condition skipped", func(t *testing.T) {
 		t.Parallel()
 		p := &types.Project{Services: types.Services{"db": {Name: "db"}}}
-		service := types.ServiceConfig{Name: "web", DependsOn: types.DependsOnConfig{
-			"db": {Condition: types.ServiceConditionStarted},
+		service := types.ServiceConfig{Name: "web", WorkloadSpec: types.WorkloadSpec{
+			DependsOn: types.DependsOnConfig{
+				"db": {Condition: types.ServiceConditionStarted},
+			},
 		}}
 		assert.Empty(t, instanceDependencyWaits(nil, p, service, &ResourcesOptions{}))
 	})
@@ -848,7 +868,7 @@ func TestInstanceSecrets(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "secret.txt")
 		require.NoError(t, os.WriteFile(path, []byte("s3cr3t"), 0o600))
 		p := &types.Project{Secrets: types.Secrets{"db_pw": {File: path}}}
-		service := types.ServiceConfig{Name: "web", Secrets: []types.ServiceSecretConfig{{Source: "db_pw", Target: "db_pw"}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Secrets: []types.ServiceSecretConfig{{Source: "db_pw", Target: "db_pw"}}}}
 
 		secrets, err := instanceSecrets(p, service)
 		require.NoError(t, err)
@@ -861,7 +881,7 @@ func TestInstanceSecrets(t *testing.T) {
 	t.Run("environment source", func(t *testing.T) {
 		// Not parallel: uses t.Setenv.
 		p := &types.Project{Secrets: types.Secrets{"s": {Environment: "MY_SECRET"}}, Environment: map[string]string{"MY_SECRET": "envval"}}
-		service := types.ServiceConfig{Name: "web", Secrets: []types.ServiceSecretConfig{{Source: "s", Target: "s"}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Secrets: []types.ServiceSecretConfig{{Source: "s", Target: "s"}}}}
 
 		secrets, err := instanceSecrets(p, service)
 		require.NoError(t, err)
@@ -871,7 +891,7 @@ func TestInstanceSecrets(t *testing.T) {
 
 	t.Run("undefined secret", func(t *testing.T) {
 		t.Parallel()
-		service := types.ServiceConfig{Name: "web", Secrets: []types.ServiceSecretConfig{{Source: "missing"}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Secrets: []types.ServiceSecretConfig{{Source: "missing"}}}}
 		_, err := instanceSecrets(&types.Project{}, service)
 		require.Error(t, err)
 	})
@@ -879,7 +899,7 @@ func TestInstanceSecrets(t *testing.T) {
 	t.Run("no source", func(t *testing.T) {
 		t.Parallel()
 		p := &types.Project{Secrets: types.Secrets{"s": {}}}
-		service := types.ServiceConfig{Name: "web", Secrets: []types.ServiceSecretConfig{{Source: "s"}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Secrets: []types.ServiceSecretConfig{{Source: "s"}}}}
 		_, err := instanceSecrets(p, service)
 		require.Error(t, err)
 	})
@@ -887,7 +907,7 @@ func TestInstanceSecrets(t *testing.T) {
 	t.Run("missing file", func(t *testing.T) {
 		t.Parallel()
 		p := &types.Project{Secrets: types.Secrets{"s": {File: filepath.Join(t.TempDir(), "nope")}}}
-		service := types.ServiceConfig{Name: "web", Secrets: []types.ServiceSecretConfig{{Source: "s"}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Secrets: []types.ServiceSecretConfig{{Source: "s"}}}}
 		_, err := instanceSecrets(p, service)
 		require.Error(t, err)
 	})
@@ -899,7 +919,7 @@ func TestInstanceConfigs(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "config.txt")
 		require.NoError(t, os.WriteFile(path, []byte("config-value"), 0o644))
 		p := &types.Project{Configs: types.Configs{"app": {File: path}}}
-		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "app", Target: "/etc/app.conf"}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Configs: []types.ServiceConfigObjConfig{{Source: "app", Target: "/etc/app.conf"}}}}
 
 		configs, err := instanceConfigs(p, service)
 		require.NoError(t, err)
@@ -911,7 +931,7 @@ func TestInstanceConfigs(t *testing.T) {
 	t.Run("content source", func(t *testing.T) {
 		t.Parallel()
 		p := &types.Project{Configs: types.Configs{"app": {Content: "inline-config"}}}
-		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "app", Target: "/etc/app.conf"}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Configs: []types.ServiceConfigObjConfig{{Source: "app", Target: "/etc/app.conf"}}}}
 
 		configs, err := instanceConfigs(p, service)
 		require.NoError(t, err)
@@ -921,7 +941,7 @@ func TestInstanceConfigs(t *testing.T) {
 
 	t.Run("environment source", func(t *testing.T) {
 		p := &types.Project{Configs: types.Configs{"app": {Environment: "MY_CONFIG", Content: "env-value"}}}
-		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "app", Target: "/etc/app.conf"}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Configs: []types.ServiceConfigObjConfig{{Source: "app", Target: "/etc/app.conf"}}}}
 
 		configs, err := instanceConfigs(p, service)
 		require.NoError(t, err)
@@ -931,14 +951,14 @@ func TestInstanceConfigs(t *testing.T) {
 
 	t.Run("environment not found", func(t *testing.T) {
 		p := &types.Project{Configs: types.Configs{"app": {Environment: "MISSING"}}}
-		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "app"}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Configs: []types.ServiceConfigObjConfig{{Source: "app"}}}}
 		_, err := instanceConfigs(p, service)
 		require.Error(t, err)
 	})
 
 	t.Run("undefined config", func(t *testing.T) {
 		t.Parallel()
-		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "missing"}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Configs: []types.ServiceConfigObjConfig{{Source: "missing"}}}}
 		_, err := instanceConfigs(&types.Project{}, service)
 		require.Error(t, err)
 	})
@@ -946,7 +966,7 @@ func TestInstanceConfigs(t *testing.T) {
 	t.Run("no source", func(t *testing.T) {
 		t.Parallel()
 		p := &types.Project{Configs: types.Configs{"app": {}}}
-		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "app"}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Configs: []types.ServiceConfigObjConfig{{Source: "app"}}}}
 		_, err := instanceConfigs(p, service)
 		require.Error(t, err)
 	})
@@ -954,7 +974,7 @@ func TestInstanceConfigs(t *testing.T) {
 	t.Run("missing file", func(t *testing.T) {
 		t.Parallel()
 		p := &types.Project{Configs: types.Configs{"app": {File: filepath.Join(t.TempDir(), "nope")}}}
-		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "app"}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Configs: []types.ServiceConfigObjConfig{{Source: "app"}}}}
 		_, err := instanceConfigs(p, service)
 		require.Error(t, err)
 	})
@@ -964,7 +984,7 @@ func TestInstanceConfigs(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "config.txt")
 		require.NoError(t, os.WriteFile(path, []byte("val"), 0o644))
 		p := &types.Project{Configs: types.Configs{"app": {File: path}}}
-		service := types.ServiceConfig{Name: "web", Configs: []types.ServiceConfigObjConfig{{Source: "app"}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Configs: []types.ServiceConfigObjConfig{{Source: "app"}}}}
 
 		configs, err := instanceConfigs(p, service)
 		require.NoError(t, err)
@@ -982,7 +1002,7 @@ func TestServiceToInstanceUser(t *testing.T) {
 	// client would hand every subtest the same cached "web-1" instance.
 	build := func(user string) (*client.Instance, error) {
 		c := client.NewOfflineClient(t.Context(), "test")
-		service := types.ServiceConfig{Name: "web", Image: "docker.io/nginx:alpine", User: user}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Image: "docker.io/nginx:alpine", User: user}}
 		p := &types.Project{Services: types.Services{"web": service}}
 		inst, _, err := serviceToInstance(c, p, "web", opts, 1, 1)
 		return inst, err
@@ -1028,7 +1048,7 @@ func TestServiceToInstanceWorkingDir(t *testing.T) {
 
 	build := func(dir string) (*client.Instance, error) {
 		c := client.NewOfflineClient(t.Context(), "test")
-		service := types.ServiceConfig{Name: "web", Image: "docker.io/nginx:alpine", WorkingDir: dir}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Image: "docker.io/nginx:alpine", WorkingDir: dir}}
 		p := &types.Project{Services: types.Services{"web": service}}
 		inst, _, err := serviceToInstance(c, p, "web", opts, 1, 1)
 		return inst, err
@@ -1059,9 +1079,13 @@ func TestServiceToInstancePorts(t *testing.T) {
 		t.Parallel()
 		c := client.NewOfflineClient(t.Context(), "test")
 		service := types.ServiceConfig{
-			Name:  "web",
-			Image: "docker.io/nginx:alpine",
-			Ports: []types.ServicePortConfig{{Published: "8080", Target: 80}},
+			Name: "web",
+			ContainerSpec: types.ContainerSpec{
+				Image: "docker.io/nginx:alpine",
+			},
+			WorkloadSpec: types.WorkloadSpec{
+				Ports: []types.ServicePortConfig{{Published: "8080", Target: 80}},
+			},
 		}
 		p := &types.Project{Services: types.Services{"web": service}}
 		inst, _, err := serviceToInstance(c, p, "web", &ResourcesOptions{}, 1, 1)
@@ -1074,7 +1098,7 @@ func TestServiceToInstancePorts(t *testing.T) {
 	t.Run("no ports succeeds on pre-7.0 server", func(t *testing.T) {
 		t.Parallel()
 		c := client.NewOfflineClient(t.Context(), "test")
-		service := types.ServiceConfig{Name: "web", Image: "docker.io/nginx:alpine"}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Image: "docker.io/nginx:alpine"}}
 		p := &types.Project{Services: types.Services{"web": service}}
 		_, _, err := serviceToInstance(c, p, "web", &ResourcesOptions{}, 1, 1)
 		require.NoError(t, err)
@@ -1237,7 +1261,7 @@ func TestInstanceImage(t *testing.T) {
 
 	t.Run("pull", func(t *testing.T) {
 		t.Parallel()
-		res, err := instanceImage(c, types.ServiceConfig{Name: "web", Image: "docker.io/nginx:alpine"})
+		res, err := instanceImage(c, types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Image: "docker.io/nginx:alpine"}})
 		require.NoError(t, err)
 		img, ok := res.(*client.Image)
 		require.True(t, ok)
@@ -1247,7 +1271,7 @@ func TestInstanceImage(t *testing.T) {
 
 	t.Run("build defaults image name", func(t *testing.T) {
 		t.Parallel()
-		res, err := instanceImage(c, types.ServiceConfig{Name: "web", Build: &types.BuildConfig{Context: "."}})
+		res, err := instanceImage(c, types.ServiceConfig{Name: "web", WorkloadSpec: types.WorkloadSpec{Build: &types.BuildConfig{Context: "."}}})
 		require.NoError(t, err)
 		img, ok := res.(*client.Image)
 		require.True(t, ok)
@@ -1257,8 +1281,10 @@ func TestInstanceImage(t *testing.T) {
 	t.Run("relative dockerfile resolves against the context", func(t *testing.T) {
 		t.Parallel()
 		res, err := instanceImage(c, types.ServiceConfig{
-			Name:  "dfrel",
-			Build: &types.BuildConfig{Context: "/ctx", Dockerfile: "Dockerfile"},
+			Name: "dfrel",
+			WorkloadSpec: types.WorkloadSpec{
+				Build: &types.BuildConfig{Context: "/ctx", Dockerfile: "Dockerfile"},
+			},
 		})
 		require.NoError(t, err)
 		img, ok := res.(*client.Image)
@@ -1270,8 +1296,10 @@ func TestInstanceImage(t *testing.T) {
 	t.Run("absolute dockerfile is left alone", func(t *testing.T) {
 		t.Parallel()
 		res, err := instanceImage(c, types.ServiceConfig{
-			Name:  "dfabs",
-			Build: &types.BuildConfig{Context: "/ctx", Dockerfile: "/elsewhere/Dockerfile"},
+			Name: "dfabs",
+			WorkloadSpec: types.WorkloadSpec{
+				Build: &types.BuildConfig{Context: "/ctx", Dockerfile: "/elsewhere/Dockerfile"},
+			},
 		})
 		require.NoError(t, err)
 		img, ok := res.(*client.Image)
@@ -1283,8 +1311,10 @@ func TestInstanceImage(t *testing.T) {
 	t.Run("empty dockerfile stays empty", func(t *testing.T) {
 		t.Parallel()
 		res, err := instanceImage(c, types.ServiceConfig{
-			Name:  "dfnone",
-			Build: &types.BuildConfig{Context: "/ctx"},
+			Name: "dfnone",
+			WorkloadSpec: types.WorkloadSpec{
+				Build: &types.BuildConfig{Context: "/ctx"},
+			},
 		})
 		require.NoError(t, err)
 		img, ok := res.(*client.Image)
@@ -1296,8 +1326,10 @@ func TestInstanceImage(t *testing.T) {
 	t.Run("build with multiple platforms errors but still builds image", func(t *testing.T) {
 		t.Parallel()
 		res, err := instanceImage(c, types.ServiceConfig{
-			Name:  "web",
-			Build: &types.BuildConfig{Context: ".", Platforms: []string{"linux/amd64", "linux/arm64"}},
+			Name: "web",
+			WorkloadSpec: types.WorkloadSpec{
+				Build: &types.BuildConfig{Context: ".", Platforms: []string{"linux/amd64", "linux/arm64"}},
+			},
 		})
 		require.Error(t, err)
 		assert.NotNil(t, res)
@@ -1306,13 +1338,17 @@ func TestInstanceImage(t *testing.T) {
 	t.Run("custom builder x-incus-compose", func(t *testing.T) {
 		t.Parallel()
 		res, err := instanceImage(c, types.ServiceConfig{
-			Name:  "nixservice",
-			Image: "ghcr.io/nix-containers/images/valkey:latest",
-			Build: &types.BuildConfig{
-				Extensions: types.Extensions{
-					"x-incus-compose": map[string]any{
-						"builder": "nix2container",
-						"args":    []string{"github:nix-containers/images#valkey"},
+			Name: "nixservice",
+			ContainerSpec: types.ContainerSpec{
+				Image: "ghcr.io/nix-containers/images/valkey:latest",
+			},
+			WorkloadSpec: types.WorkloadSpec{
+				Build: &types.BuildConfig{
+					Extensions: types.Extensions{
+						"x-incus-compose": map[string]any{
+							"builder": "nix2container",
+							"args":    []string{"github:nix-containers/images#valkey"},
+						},
 					},
 				},
 			},
@@ -1342,9 +1378,11 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		testlib.SkipNoExtension(t, shared.Incus73Extension, "For `gateway=none` on a network you need at least incus 7.3 or 7.0.2 LTS")
 
 		p := &types.Project{Networks: types.Networks{"frontend": {}}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"frontend": {Ipv4Address: "10.0.0.5",
-				Extensions: types.Extensions{"x-incus": map[string]any{"ipv4.gateway": "10.0.0.1"}},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"frontend": {Ipv4Address: "10.0.0.5",
+					Extensions: types.Extensions{"x-incus": map[string]any{"ipv4.gateway": "10.0.0.1"}},
+				},
 			},
 		}}
 
@@ -1376,9 +1414,11 @@ func TestInstanceNetworkDevices(t *testing.T) {
 			}}},
 			"backend": {},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"frontend": {},
-			"backend":  {},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"frontend": {},
+				"backend":  {},
+			},
 		}}
 
 		devices, _, err := instanceNetworkDevices(c, p, service, "")
@@ -1392,8 +1432,10 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		p := &types.Project{Networks: types.Networks{
 			"frontend": {},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"frontend": {Ipv4Address: "10.0.0.5"},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"frontend": {Ipv4Address: "10.0.0.5"},
+			},
 		}}
 
 		_, _, err := instanceNetworkDevices(c, p, service, "")
@@ -1408,10 +1450,12 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		p := &types.Project{Networks: types.Networks{
 			"frontend": {},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"frontend": {
-				Ipv4Address: "10.0.0.5",
-				Extensions:  types.Extensions{"x-incus-compose": map[string]any{"gateway": false}},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"frontend": {
+					Ipv4Address: "10.0.0.5",
+					Extensions:  types.Extensions{"x-incus-compose": map[string]any{"gateway": false}},
+				},
 			},
 		}}
 
@@ -1436,8 +1480,10 @@ func TestInstanceNetworkDevices(t *testing.T) {
 				},
 			},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"ovn-backend": {},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"ovn-backend": {},
+			},
 		}}
 
 		devices, resources, err := instanceNetworkDevices(c, p, service, "")
@@ -1465,8 +1511,10 @@ func TestInstanceNetworkDevices(t *testing.T) {
 				},
 			},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"ovn-uplink-net": {},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"ovn-uplink-net": {},
+			},
 		}}
 
 		devices, resources, err := instanceNetworkDevices(c, p, service, "")
@@ -1498,8 +1546,10 @@ func TestInstanceNetworkDevices(t *testing.T) {
 				},
 			},
 		}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"ovn-top-uplink-net": {},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"ovn-top-uplink-net": {},
+			},
 		}}
 
 		devices, resources, err := instanceNetworkDevices(c, p, service, "")
@@ -1531,11 +1581,13 @@ func TestInstanceNetworkDevices(t *testing.T) {
 				},
 			},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"ovn-backend": {
-				Extensions: types.Extensions{
-					"x-incus": map[string]any{
-						"security.acls": "nic-acl",
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"ovn-backend": {
+					Extensions: types.Extensions{
+						"x-incus": map[string]any{
+							"security.acls": "nic-acl",
+						},
 					},
 				},
 			},
@@ -1569,8 +1621,10 @@ func TestInstanceNetworkDevices(t *testing.T) {
 				},
 			},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"backend": {},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"backend": {},
+			},
 		}}
 
 		devices, resources, err := instanceNetworkDevices(offlineClient, p, service, "")
@@ -1601,8 +1655,10 @@ func TestInstanceNetworkDevices(t *testing.T) {
 				},
 			},
 		}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"bridge-top-uplink-net": {},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"bridge-top-uplink-net": {},
+			},
 		}}
 
 		devices, resources, err := instanceNetworkDevices(c, p, service, "")
@@ -1631,8 +1687,10 @@ func TestInstanceNetworkDevices(t *testing.T) {
 				},
 			},
 		}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"bridge-xic-uplink-net": {},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"bridge-xic-uplink-net": {},
+			},
 		}}
 
 		devices, resources, err := instanceNetworkDevices(c, p, service, "")
@@ -1652,10 +1710,12 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		p := &types.Project{Networks: types.Networks{
 			"frontend": {},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"frontend": {
-				Ipv4Address: "10.0.0.5",
-				Extensions:  types.Extensions{"x-incus-compose": map[string]any{"gateway": true}},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"frontend": {
+					Ipv4Address: "10.0.0.5",
+					Extensions:  types.Extensions{"x-incus-compose": map[string]any{"gateway": true}},
+				},
 			},
 		}}
 
@@ -1673,10 +1733,12 @@ func TestInstanceNetworkDevices(t *testing.T) {
 				"ipv4.address": "10.0.1.1/24",
 			}}},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"frontend": {
-				Ipv4Address: "10.0.1.5",
-				Extensions:  types.Extensions{"x-incus-compose": map[string]any{"network": "somebridge"}},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"frontend": {
+					Ipv4Address: "10.0.1.5",
+					Extensions:  types.Extensions{"x-incus-compose": map[string]any{"network": "somebridge"}},
+				},
 			},
 		}}
 
@@ -1695,10 +1757,12 @@ func TestInstanceNetworkDevices(t *testing.T) {
 				"ipv4.address": "10.0.1.1/24",
 			}}},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"frontend": {
-				Ipv4Address: "10.0.1.5",
-				Extensions:  types.Extensions{"x-incus-compose": map[string]any{"internal": true}},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"frontend": {
+					Ipv4Address: "10.0.1.5",
+					Extensions:  types.Extensions{"x-incus-compose": map[string]any{"internal": true}},
+				},
 			},
 		}}
 
@@ -1713,8 +1777,10 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		testlib.SkipNoExtension(t, shared.Incus73Extension, "For `gateway=none` on a network you need at least incus 7.3 or 7.0.2 LTS")
 
 		p := &types.Project{Networks: types.Networks{"isolated": {}}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"isolated": {Extensions: types.Extensions{"x-incus-compose": map[string]any{"internal": true}}},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"isolated": {Extensions: types.Extensions{"x-incus-compose": map[string]any{"internal": true}}},
+			},
 		}}
 
 		devices, _, err := instanceNetworkDevices(c, p, service, "")
@@ -1729,8 +1795,10 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		t.Parallel()
 
 		p := &types.Project{Networks: types.Networks{"frontend": {}}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"frontend": {},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"frontend": {},
+			},
 		}}
 
 		devices, _, err := instanceNetworkDevices(c, p, service, "")
@@ -1746,8 +1814,10 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		p := &types.Project{Networks: types.Networks{
 			"ext-named": {External: true, Name: "incusbr0"},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"ext-named": {},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"ext-named": {},
+			},
 		}}
 
 		_, resources, err := instanceNetworkDevices(c, p, service, "")
@@ -1762,8 +1832,10 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		p := &types.Project{Name: "proj", Networks: types.Networks{
 			"man-named": {Name: "custom-net"},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"man-named": {},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"man-named": {},
+			},
 		}}
 
 		_, resources, err := instanceNetworkDevices(c, p, service, "")
@@ -1782,8 +1854,10 @@ func TestInstanceNetworkDevices(t *testing.T) {
 				Extensions: types.Extensions{"x-incus-compose": map[string]any{"network": "man-bridge"}},
 			},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"man-plain": {},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"man-plain": {},
+			},
 		}}
 
 		_, resources, err := instanceNetworkDevices(c, p, service, "")
@@ -1803,8 +1877,10 @@ func TestInstanceNetworkDevices(t *testing.T) {
 				Extensions: types.Extensions{"x-incus-compose": map[string]any{"network": "ext-bridge"}},
 			},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"ext-plain": {},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"ext-plain": {},
+			},
 		}}
 
 		_, resources, err := instanceNetworkDevices(c, p, service, "")
@@ -1820,14 +1896,16 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		p := &types.Project{Networks: types.Networks{
 			"frontend": {},
 		}}
-		service := types.ServiceConfig{Name: "web", Networks: map[string]*types.ServiceNetworkConfig{
-			"frontend": {
-				Ipv4Address: "10.0.0.5",
-				Ipv6Address: "fd42::5",
-				Extensions: types.Extensions{"x-incus": map[string]any{
-					"ipv4.gateway": "10.0.0.1",
-					"ipv6.gateway": "fd42::1",
-				}},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"frontend": {
+					Ipv4Address: "10.0.0.5",
+					Ipv6Address: "fd42::5",
+					Extensions: types.Extensions{"x-incus": map[string]any{
+						"ipv4.gateway": "10.0.0.1",
+						"ipv6.gateway": "fd42::1",
+					}},
+				},
 			},
 		}}
 
@@ -1858,9 +1936,11 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		}
 		service := types.ServiceConfig{
 			Name: "web",
-			Networks: map[string]*types.ServiceNetworkConfig{
-				"lan": {
-					Ipv4Address: "192.168.178.10",
+			ContainerSpec: types.ContainerSpec{
+				Networks: map[string]*types.ServiceNetworkConfig{
+					"lan": {
+						Ipv4Address: "192.168.178.10",
+					},
 				},
 			},
 		}
@@ -1896,12 +1976,14 @@ func TestInstanceProxyDevices(t *testing.T) {
 
 	t.Run("published port with nat no static IP", func(t *testing.T) {
 		t.Parallel()
-		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
-			{
-				Published:  "8080",
-				Target:     80,
-				Protocol:   "tcp",
-				Extensions: types.Extensions{"x-incus-compose": struct{ Nat bool }{Nat: true}},
+		service := types.ServiceConfig{Name: "web", WorkloadSpec: types.WorkloadSpec{
+			Ports: []types.ServicePortConfig{
+				{
+					Published:  "8080",
+					Target:     80,
+					Protocol:   "tcp",
+					Extensions: types.Extensions{"x-incus-compose": struct{ Nat bool }{Nat: true}},
+				},
 			},
 		}}
 
@@ -1921,12 +2003,14 @@ func TestInstanceProxyDevices(t *testing.T) {
 		t.Parallel()
 		testlib.SkipNoExtension(t, shared.Incus73Extension, "For `gateway=none` on a network you need at least incus 7.3 or 7.0.2 LTS")
 
-		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
-			{
-				Published:  "8080",
-				Target:     80,
-				Protocol:   "tcp",
-				Extensions: types.Extensions{"x-incus-compose": struct{ Nat bool }{Nat: true}},
+		service := types.ServiceConfig{Name: "web", WorkloadSpec: types.WorkloadSpec{
+			Ports: []types.ServicePortConfig{
+				{
+					Published:  "8080",
+					Target:     80,
+					Protocol:   "tcp",
+					Extensions: types.Extensions{"x-incus-compose": struct{ Nat bool }{Nat: true}},
+				},
 			},
 		}}
 
@@ -1956,8 +2040,10 @@ func TestInstanceProxyDevices(t *testing.T) {
 
 	t.Run("published port without nat", func(t *testing.T) {
 		t.Parallel()
-		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
-			{Published: "8080", Target: 80, Protocol: "tcp"},
+		service := types.ServiceConfig{Name: "web", WorkloadSpec: types.WorkloadSpec{
+			Ports: []types.ServicePortConfig{
+				{Published: "8080", Target: 80, Protocol: "tcp"},
+			},
 		}}
 
 		devices, err := instanceProxyDevices(c, []client.InstanceDevice{}, service)
@@ -1974,8 +2060,10 @@ func TestInstanceProxyDevices(t *testing.T) {
 
 	t.Run("bad published port", func(t *testing.T) {
 		t.Parallel()
-		service := types.ServiceConfig{Name: "web", Ports: []types.ServicePortConfig{
-			{Published: "not-a-port", Target: 80},
+		service := types.ServiceConfig{Name: "web", WorkloadSpec: types.WorkloadSpec{
+			Ports: []types.ServicePortConfig{
+				{Published: "not-a-port", Target: 80},
+			},
 		}}
 		_, err := instanceProxyDevices(c, []client.InstanceDevice{}, service)
 		require.Error(t, err)
@@ -1998,8 +2086,10 @@ func TestInstanceVolumeDevices(t *testing.T) {
 	t.Run("named volume", func(t *testing.T) {
 		t.Parallel()
 		p := &types.Project{Volumes: types.Volumes{"data": {}}}
-		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{Type: "volume", Source: "data", Target: "/data"},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Volumes: []types.ServiceVolumeConfig{
+				{Type: "volume", Source: "data", Target: "/data"},
+			},
 		}}
 
 		devices, files, resources, err := instanceVolumeDevices(c, p, service, nil, "", "")
@@ -2016,8 +2106,10 @@ func TestInstanceVolumeDevices(t *testing.T) {
 		p := &types.Project{Volumes: types.Volumes{"data": {
 			Extensions: types.Extensions{"x-incus": map[string]any{"size": "5GiB"}},
 		}}}
-		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{Type: "volume", Source: "data", Target: "/data"},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Volumes: []types.ServiceVolumeConfig{
+				{Type: "volume", Source: "data", Target: "/data"},
+			},
 		}}
 
 		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, "", "")
@@ -2033,8 +2125,10 @@ func TestInstanceVolumeDevices(t *testing.T) {
 		p := &types.Project{Volumes: types.Volumes{"data": {
 			Extensions: types.Extensions{"x-incus": map[string]any{"security.shifted": "false"}},
 		}}}
-		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{Type: "volume", Source: "data", Target: "/data"},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Volumes: []types.ServiceVolumeConfig{
+				{Type: "volume", Source: "data", Target: "/data"},
+			},
 		}}
 
 		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, "", "")
@@ -2051,10 +2145,12 @@ func TestInstanceVolumeDevices(t *testing.T) {
 		p := &types.Project{Volumes: types.Volumes{"data": {
 			Extensions: types.Extensions{"x-incus": map[string]any{"security.shifted": "true"}},
 		}}}
-		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{
-				Type: "volume", Source: "data", Target: "/data",
-				Extensions: types.Extensions{"x-incus": map[string]any{"security.shifted": "false"}},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Volumes: []types.ServiceVolumeConfig{
+				{
+					Type: "volume", Source: "data", Target: "/data",
+					Extensions: types.Extensions{"x-incus": map[string]any{"security.shifted": "false"}},
+				},
 			},
 		}}
 
@@ -2073,8 +2169,10 @@ func TestInstanceVolumeDevices(t *testing.T) {
 		p := &types.Project{Volumes: types.Volumes{"data": {
 			Extensions: types.Extensions{"x-incus-compose": map[string]any{"pool": "fast"}},
 		}}}
-		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{Type: "volume", Source: "data", Target: "/data"},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Volumes: []types.ServiceVolumeConfig{
+				{Type: "volume", Source: "data", Target: "/data"},
+			},
 		}}
 
 		devices, _, resources, err := instanceVolumeDevices(c, p, service, nil, "", "")
@@ -2089,10 +2187,12 @@ func TestInstanceVolumeDevices(t *testing.T) {
 		t.Parallel()
 		file := filepath.Join(t.TempDir(), "seed.conf")
 		require.NoError(t, os.WriteFile(file, []byte("hello"), 0o644))
-		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{
-				Type: "bind", Source: file, Target: "/etc/app.conf",
-				Extensions: types.Extensions{"x-incus-compose": map[string]any{"seed": true}},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Volumes: []types.ServiceVolumeConfig{
+				{
+					Type: "bind", Source: file, Target: "/etc/app.conf",
+					Extensions: types.Extensions{"x-incus-compose": map[string]any{"seed": true}},
+				},
 			},
 		}}
 
@@ -2115,10 +2215,12 @@ func TestInstanceVolumeDevices(t *testing.T) {
 	t.Run("bind seed directory", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{
-				Type: "bind", Source: dir, Target: "/mnt",
-				Extensions: types.Extensions{"x-incus-compose": map[string]any{"seed": true}},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Volumes: []types.ServiceVolumeConfig{
+				{
+					Type: "bind", Source: dir, Target: "/mnt",
+					Extensions: types.Extensions{"x-incus-compose": map[string]any{"seed": true}},
+				},
 			},
 		}}
 
@@ -2135,8 +2237,10 @@ func TestInstanceVolumeDevices(t *testing.T) {
 	t.Run("bind mount with security.shifted=false", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{Type: "bind", Source: dir, Target: "/mnt", Extensions: types.Extensions{"x-incus": map[string]any{"security.shifted": "false"}}},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Volumes: []types.ServiceVolumeConfig{
+				{Type: "bind", Source: dir, Target: "/mnt", Extensions: types.Extensions{"x-incus": map[string]any{"security.shifted": "false"}}},
+			},
 		}}
 
 		devices, _, _, err := instanceVolumeDevices(c, &types.Project{}, service, nil, "", "")
@@ -2148,8 +2252,10 @@ func TestInstanceVolumeDevices(t *testing.T) {
 
 	t.Run("tmpfs", func(t *testing.T) {
 		t.Parallel()
-		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{Type: "tmpfs", Target: "/cache"},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Volumes: []types.ServiceVolumeConfig{
+				{Type: "tmpfs", Target: "/cache"},
+			},
 		}}
 
 		devices, _, _, err := instanceVolumeDevices(c, &types.Project{}, service, nil, "", "")
@@ -2162,8 +2268,10 @@ func TestInstanceVolumeDevices(t *testing.T) {
 	t.Run("bind directory", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{Type: "bind", Source: dir, Target: "/mnt"},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Volumes: []types.ServiceVolumeConfig{
+				{Type: "bind", Source: dir, Target: "/mnt"},
+			},
 		}}
 
 		devices, files, resources, err := instanceVolumeDevices(c, &types.Project{}, service, nil, "", "")
@@ -2176,8 +2284,10 @@ func TestInstanceVolumeDevices(t *testing.T) {
 
 	t.Run("unknown type", func(t *testing.T) {
 		t.Parallel()
-		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{Type: "weird", Source: "x", Target: "/y"},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Volumes: []types.ServiceVolumeConfig{
+				{Type: "weird", Source: "x", Target: "/y"},
+			},
 		}}
 		_, _, _, err := instanceVolumeDevices(c, &types.Project{}, service, nil, "", "")
 		require.Error(t, err)
@@ -2185,8 +2295,10 @@ func TestInstanceVolumeDevices(t *testing.T) {
 
 	t.Run("missing bind source", func(t *testing.T) {
 		t.Parallel()
-		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{Type: "bind", Source: filepath.Join(t.TempDir(), "nope"), Target: "/m"},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Volumes: []types.ServiceVolumeConfig{
+				{Type: "bind", Source: filepath.Join(t.TempDir(), "nope"), Target: "/m"},
+			},
 		}}
 		_, _, _, err := instanceVolumeDevices(c, &types.Project{}, service, nil, "", "")
 		require.Error(t, err)
@@ -2195,10 +2307,12 @@ func TestInstanceVolumeDevices(t *testing.T) {
 	t.Run("remote bind mount skips local stat", func(t *testing.T) {
 		t.Parallel()
 		src := filepath.Join(t.TempDir(), "remote-only")
-		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{
-				Type: "bind", Source: src, Target: "/m",
-				Extensions: types.Extensions{"x-incus-compose": map[string]any{"remote": true}},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Volumes: []types.ServiceVolumeConfig{
+				{
+					Type: "bind", Source: src, Target: "/m",
+					Extensions: types.Extensions{"x-incus-compose": map[string]any{"remote": true}},
+				},
 			},
 		}}
 		devices, files, resources, err := instanceVolumeDevices(c, &types.Project{}, service, nil, "", "")
@@ -2214,8 +2328,10 @@ func TestInstanceVolumeDevices(t *testing.T) {
 		t.Parallel()
 		rc := client.NewOfflineClient(t.Context(), "test-remote", client.ClientAllowRemoteMounts(true))
 		src := filepath.Join(t.TempDir(), "remote-only")
-		service := types.ServiceConfig{Name: "web", Volumes: []types.ServiceVolumeConfig{
-			{Type: "bind", Source: src, Target: "/m"},
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Volumes: []types.ServiceVolumeConfig{
+				{Type: "bind", Source: src, Target: "/m"},
+			},
 		}}
 		devices, files, resources, err := instanceVolumeDevices(rc, &types.Project{}, service, nil, "", "")
 		require.NoError(t, err)
@@ -2240,7 +2356,7 @@ func TestVolumePrefetchTarget(t *testing.T) {
 		c := client.NewOfflineClient(t.Context(), "prefetch-target-"+name)
 
 		p := &types.Project{Volumes: types.Volumes{"conf": {}}}
-		service := types.ServiceConfig{Name: name, Volumes: []types.ServiceVolumeConfig{vol}}
+		service := types.ServiceConfig{Name: name, ContainerSpec: types.ContainerSpec{Volumes: []types.ServiceVolumeConfig{vol}}}
 
 		image, err := c.Resource(client.KindImage, "docker.io/nginx:alpine", &client.ImageConfig{})
 		require.NoError(t, err)
@@ -2277,13 +2393,17 @@ func TestOneOffService(t *testing.T) {
 	limits := types.Resource{NanoCPUs: 1.5}
 
 	service := types.ServiceConfig{
-		Name:        "web",
-		Restart:     "always",
-		Ports:       []types.ServicePortConfig{{Target: 80, Published: "8080"}},
-		HealthCheck: &types.HealthCheckConfig{Test: types.HealthCheckTest{"CMD", "true"}},
-		Entrypoint:  types.ShellCommand{"/docker-entrypoint.sh"},
-		Command:     types.ShellCommand{"nginx"},
-		Deploy:      &types.DeployConfig{Replicas: &replicas, Resources: types.Resources{Limits: &limits}},
+		Name:    "web",
+		Restart: "always",
+		WorkloadSpec: types.WorkloadSpec{
+			Ports:       []types.ServicePortConfig{{Target: 80, Published: "8080"}},
+			HealthCheck: &types.HealthCheckConfig{Test: types.HealthCheckTest{"CMD", "true"}},
+		},
+		ContainerSpec: types.ContainerSpec{
+			Entrypoint: types.ShellCommand{"/docker-entrypoint.sh"},
+			Command:    types.ShellCommand{"nginx"},
+		},
+		Deploy: &types.DeployConfig{Replicas: &replicas, Resources: types.Resources{Limits: &limits}},
 	}
 
 	got := oneOffService(service, &OneOff{Entrypoint: "/incus-compose-tools/abc/sleep-x86_64"})
@@ -2310,8 +2430,10 @@ func TestOneOffServiceKeepsPorts(t *testing.T) {
 	t.Parallel()
 
 	service := types.ServiceConfig{
-		Name:  "web",
-		Ports: []types.ServicePortConfig{{Target: 80, Published: "8080"}},
+		Name: "web",
+		WorkloadSpec: types.WorkloadSpec{
+			Ports: []types.ServicePortConfig{{Target: 80, Published: "8080"}},
+		},
 	}
 
 	got := oneOffService(service, &OneOff{Entrypoint: "/sleep", ServicePorts: true})
@@ -2342,10 +2464,12 @@ func TestServiceToInstancePreStart(t *testing.T) {
 		envVal := "bar"
 		hookEnvVal := "override"
 		service := types.ServiceConfig{
-			Name:  "web",
-			Image: "docker.io/nginx:alpine",
-			Environment: types.MappingWithEquals{
-				"FOO": &envVal,
+			Name: "web",
+			ContainerSpec: types.ContainerSpec{
+				Image: "docker.io/nginx:alpine",
+				Environment: types.MappingWithEquals{
+					"FOO": &envVal,
+				},
 			},
 			PreStart: []types.PreStartHook{
 				{
@@ -2394,8 +2518,10 @@ func TestServiceToInstancePreStart(t *testing.T) {
 		t.Parallel()
 		c := client.NewOfflineClient(t.Context(), "test")
 		service := types.ServiceConfig{
-			Name:  "web",
-			Image: "docker.io/nginx:alpine",
+			Name: "web",
+			ContainerSpec: types.ContainerSpec{
+				Image: "docker.io/nginx:alpine",
+			},
 			PreStart: []types.PreStartHook{
 				{
 					ContainerSpec: types.ContainerSpec{
@@ -2438,11 +2564,15 @@ func TestServiceToInstancePreStart(t *testing.T) {
 		t.Parallel()
 		c := client.NewOfflineClient(t.Context(), "test")
 		service := types.ServiceConfig{
-			Name:    "web",
-			Image:   "docker.io/nginx:alpine",
-			Ports:   []types.ServicePortConfig{{Target: 80, Published: "8080"}},
-			Tmpfs:   types.StringList{"/tmp"},
-			Volumes: []types.ServiceVolumeConfig{{Type: "bind", Source: t.TempDir(), Target: "/data"}},
+			Name: "web",
+			ContainerSpec: types.ContainerSpec{
+				Image:   "docker.io/nginx:alpine",
+				Tmpfs:   types.StringList{"/tmp"},
+				Volumes: []types.ServiceVolumeConfig{{Type: "bind", Source: t.TempDir(), Target: "/data"}},
+			},
+			WorkloadSpec: types.WorkloadSpec{
+				Ports: []types.ServicePortConfig{{Target: 80, Published: "8080"}},
+			},
 			PreStart: []types.PreStartHook{
 				{
 					ContainerSpec: types.ContainerSpec{
@@ -2476,21 +2606,23 @@ func TestServiceToInstancePreStart(t *testing.T) {
 		seedFile := filepath.Join(hostDir, "seed.conf")
 
 		service := types.ServiceConfig{
-			Name:  "web",
-			Image: "docker.io/nginx:alpine",
-			Volumes: []types.ServiceVolumeConfig{
-				{
-					Type:   "bind",
-					Source: seedFile,
-					Target: "/data/seed.conf",
-					Extensions: types.Extensions{
-						"x-incus-compose": map[string]any{"seed": true},
+			Name: "web",
+			ContainerSpec: types.ContainerSpec{
+				Image: "docker.io/nginx:alpine",
+				Volumes: []types.ServiceVolumeConfig{
+					{
+						Type:   "bind",
+						Source: seedFile,
+						Target: "/data/seed.conf",
+						Extensions: types.Extensions{
+							"x-incus-compose": map[string]any{"seed": true},
+						},
 					},
-				},
-				{
-					Type:   "bind",
-					Source: hostDir,
-					Target: "/data",
+					{
+						Type:   "bind",
+						Source: hostDir,
+						Target: "/data",
+					},
 				},
 			},
 			PreStart: []types.PreStartHook{
@@ -2522,13 +2654,15 @@ func TestServiceToInstancePostStart(t *testing.T) {
 	hookEnvVal := "override"
 	extraVal := "extra"
 	service := types.ServiceConfig{
-		Name:       "web",
-		Image:      "docker.io/nginx:alpine",
-		User:       "1000",
-		WorkingDir: "/var/www",
-		Environment: types.MappingWithEquals{
-			"BASE":  &envVal,
-			"CLASH": &envVal,
+		Name: "web",
+		ContainerSpec: types.ContainerSpec{
+			Image:      "docker.io/nginx:alpine",
+			User:       "1000",
+			WorkingDir: "/var/www",
+			Environment: types.MappingWithEquals{
+				"BASE":  &envVal,
+				"CLASH": &envVal,
+			},
 		},
 		PostStart: []types.ServiceHook{
 			{
@@ -2561,9 +2695,11 @@ func TestServiceToInstancePostStart(t *testing.T) {
 	t.Run("rejects user mismatch for unprivileged hook", func(t *testing.T) {
 		t.Parallel()
 		badService := types.ServiceConfig{
-			Name:  "web",
-			Image: "docker.io/nginx:alpine",
-			User:  "1000",
+			Name: "web",
+			ContainerSpec: types.ContainerSpec{
+				Image: "docker.io/nginx:alpine",
+				User:  "1000",
+			},
 			PostStart: []types.ServiceHook{
 				{
 					Command: types.ShellCommand{"whoami"},
@@ -2584,11 +2720,13 @@ func TestServiceToInstance_DNSAliases(t *testing.T) {
 	newProject := func() (*client.Client, *types.Project) {
 		c := client.NewOfflineClient(t.Context(), "test")
 		service := types.ServiceConfig{
-			Name:  "web",
-			Image: "docker.io/nginx:alpine",
-			Networks: map[string]*types.ServiceNetworkConfig{
-				"default": {
-					Aliases: []string{"frontend", "web.mydomain.lan"},
+			Name: "web",
+			ContainerSpec: types.ContainerSpec{
+				Image: "docker.io/nginx:alpine",
+				Networks: map[string]*types.ServiceNetworkConfig{
+					"default": {
+						Aliases: []string{"frontend", "web.mydomain.lan"},
+					},
 				},
 			},
 		}
@@ -2640,7 +2778,7 @@ func TestServiceToInstance_DNSAliases(t *testing.T) {
 func TestServiceToInstanceConfigHash(t *testing.T) {
 	t.Parallel()
 
-	service := types.ServiceConfig{Name: "web", Image: "docker.io/nginx:alpine"}
+	service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{Image: "docker.io/nginx:alpine"}}
 	p := &types.Project{Services: types.Services{"web": service}}
 
 	t.Run("service", func(t *testing.T) {
