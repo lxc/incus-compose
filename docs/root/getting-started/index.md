@@ -36,13 +36,16 @@ incus-compose requires the Incus server to listen on the network. Set
 incus config set core.https_address=:8443
 ```
 
-This is **not optional**, even for a local Incus reached over the Unix socket.
-incus-compose caches images in a separate Incus project and copies each one into
-your project on `up`. That cross-project copy uses Incus pull mode, which needs
-the server to be reachable over the network: the same daemon pulls the image
-from itself. Without `core.https_address` set, `up` fails with
-`The source server isn't listening on the network`, and health checks are
-silently skipped.
+This is **required while image caching is on**, which it is by default, even for
+a local Incus reached over the Unix socket. incus-compose caches images in a
+separate Incus project and copies each one into your project on `up`. That
+cross-project copy uses Incus pull mode, which needs the server to be reachable
+over the network: the same daemon pulls the image from itself. Without
+`core.https_address` set, incus-compose refuses to connect, and health checks
+are skipped.
+
+With caching off (`--image-cache ""`) incus-compose connects without it and
+pulls images straight into each project; health checks are still skipped.
 
 Only the server setting matters here; the client connection itself can stay on
 the Unix socket. See
@@ -86,13 +89,75 @@ If you don't want to listen on all interfaces, set the
 `INCUS_COMPOSE_HEALTHD_INCUS` environment variable or call up with
 `--healthd-incus`; see [Network Configuration](/healthd#network-configuration).
 
+### Project-restricted certificate (shared servers)
+
+A certificate restricted to some projects
+(`incus config trust add --restricted`) cannot create or edit projects, mint
+trust tokens, or create anything in the `default` project. incus-compose detects
+such a certificate and works within that, given an admin who prepares the server
+for it.
+
+The admin, with an unrestricted certificate:
+
+```bash
+# The project, with the config incus-compose would otherwise set on it
+incus project create myapp \
+  -c features.networks=false \
+  -c user.incus-compose.managed=true \
+  -c user.healthcheck.enabled=true
+
+# The image cache, here one per tenant, and the global project, which holds
+# the locks and the tools volume
+incus project create myapp-cache
+incus project create incus-compose
+
+# The certificate, restricted to those three
+incus config trust add myapp-ci --restricted --projects myapp,myapp-cache,incus-compose
+```
+
+The global project `incus-compose` is shared by everyone on the server who uses
+incus-compose, so each of them can see the others' locks.
+
+The user then points incus-compose at the cache, and attaches services to a
+bridge the admin made in `default`, as an
+[external network](/compose-compatibility/networks):
+
+```bash
+incus-compose --image-cache myapp-cache up
+```
+
+```yaml
+x-incus:
+  features.networks: "false"
+
+services:
+  web:
+    image: docker.io/library/nginx
+    networks:
+      - lan
+
+networks:
+  lan:
+    external: true
+    x-incus-compose:
+      network: incusbr0
+```
+
+With a restricted certificate incus-compose:
+
+- skips healthd and DNS with a warning: both sidecars enroll with a trust token,
+  and DNS wires itself up in the `default` project. An admin can run healthd for
+  the project; use it with `--external-healthd`
+- skips the service-name DNS records on a bridge it may not edit, with a warning
+- stops with a message naming what to ask the admin for when the project is
+  missing, not granted, or lacks the config above
+
 ## Local vs Remote Incus
 
-> **The Incus server must have `core.https_address` set in all cases**, even for
-> a local Unix-socket client. Image caching copies images between Incus projects
-> using pull mode, which requires the server to be reachable over the network.
-> Without it, `up` fails with
-> `The source server isn't listening on the network`. See
+> **The Incus server must have `core.https_address` set while image caching is
+> on**, even for a local Unix-socket client. Image caching copies images between
+> Incus projects using pull mode, which requires the server to be reachable over
+> the network. See
 > [Getting Started](/getting-started#incus-must-listen-on-the-network-required).
 
 With that in place, a few behaviors still depend on whether incus-compose talks

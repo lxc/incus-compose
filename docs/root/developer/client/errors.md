@@ -56,31 +56,32 @@ if errors.Is(err, client.ErrOperation) {
 
 ### Available Sentinels
 
-| Error                     | Description                                     |
-| ------------------------- | ----------------------------------------------- |
-| `ErrNotFound`             | Resource was not found                          |
-| `ErrNotEnsured`           | Operation requires resource to be ensured first |
-| `ErrOperation`            | Error within an Incus operation                 |
-| `ErrCreate`               | Resource creation failed                        |
-| `ErrDelete`               | Resource deletion failed                        |
-| `ErrAborted`              | Operation aborted (e.g., by hook)               |
-| `ErrConnectionFailed`     | Connection attempt failed                       |
-| `ErrDisconnected`         | Client is not connected                         |
-| `ErrServerNotListening`   | `core.https_address` is not set on the server   |
-| `ErrRunning`              | Resource is already running                     |
-| `ErrNotRunning`           | Resource is not running                         |
-| `ErrUnsupportedAction`    | Resource does not support the action            |
-| `ErrUnknownResource`      | Unknown resource kind                           |
-| `ErrUnknownConfig`        | Unknown config for resource                     |
-| `ErrInvalidFormat`        | Invalid format or syntax                        |
-| `ErrImageSource`          | Image source error                              |
-| `ErrImageRequired`        | Instance requires an image                      |
-| `ErrDeviceConflict`       | Device name conflict                            |
-| `ErrVolumeMismatch`       | Volume configuration mismatch                   |
-| `ErrBadDeviceConfig`      | Bad device configuration                        |
-| `ErrDependencyNotEnsured` | Dependency not ensured                          |
-| `ErrNilPointer`           | Nil pointer encountered                         |
-| `ErrUnknown`              | Unknown error (wraps non-Error types)           |
+| Error                     | Description                                                                  |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| `ErrNotFound`             | Resource was not found                                                       |
+| `ErrNotEnsured`           | Operation requires resource to be ensured first                              |
+| `ErrOperation`            | Error within an Incus operation                                              |
+| `ErrCreate`               | Resource creation failed                                                     |
+| `ErrDelete`               | Resource deletion failed                                                     |
+| `ErrAborted`              | Operation aborted (e.g., by hook)                                            |
+| `ErrConnectionFailed`     | Connection attempt failed                                                    |
+| `ErrDisconnected`         | Client is not connected                                                      |
+| `ErrServerNotListening`   | `core.https_address` is not set on the server, and an image cache project is |
+| `ErrRestricted`           | A project-restricted certificate was asked to create or edit a project       |
+| `ErrRunning`              | Resource is already running                                                  |
+| `ErrNotRunning`           | Resource is not running                                                      |
+| `ErrUnsupportedAction`    | Resource does not support the action                                         |
+| `ErrUnknownResource`      | Unknown resource kind                                                        |
+| `ErrUnknownConfig`        | Unknown config for resource                                                  |
+| `ErrInvalidFormat`        | Invalid format or syntax                                                     |
+| `ErrImageSource`          | Image source error                                                           |
+| `ErrImageRequired`        | Instance requires an image                                                   |
+| `ErrDeviceConflict`       | Device name conflict                                                         |
+| `ErrVolumeMismatch`       | Volume configuration mismatch                                                |
+| `ErrBadDeviceConfig`      | Bad device configuration                                                     |
+| `ErrDependencyNotEnsured` | Dependency not ensured                                                       |
+| `ErrNilPointer`           | Nil pointer encountered                                                      |
+| `ErrUnknown`              | Unknown error (wraps non-Error types)                                        |
 
 ## Error Methods
 
