@@ -226,7 +226,7 @@ SERVICES_LOOP:
 	if inUse {
 		_, err := gc.HTTPSAddress()
 		if err != nil {
-			gc.LogWarn("Your incus isn't listening on the network, skipping healthd support, see: https://github.com/lxc/incus-compose/blob/main/docs/getting-started.md")
+			gc.LogWarn("Your incus isn't listening on the network, skipping healthd support, see: https://incus-compose.org/getting-started")
 			inUse = false
 		}
 	}
