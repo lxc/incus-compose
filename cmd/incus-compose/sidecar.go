@@ -209,13 +209,13 @@ func isLegacyGlobal(ctx context.Context, gc *client.GlobalClient) (bool, error) 
 		return true, nil
 	}
 
-	proj, _, err := conn.GetProject(ctx, globalProject)
+	proj, _, err := conn.GetProject(ctx, gc.GlobalProject())
 	if err == nil {
 		if proj.Config["features.networks"] != "true" {
 			return true, nil
 		}
 
-		net, _, err = conn.GetNetwork(ctx, globalProject, globalHealthdNetwork)
+		net, _, err = conn.GetNetwork(ctx, gc.GlobalProject(), globalHealthdNetwork)
 		if err == nil && net.Type != "ovn" {
 			return true, nil
 		}
@@ -247,7 +247,7 @@ func upgradeGlobalProject(ctx context.Context, gc *client.GlobalClient, network 
 		return nil, nil
 	}
 
-	_, _ = gc.EnsureProject(globalProject, client.EnsureProjectWithCreate())
+	_, _ = gc.EnsureProject(gc.GlobalProject(), client.EnsureProjectWithCreate())
 
 	release, err := gc.LockGlobalProject(ctx)
 	if err != nil {
@@ -276,7 +276,7 @@ func upgradeGlobalProject(ctx context.Context, gc *client.GlobalClient, network 
 
 	certs, err := conn.GetCertificates(ctx)
 	if err == nil {
-		want := healthdCertName(globalProject, true)
+		want := healthdCertName(gc.GlobalProject(), true)
 		for _, cert := range certs {
 			if cert.Name == want {
 				_ = conn.DeleteCertificate(ctx, cert.Fingerprint)
@@ -284,10 +284,10 @@ func upgradeGlobalProject(ctx context.Context, gc *client.GlobalClient, network 
 		}
 	}
 
-	_ = gc.DeleteProject(globalProject, true)
+	_ = gc.DeleteProject(gc.GlobalProject(), true)
 	_ = conn.DeleteNetwork(ctx, "default", globalHealthdNetwork)
 	gc.InvalidateNetworkType("default", globalHealthdNetwork)
-	gc.InvalidateNetworkType(globalProject, globalHealthdNetwork)
+	gc.InvalidateNetworkType(gc.GlobalProject(), globalHealthdNetwork)
 
 	return upgradeGlobalProject(ctx, gc, network)
 }

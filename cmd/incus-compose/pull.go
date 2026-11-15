@@ -249,9 +249,9 @@ func newPullCommand() *cli.Command {
 }
 
 func downloadTools(ctx context.Context, c *client.Client) error {
-	sysClient, err := c.Global().EnsureProject(globalProject, client.EnsureProjectWithCreate())
+	sysClient, err := c.Global().EnsureProject(c.Global().GlobalProject(), client.EnsureProjectWithCreate())
 	if err != nil {
-		return fmt.Errorf("failed to ensure the %q project: %w", globalProject, err)
+		return fmt.Errorf("failed to ensure the %q project: %w", c.Global().GlobalProject(), err)
 	}
 
 	release, err := c.Global().LockGlobalProject(ctx)

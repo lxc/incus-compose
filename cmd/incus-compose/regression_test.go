@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -143,4 +144,44 @@ func TestE2EUpRecreateDependents(t *testing.T) {
 
 	require.NotEqual(t, alphaUUID, uuid("alpha-1"), "alpha must be recreated")
 	require.NotEqual(t, betaUUID, uuid("beta-1"), "beta must be recreated")
+}
+
+// TestE2EGlobalProjectFlag pins that --global-project moves what incus-compose
+// shares across projects, the locks first, out of the default global project,
+// so tenants of one server can each have their own.
+func TestE2EGlobalProjectFlag(t *testing.T) {
+	t.Parallel()
+	testlib.SkipE2E(t)
+
+	ctx := t.Context()
+	pn := t.Name()
+	compose := testlib.Fixture(t, "simple", "compose.yaml")
+	global := testlib.ProjectName(pn) + "-global"
+
+	gc, err := client.NewTestClient(context.Background())
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		if testlib.KeepTestData() {
+			return
+		}
+
+		err := gc.DeleteProject(global, true)
+		if err != nil {
+			t.Errorf("deleting the global project %s: %v", global, err)
+		}
+	})
+
+	args := []string{"--global-project", global, "-f", compose}
+	testlib.CleanupCompose(t, pn, append(args, "down", "--project", "--no-dns", "--no-healthd")...)
+
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(args, "up", "--detach", "--no-dns", "--no-healthd")...)
+	require.NoError(t, err)
+
+	c, err := gc.EnsureProject(global)
+	require.NoError(t, err, "up did not create the global project it was given")
+
+	locks, err := c.Resource(client.KindStorageVolume, locksVolume, &client.StorageVolumeConfig{})
+	require.NoError(t, err)
+	require.NoError(t, client.RunAction(ctx, locks, client.ActionEnsure), "the locks are not in the global project given")
 }

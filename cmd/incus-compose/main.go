@@ -31,7 +31,9 @@ import (
 // records ownership only; watching is HealthEnabledKey, a separate decision.
 const managedKey = "user.incus-compose.managed"
 
-const globalProject = "incus-compose"
+// defaultGlobalProject holds the locks, the tools volume and the shared
+// sidecars unless --global-project names another.
+const defaultGlobalProject = "incus-compose"
 const locksVolume = "locks"
 const toolsVolume = "incus-compose-tools"
 const toolsMount = "/incus-compose-tools"
@@ -174,7 +176,7 @@ func loadRemoteProject(ctx context.Context, cmd *cli.Command) (*project.Project,
 		return project.New(), nil
 	}
 
-	return project.New().Load(ctx, project.LoadFiles(files), project.LoadName(globalProject))
+	return project.New().Load(ctx, project.LoadFiles(files), project.LoadName(cmd.String("global-project")))
 }
 
 // initLogger builds a logger scoped to this single command invocation. It
@@ -440,6 +442,12 @@ func newRootCommand() *cli.Command {
 				Value:   client.DefaultCacheProject,
 				Sources: cli.EnvVars("INCUS_COMPOSE_IMAGE_CACHE"),
 			},
+			&cli.StringFlag{
+				Name:    "global-project",
+				Usage:   `Project holding the locks, the tools volume and the shared sidecars; one per tenant keeps them apart`,
+				Value:   defaultGlobalProject,
+				Sources: cli.EnvVars("INCUS_COMPOSE_GLOBAL_PROJECT"),
+			},
 			&cli.StringSliceFlag{
 				Name:    "file",
 				Aliases: []string{"f"},
@@ -546,7 +554,7 @@ func newRootCommand() *cli.Command {
 			// }
 
 			opts := []client.ClientOption{
-				client.ClientGlobalProject(globalProject),
+				client.ClientGlobalProject(cmd.String("global-project")),
 				client.ClientLocksVolume(locksVolume),
 				client.ClientToolsVolume(toolsVolume),
 				client.ClientToolsMount(toolsMount),

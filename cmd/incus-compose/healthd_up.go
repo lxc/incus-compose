@@ -118,7 +118,7 @@ func healthdUp(ctx context.Context, p *project.Project, c *client.Client, args h
 			}
 		}
 
-		daemonProject = globalProject
+		daemonProject = c.Global().GlobalProject()
 		if project, rest, ok := strings.Cut(params.network, ":"); ok && project != "" && rest != "" && !strings.Contains(rest, ":") {
 			daemonProject = project
 		}
@@ -232,7 +232,7 @@ func healthdUpGlobal(ctx context.Context, gc *client.GlobalClient, cfg project.X
 		xIncus:         cfg.XIncus,
 	}
 
-	hcProject := globalProject
+	hcProject := gc.GlobalProject()
 	if project, rest, ok := strings.Cut(healthdNetwork, ":"); ok && project != "" && rest != "" && !strings.Contains(rest, ":") {
 		hcProject = project
 	}

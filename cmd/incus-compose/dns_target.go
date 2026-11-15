@@ -93,8 +93,8 @@ func findDNS(ctx context.Context, c *client.Client) (string, string, error) {
 		}
 	}
 
-	// 2. Check globalProject if different from current project.
-	globalProj := globalProject
+	// 2. Check the global project if different from current project.
+	globalProj := c.Global().GlobalProject()
 	if globalProj != c.IncusProject() {
 		sysInstances, err := conn.GetInstances(ctx, globalProj, nil)
 		if err == nil {
@@ -151,12 +151,12 @@ func resolveDNSTarget(ctx context.Context, cmd *cli.Command, gc *client.GlobalCl
 
 		searchClient = c
 	} else {
-		c, err := gc.EnsureProject(globalProject)
+		c, err := gc.EnsureProject(gc.GlobalProject())
 		if errors.Is(err, client.ErrNotFound) {
 			return nil, nil, errNoDNS
 		}
 		if err != nil {
-			return nil, nil, fmt.Errorf("getting the %s project: %w", globalProject, err)
+			return nil, nil, fmt.Errorf("getting the %s project: %w", gc.GlobalProject(), err)
 		}
 
 		searchClient = c

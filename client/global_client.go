@@ -1271,6 +1271,11 @@ func (c *GlobalClient) HTTPSAddress() (string, error) {
 	return c.httpsAddress, nil
 }
 
+// GlobalProject returns the project holding the instances the library runs.
+func (c *GlobalClient) GlobalProject() string {
+	return c.config.GlobalProject
+}
+
 // HasExtension returns whether the server has the given extension.
 func (c *GlobalClient) HasExtension(ext string) bool {
 	c.mu.Lock()
