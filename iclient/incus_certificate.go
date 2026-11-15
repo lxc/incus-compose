@@ -52,3 +52,15 @@ func (c *Connection) DeleteCertificate(ctx context.Context, fingerprint string) 
 
 	return err
 }
+
+// GetCertificate returns one certificate of the trust store.
+func (c *Connection) GetCertificate(ctx context.Context, fingerprint string) (*api.Certificate, error) {
+	certificate := &api.Certificate{}
+
+	_, err := c.getStruct(ctx, "", incusCertificatesPath+"/"+url.PathEscape(fingerprint), nil, certificate)
+	if err != nil {
+		return nil, err
+	}
+
+	return certificate, nil
+}

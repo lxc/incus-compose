@@ -200,6 +200,7 @@ type GlobalClient struct {
 	imageCache *Client
 	unix       bool
 	connected  bool
+	restricted bool
 
 	// Read once at connect: GetServer memoizes into the shared *ProtocolIncus,
 	// so calling it per service/network/port both races and re-queries.
@@ -457,7 +458,21 @@ func (c *GlobalClient) Connect() error {
 		return ErrServerNotListening
 	}
 
+	// For a TLS client auth_user_name is the certificate's fingerprint, and a
+	// restricted certificate may read its own record. One trusted through a
+	// CA has none, and is not restricted.
+	restricted := false
+	if server.AuthUserMethod == incusApi.AuthenticationMethodTLS {
+		cert, err := c.incus.GetCertificate(c.ctx, server.AuthUserName)
+		if err != nil && !incusApi.StatusErrorCheck(err, http.StatusNotFound) {
+			return ErrConnectionFailed.Wrap(err)
+		}
+
+		restricted = err == nil && cert.Restricted
+	}
+
 	c.mu.Lock()
+	c.restricted = restricted
 	c.apiExtensions = server.APIExtensions
 	c.httpsAddress = httpsAddress
 	c.clustered = server.Environment.ServerClustered
@@ -817,6 +832,19 @@ func (c *GlobalClient) AddMissingProjectConfig(name string, config map[string]st
 	}
 
 	slices.Sort(missing)
+
+	// Incus would refuse the update; name what the admin has to set instead.
+	if c.Restricted() {
+		set := make([]string, 0, len(missing))
+		for _, key := range missing {
+			set = append(set, key+"="+config[key])
+		}
+
+		return ErrRestricted.WithText(fmt.Sprintf(
+			"project %q lacks config the certificate may not set; the admin sets it with `incus project set %s %s`",
+			incusName, incusName, strings.Join(set, " ")))
+	}
+
 	c.logger.DebugContext(c.ctx, "Adding missing project config", "name", name, "incus_name", incusName, "keys", missing)
 
 	err = c.incus.UpdateProject(c.ctx, incusName, writable, etag)
@@ -929,6 +957,13 @@ func (c *GlobalClient) EnsureProject(name string, opts ...EnsureProjectOption) (
 
 	if !options.create {
 		return nil, ErrNotFound.WithKindName(KindProject, name).Wrap(err)
+	}
+
+	// Incus would refuse the create; say who can do it instead.
+	if c.Restricted() {
+		return nil, ErrRestricted.WithText(fmt.Sprintf(
+			"project %q does not exist or is not one of the certificate's projects; the admin creates it and adds it to them",
+			SanitizeProjectName(name))).Wrap(err)
 	}
 
 	if options.config == nil {
@@ -1289,6 +1324,15 @@ func (c *GlobalClient) HTTPSAddress() (string, error) {
 // GlobalProject returns the project holding the instances the library runs.
 func (c *GlobalClient) GlobalProject() string {
 	return c.config.GlobalProject
+}
+
+// Restricted reports whether the certificate is restricted to projects: it can
+// neither create nor edit them, nor reach the default project.
+func (c *GlobalClient) Restricted() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.restricted
 }
 
 // HasExtension returns whether the server has the given extension.

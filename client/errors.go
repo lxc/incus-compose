@@ -162,6 +162,10 @@ var (
 	// which needs the server reachable over the network.
 	ErrServerNotListening = NewError("the incus server is not listening on the network (core.https_address is not set); incus-compose needs it for image caching, set it with `incus config set core.https_address=:8443`, see https://incus-compose.org/getting-started")
 
+	// ErrRestricted indicates a project-restricted certificate was asked for
+	// something only the server's admin can do: creating or editing a project.
+	ErrRestricted = NewError("the certificate is restricted to projects, ask the server's admin")
+
 	// ErrServerTooOld indicates the Incus server has no oci_network_config API,
 	// which every compose network attachment needs.
 	ErrServerTooOld = NewError("the incus server has no oci_network_config API, incus-compose needs Incus 7.0.1 (LTS) or 7.2 and newer")
