@@ -430,9 +430,6 @@ func (c *GlobalClient) Connect() error {
 
 	c.logger.Debug("Connected", "url", c.config.URL)
 
-	// Image caching copies images between Incus projects using pull mode, which
-	// needs the server reachable over the network. Fail early with a clear
-	// message instead of a cryptic copy error later.
 	server, _, err := c.incus.GetServer(c.ctx)
 	if err != nil {
 		return ErrConnectionFailed.Wrap(err)
@@ -452,7 +449,11 @@ func (c *GlobalClient) Connect() error {
 		httpsAddress = net.JoinHostPort("", port)
 	}
 
-	if httpsAddress == "" {
+	// Image caching copies images between Incus projects using pull mode, which
+	// needs the server reachable over the network. Fail early with a clear
+	// message instead of a cryptic copy error later. Without a cache nothing
+	// here needs it: healthd and the sidecars check HTTPSAddress themselves.
+	if httpsAddress == "" && c.config.CacheProject != "" {
 		return ErrServerNotListening
 	}
 

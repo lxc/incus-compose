@@ -20,6 +20,10 @@ form.
   network: Incus hides `core.https_address` from such a certificate. (by
   @tallica, #127)
 
+- A server without `core.https_address` is accepted when image caching is off
+  (`--image-cache ""`); only the cache needs the server on the network. (by
+  @tallica)
+
 ## [v1.4.0] - 2026-11-11
 
 ### Added
