@@ -689,6 +689,7 @@ func isConcurrencyConflict(err error) bool {
 		strings.Contains(msg, "constraint violation") ||
 		strings.Contains(msg, "failed getting acl usage") ||
 		strings.Contains(msg, "failed removing default routes") ||
+		strings.Contains(msg, "failed removing internal subnet routes") ||
 		strings.Contains(msg, "failed to load project")
 }
 
