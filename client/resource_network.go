@@ -367,15 +367,28 @@ func (r *Network) incusProject() string {
 	return incusApi.ProjectDefaultName
 }
 
+// fetch reads the network from the project it lives in. A restricted
+// certificate cannot read the default project, but may view a network
+// inherited from it when asked through a project it is trusted for, where
+// Incus resolves it to default itself; that is the second try.
+func (r *Network) fetch(ctx context.Context, conn *iclient.Connection) (*incusApi.Network, string, error) {
+	proj := r.incusProject()
+	network, eTag, err := conn.GetNetwork(ctx, proj, r.incusName)
+	if err != nil && proj == incusApi.ProjectDefaultName && r.client.incusProject != proj {
+		network, eTag, err = conn.GetNetwork(ctx, r.client.incusProject, r.incusName)
+	}
+
+	return network, eTag, err
+}
+
 func (r *Network) get(ctx context.Context) error {
 	conn, err := r.client.GlobalConnection()
 	if err != nil {
 		return err
 	}
 
-	proj := r.incusProject()
-	network, eTag, err := conn.GetNetwork(ctx, proj, r.incusName)
-	if err != nil && r.Config.External && proj != incusApi.ProjectDefaultName {
+	network, eTag, err := r.fetch(ctx, conn)
+	if err != nil && r.Config.External && r.client.FeaturesNetworks() {
 		network, eTag, err = conn.GetNetwork(ctx, incusApi.ProjectDefaultName, r.incusName)
 	}
 	if err != nil {
@@ -717,7 +730,7 @@ func (r *Network) updateDNSAliases(ctx context.Context, ownedServices []string, 
 		retry.LastErrorOnly(true),
 		retry.RetryIf(isConcurrencyConflict),
 	).Do(func() error {
-		net, etag, readErr := conn.GetNetwork(ctx, r.incusProject(), r.incusName)
+		net, etag, readErr := r.fetch(ctx, conn)
 		if readErr != nil {
 			return fmt.Errorf("reading network %q: %w", r.Name(), readErr)
 		}
@@ -811,6 +824,16 @@ func (r *Network) updateDNSAliases(ctx context.Context, ownedServices []string, 
 
 		return nil
 	})
+
+	// A restricted certificate may use a network shared from the default
+	// project but not edit it. The instances still run; only their service
+	// names do not resolve on that network.
+	if incusApi.StatusErrorCheck(err, http.StatusForbidden) {
+		r.client.LogWarn("Skipping service DNS records: the certificate may not edit the network", "network", r.Name(), "error", err)
+
+		return false, nil
+	}
+
 	if err != nil {
 		return false, fmt.Errorf("updating dnsmasq records for network %q: %w", r.Name(), err)
 	}
