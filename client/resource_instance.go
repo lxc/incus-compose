@@ -1249,10 +1249,9 @@ func retryBusy[T any](ctx context.Context, r *Instance, write func() (T, error))
 }
 
 // isIdmapRace reports the refusal incusd gives a container starting while
-// another one sharing a custom volume is still being created: the volume has to
-// be shifted to the starting one's idmap, and the other has none to compare yet
-// (internal/server/device/disk.go). It is gone once that create finishes. Only
-// on a pool without idmapped mounts, where incusd shifts the volume itself.
+// another one sharing a custom volume is still being created: incusd compares
+// the idmaps of every container on the volume, and the other has none yet
+// (internal/server/device/disk.go). It is gone once that create finishes.
 func isIdmapRace(err error) bool {
 	if err == nil {
 		return false
