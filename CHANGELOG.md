@@ -11,6 +11,15 @@ final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced
 form.
 
+## [Unreleased]
+
+### Fixed
+
+- A certificate restricted to projects (`incus config trust add --restricted`)
+  is no longer refused on connect as if the server were not listening on the
+  network: Incus hides `core.https_address` from such a certificate. (by
+  @tallica, #127)
+
 ## [v1.4.0] - 2026-11-11
 
 ### Added

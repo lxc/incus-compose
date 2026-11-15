@@ -1,12 +1,17 @@
 package client
 
 import (
+	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/stretchr/testify/require"
+
+	"github.com/lxc/incus-compose/incustrust"
+	"github.com/lxc/incus-compose/shared"
 )
 
 func TestEmitProgress(t *testing.T) {
@@ -104,4 +109,78 @@ func TestDetectOVNMatchesProbe(t *testing.T) {
 	}
 
 	require.Equal(t, createErr == nil, got, "probe error: %v", createErr)
+}
+
+// TestConnectRestrictedCertificate is a regression test for #127: a
+// project-restricted certificate reads no server config, so core.https_address
+// looked unset and Connect refused a server that was listening.
+func TestConnectRestrictedCertificate(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := testContext(t)
+
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
+
+	if !gc.IsRemote() {
+		t.Skip("a restricted certificate needs an https remote")
+	}
+
+	conn, err := gc.Connection()
+	require.NoError(t, err)
+
+	info, err := conn.GetConnectionInfo(ctx)
+	require.NoError(t, err)
+
+	name := "ic-test-restricted-" + strings.ToLower(shared.RandString(12))
+	projects := []string{gc.imageCache.IncusProject()}
+
+	t.Cleanup(func() {
+		certs, err := conn.GetCertificates(ctx)
+		if err != nil {
+			return
+		}
+
+		for _, cert := range certs {
+			if cert.Name == name {
+				_ = conn.DeleteCertificate(ctx, cert.Fingerprint)
+			}
+		}
+	})
+
+	// A token operation never finishes, only its first update carries the token.
+	tokenCtx, release := context.WithCancel(ctx)
+	updates, err := conn.CreateCertificateToken(tokenCtx, incusApi.CertificatesPost{
+		CertificatePut: incusApi.CertificatePut{
+			Name:       name,
+			Type:       "client",
+			Restricted: true,
+			Projects:   projects,
+		},
+		Token: true,
+	})
+	require.NoError(t, err)
+
+	opAPI, ok := <-updates
+	release()
+	require.True(t, ok, "the certificate token operation reported nothing")
+
+	token, err := opAPI.ToCertificateAddToken()
+	require.NoError(t, err)
+
+	restricted, err := incustrust.Enroll(ctx, incustrust.Config{
+		Name:              name,
+		URL:               info.URL,
+		ServerFingerprint: info.CertificateFingerprint,
+		DataDir:           t.TempDir(),
+		Restricted:        true,
+		Projects:          projects,
+	}, token.String())
+	require.NoError(t, err)
+
+	rc := New(ctx, ClientProvideConnection(restricted), ClientCacheProject(projects[0]))
+	require.NoError(t, rc.Connect())
+
+	_, err = rc.HTTPSAddress()
+	require.NoError(t, err)
 }

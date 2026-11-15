@@ -438,13 +438,27 @@ func (c *GlobalClient) Connect() error {
 		return ErrConnectionFailed.Wrap(err)
 	}
 
-	if server.Config["core.https_address"] == "" {
+	// A restricted certificate gets no server config, so core.https_address
+	// reads empty there whatever it is set to. Environment.Addresses is derived
+	// from it and is shown to every trusted client; its port is all that is
+	// left to keep, and an unspecified host falls back the same way ":8443" does.
+	httpsAddress := server.Config["core.https_address"]
+	if httpsAddress == "" && len(server.Environment.Addresses) > 0 {
+		_, port, err := net.SplitHostPort(server.Environment.Addresses[0])
+		if err != nil {
+			return ErrConnectionFailed.Wrap(err)
+		}
+
+		httpsAddress = net.JoinHostPort("", port)
+	}
+
+	if httpsAddress == "" {
 		return ErrServerNotListening
 	}
 
 	c.mu.Lock()
 	c.apiExtensions = server.APIExtensions
-	c.httpsAddress = server.Config["core.https_address"]
+	c.httpsAddress = httpsAddress
 	c.clustered = server.Environment.ServerClustered
 	if server.Environment.ServerClustered {
 		c.serverName = server.Environment.ServerName
