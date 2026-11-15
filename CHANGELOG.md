@@ -13,6 +13,15 @@ form.
 
 ## [Unreleased]
 
+### Added
+
+- `up` and `down` work with a project-restricted certificate on a server its
+  admin prepared: healthd and DNS are skipped with a warning, as are service DNS
+  records on a bridge it may not edit, and a missing project or project config
+  stops `up` with what to ask the admin for. See
+  [Getting started](https://incus-compose.org/getting-started). (by @tallica,
+  #127)
+
 ### Fixed
 
 - A certificate restricted to projects (`incus config trust add --restricted`)

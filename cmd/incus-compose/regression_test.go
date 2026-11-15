@@ -201,20 +201,17 @@ func TestE2EUpRestrictedCertificate(t *testing.T) {
 	// A bridge lives in the default project, which a restricted certificate
 	// cannot create networks in, so it attaches to one the admin made. The
 	// service is named for this test: Incus refuses an instance DNS name a
-	// parallel test already holds on the shared bridge. DNS is off because
-	// its sidecar enrolls with a trust token, which only an unrestricted
-	// certificate can mint, and its wiring lives in the default project.
+	// parallel test already holds on the shared bridge. The healthcheck puts
+	// healthd in use, so its skip is exercised along with the DNS one.
 	dir := testlib.WriteTempFiles(t, map[string]string{
 		"compose.yaml": `x-incus:
   features.networks: "false"
 
-x-incus-compose:
-  dns:
-    disabled: true
-
 services:
   restricted:
     image: docker.io/alpine:edge
+    healthcheck:
+      test: ["CMD", "true"]
     networks:
       - br0
 
@@ -244,14 +241,10 @@ networks:
 	testlib.CleanupCompose(t, pn, "-f", compose, "down", "--project")
 
 	// A restricted certificate cannot create or edit projects, so the admin
-	// hands one over the way `up` would have made it, marks included.
+	// hands one over. Without the marks up sets, first, to see it say which.
 	_, err = gc.EnsureProject(testlib.ProjectName(pn),
 		client.EnsureProjectWithCreate(),
-		client.EnsureProjectWithConfig(map[string]string{
-			"features.networks":     "false",
-			managedKey:              "true",
-			shared.HealthEnabledKey: "true",
-		}),
+		client.EnsureProjectWithConfig(map[string]string{"features.networks": "false"}),
 	)
 	require.NoError(t, err)
 
@@ -326,15 +319,23 @@ networks:
 		"-f", compose,
 	}
 
-	// healthd enrolls with a trust token too, which only an unrestricted
-	// certificate can mint; a hoster runs it for the project instead.
-	_, err = testlib.RunCompose(ctx, t, pn, "", nil,
-		append(restricted, "up", "--detach", "--no-healthd")...)
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "up", "--detach")...)
+	require.ErrorContains(t, err, "certificate is restricted")
+	require.ErrorContains(t, err, "incus project set")
+
+	err = gc.UpdateProjectConfig(testlib.ProjectName(pn), map[string]string{
+		managedKey:              "true",
+		shared.HealthEnabledKey: "true",
+	})
+	require.NoError(t, err)
+
+	// The sidecars enroll with a trust token, which only an unrestricted
+	// certificate can mint: up passing at all is up skipping them.
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "up", "--detach")...)
 	require.NoError(t, err)
 
 	// Not --project: deleting the project is the admin's, like creating it.
-	_, err = testlib.RunCompose(ctx, t, pn, "", nil,
-		append(restricted, "down", "--no-healthd")...)
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "down")...)
 	require.NoError(t, err)
 
 	names, err := conn.GetInstanceNames(ctx, client.SanitizeProjectName(testlib.ProjectName(pn)), nil)

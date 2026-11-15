@@ -223,6 +223,11 @@ SERVICES_LOOP:
 		}
 	}
 
+	if inUse && gc.Restricted() && !p.ClientConfig.Healthd.External {
+		gc.LogWarn("Skipping healthd: its sidecar enrolls with a trust token, which a restricted certificate cannot create; have the admin run one and use --external-healthd")
+		inUse = false
+	}
+
 	if inUse {
 		_, err := gc.HTTPSAddress()
 		if err != nil {

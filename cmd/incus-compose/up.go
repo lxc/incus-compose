@@ -179,6 +179,12 @@ func newUpCommand() *cli.Command {
 			if cmd.Bool("external-healthd") {
 				p.ClientConfig.Healthd.External = true
 			}
+			// Before anything reads it: a --recreate runs down first, which
+			// removes the DNS wiring unless DNS is off.
+			if !cmd.Bool("no-dns") && !p.ClientConfig.DNS.Disabled && globalClient.Restricted() {
+				globalClient.LogWarn(restrictedDNSWarning)
+				p.ClientConfig.DNS.Disabled = true
+			}
 			if cmd.Bool("allow-local-storage") {
 				p.ClientConfig.AllowLocalStorage = true
 			}

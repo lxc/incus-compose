@@ -395,6 +395,11 @@ func setupResolverACL(ctx context.Context, p *project.Project, resolverNet *clie
 	return nil
 }
 
+// restrictedDNSWarning is why up and down leave DNS alone for a restricted
+// certificate: the sidecar enrolls with a trust token, and the shared wiring is
+// an ACL and a peer in the default project. It may do neither.
+const restrictedDNSWarning = "Skipping DNS: its sidecar enrolls with a trust token and its wiring lives in the default project, neither of which a restricted certificate may create"
+
 // removeDNSACLs removes the resolver-side peer and ACL a project added, so its
 // networks can be deleted. A no-op unless the project uses the shared dns.
 func removeDNSACLs(ctx context.Context, c *client.Client, p *project.Project) error {
