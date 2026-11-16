@@ -19,6 +19,10 @@ form.
   ran DNS, looking for a resolver network to unwire that is not there. (by
   @tallica)
 
+- `up` and `down` of projects running at the same time on one OVN server no
+  longer fail now and then with `object not found` while attaching or
+  detaching ACLs. (by @tallica)
+
 ## [v1.4.0] - 2026-11-11
 
 ### Added
