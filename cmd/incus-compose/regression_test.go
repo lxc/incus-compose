@@ -369,3 +369,63 @@ networks:
 	require.NoError(t, err)
 	require.Empty(t, names, "down left instances behind")
 }
+
+// TestE2EUpHealthdExternalInCompose is a regression test for
+// x-incus-compose.healthd.external: up honored only --external-healthd and
+// started a sidecar of its own when the compose file said the same.
+func TestE2EUpHealthdExternalInCompose(t *testing.T) {
+	t.Parallel()
+	testlib.SkipE2E(t)
+
+	ctx := t.Context()
+	pn := t.Name()
+	dir := testlib.WriteTempFiles(t, map[string]string{
+		"compose.yaml": `x-incus-compose:
+  healthd:
+    external: true
+
+services:
+  web:
+    image: docker.io/alpine:edge
+    command: sh
+    healthcheck:
+      test: ["CMD", "true"]
+`})
+	compose := filepath.Join(dir, "compose.yaml")
+
+	// Its own global project, so a sidecar there can only be this test's.
+	global := testlib.ProjectName(pn) + "-global"
+
+	gc, err := client.NewTestClient(context.Background())
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		if testlib.KeepTestData() {
+			return
+		}
+
+		err := gc.DeleteProject(global, true)
+		if err != nil {
+			t.Errorf("deleting the global project %s: %v", global, err)
+		}
+	})
+
+	args := []string{"--global-project", global, "-f", compose}
+	testlib.CleanupCompose(t, pn, append(args, "down", "--project", "--no-dns")...)
+
+	// Not started: nothing would mark web healthy without the external healthd.
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(args, "up", "--detach", "--no-dns", "--no-start")...)
+	require.NoError(t, err)
+
+	conn, err := gc.Connection()
+	require.NoError(t, err)
+
+	for project, want := range map[string][]string{
+		client.SanitizeProjectName(testlib.ProjectName(pn)): {"web-1"},
+		client.SanitizeProjectName(global):                  nil,
+	} {
+		names, err := conn.GetInstanceNames(ctx, project, nil)
+		require.NoError(t, err)
+		require.ElementsMatch(t, want, names, "instances in %s", project)
+	}
+}
