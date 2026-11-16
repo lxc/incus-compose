@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	incusApi "github.com/lxc/incus/v7/shared/api"
@@ -441,4 +442,115 @@ services:
 		require.NoError(t, err)
 		require.ElementsMatch(t, want, names, "instances in %s", project)
 	}
+}
+
+// TestE2EUpRestrictedCertificateOVN pins that a restricted certificate gets
+// OVN networks in its own project without naming an uplink, as long as the
+// project allows just one. It may not list the uplinks in default, so the
+// auto-discovery up does before creating an OVN network finds nothing, and
+// Incus picks the only allowed one itself.
+func TestE2EUpRestrictedCertificateOVN(t *testing.T) {
+	t.Parallel()
+	testlib.SkipE2E(t)
+	testlib.SkipNoExtension(t, shared.Incus75Extension, "OVN networks require incus 7.5")
+
+	ctx := t.Context()
+	pn := t.Name()
+	dir := testlib.WriteTempFiles(t, map[string]string{
+		"compose.yaml": `services:
+  web:
+    image: docker.io/library/busybox:1.36-glibc
+    x-incus:
+      oci.entrypoint: sh
+    networks:
+      - lan
+
+networks:
+  lan:
+    driver: ovn
+`})
+	compose := filepath.Join(dir, "compose.yaml")
+
+	gc, err := client.NewTestClient(context.Background())
+	require.NoError(t, err)
+
+	if !gc.IsRemote() {
+		t.Skip("a restricted certificate needs an https remote")
+	}
+
+	ovn, err := gc.DetectOVN()
+	require.NoError(t, err)
+	if !ovn {
+		t.Skip("no OVN on this server")
+	}
+
+	conn, err := gc.Connection()
+	require.NoError(t, err)
+
+	networks, err := conn.GetNetworks(ctx, incusApi.ProjectDefaultName)
+	require.NoError(t, err)
+
+	uplink := ""
+	for _, n := range networks {
+		if (n.Type == "bridge" || n.Type == "physical") && (n.Config["ipv4.ovn.ranges"] != "" || n.Config["ipv6.ovn.ranges"] != "") {
+			uplink = n.Name
+			break
+		}
+	}
+	if uplink == "" {
+		t.Skip("no OVN uplink on this server")
+	}
+
+	testlib.CleanupCompose(t, pn, "-f", compose, "down", "--project", "--no-dns")
+
+	// An unrestricted project may use every bridge in default as its uplink,
+	// so Incus would ask which; restricting it to one leaves no choice. A
+	// restricted project also blocks the raw.lxc instances carry.
+	project := testlib.ProjectName(pn)
+	_, err = gc.EnsureProject(project,
+		client.EnsureProjectWithCreate(),
+		client.EnsureProjectWithConfig(map[string]string{
+			"features.networks":              "true",
+			"restricted":                     "true",
+			"restricted.networks.uplinks":    uplink,
+			"restricted.containers.lowlevel": "allow",
+			managedKey:                       "true",
+			shared.HealthEnabledKey:          "true",
+		}),
+	)
+	require.NoError(t, err)
+
+	cache := os.Getenv("INCUS_COMPOSE_IMAGE_CACHE")
+	if cache == "" {
+		cache = client.DefaultCacheProject
+	}
+
+	global := project + "-global"
+	t.Cleanup(func() {
+		if testlib.KeepTestData() {
+			return
+		}
+
+		err := gc.DeleteProject(global, true)
+		if err != nil {
+			t.Errorf("deleting the global project %s: %v", global, err)
+		}
+	})
+
+	for _, p := range []string{cache, global} {
+		_, err = gc.EnsureProject(p, client.EnsureProjectWithCreate())
+		require.NoError(t, err)
+	}
+
+	projects := []string{client.SanitizeProjectName(project), cache, client.SanitizeProjectName(global)}
+	restricted := slices.Concat(restrictedCertificate(ctx, t, conn, "ic-test-"+client.SanitizeProjectName(pn), projects), []string{"--global-project", global})
+
+	// Not started, as in TestE2ENetworkACL_OVN: the uplink is picked at create.
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, "up", "--detach", "--no-start")...)
+	require.NoError(t, err)
+
+	lan, _, err := conn.GetNetwork(ctx, client.SanitizeProjectName(project), client.SanitizeNetworkName(strings.ToLower(pn), "ic-", "lan"))
+	require.NoError(t, err)
+	require.Equal(t, "ovn", lan.Type)
+	require.Equal(t, uplink, lan.Config["network"])
 }
