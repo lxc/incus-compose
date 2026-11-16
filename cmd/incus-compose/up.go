@@ -336,6 +336,9 @@ func newUpCommand() *cli.Command {
 				}
 			}
 
+			// Only now, after the --recreate down: that one deletes the
+			// project's networks, so it has to take the DNS sidecar and wiring
+			// attached to them down too, or the delete fails with "in use".
 			var dnsConfigs map[string]string
 			if cmd.Bool("no-dns") {
 				p.ClientConfig.DNS.Disabled = true
