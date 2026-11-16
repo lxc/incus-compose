@@ -47,26 +47,27 @@ Every option below (and every command-specific one on the pages that follow) can
 also be set via an environment variable - see
 [Environment Variables](/environment-variables) for the full list.
 
-| Option                      | Description                                                                                                                        |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `-f`, `--file`              | Compose files (repeatable)                                                                                                         |
-| `-p`, `--project-name`      | Project name                                                                                                                       |
-| `-P`, `--project-directory` | Working directory                                                                                                                  |
-| `--profile`                 | Compose profiles (repeatable)                                                                                                      |
-| `--env-file`                | Environment files (repeatable)                                                                                                     |
-| `-E`, `--os-env`            | Include OS env vars                                                                                                                |
-| `--remote`                  | Incus remote                                                                                                                       |
-| `--server-url`              | Direct Incus server HTTPS URL (since v1.3.5)                                                                                       |
-| `--client-cert-file`        | Path to client certificate file (required with `--server-url`)                                                                     |
-| `--client-key-file`         | Path to client key file (required with `--server-url`)                                                                             |
-| `--server-fingerprint`      | Server certificate SHA-256 fingerprint (required with `--server-url`)                                                              |
-| `--ansi`                    | Color output: never/always/auto                                                                                                    |
-| `--image-cache`             | Incus project used as image cache (default: `incus-compose-cache`); set `""` to disable caching and pull straight into the project |
-| `--storage-pool`            | Default storage pool for volumes (default: `detect` for auto-detection)                                                            |
-| `--allow-remote-mounts`     | Allow pass-through bind mounts on a remote Incus server (since v1.3.5)                                                             |
-| `--allow-local-storage`     | Allow multi-replica or global deployment on an Incus cluster without a remote/shared storage pool                                  |
-| `--workers`                 | Number of concurrent workers (default: `4`)                                                                                        |
-| `--debug`                   | Debug logging                                                                                                                      |
+| Option                      | Description                                                                                                                                             |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-f`, `--file`              | Compose files (repeatable)                                                                                                                              |
+| `-p`, `--project-name`      | Project name                                                                                                                                            |
+| `-P`, `--project-directory` | Working directory                                                                                                                                       |
+| `--profile`                 | Compose profiles (repeatable)                                                                                                                           |
+| `--env-file`                | Environment files (repeatable)                                                                                                                          |
+| `-E`, `--os-env`            | Include OS env vars                                                                                                                                     |
+| `--remote`                  | Incus remote                                                                                                                                            |
+| `--server-url`              | Direct Incus server HTTPS URL (since v1.3.5)                                                                                                            |
+| `--client-cert-file`        | Path to client certificate file (required with `--server-url`)                                                                                          |
+| `--client-key-file`         | Path to client key file (required with `--server-url`)                                                                                                  |
+| `--server-fingerprint`      | Server certificate SHA-256 fingerprint (required with `--server-url`)                                                                                   |
+| `--ansi`                    | Color output: never/always/auto                                                                                                                         |
+| `--image-cache`             | Incus project used as image cache (default: `incus-compose-cache`); set `""` to disable caching and pull straight into the project                      |
+| `--global-project`          | Incus project holding the locks, the tools volume and the global-scope sidecars (default: `incus-compose`); give each tenant of a shared server its own |
+| `--storage-pool`            | Default storage pool for volumes (default: `detect` for auto-detection)                                                                                 |
+| `--allow-remote-mounts`     | Allow pass-through bind mounts on a remote Incus server (since v1.3.5)                                                                                  |
+| `--allow-local-storage`     | Allow multi-replica or global deployment on an Incus cluster without a remote/shared storage pool                                                       |
+| `--workers`                 | Number of concurrent workers (default: `4`)                                                                                                             |
+| `--debug`                   | Debug logging                                                                                                                                           |
 
 Supports the [no-color.org](https://no-color.org/) convention.
 

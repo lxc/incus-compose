@@ -78,7 +78,7 @@ func TestE2EHealthdGlobalScope(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, local, "the project must not carry a sidecar of its own")
 
-	hc := projectClient(ctx, t, globalProject)
+	hc := projectClient(ctx, t, defaultGlobalProject)
 	global, err := hc.InstanceExists(globalHealthdName)
 	require.NoError(t, err)
 	assert.True(t, global, "the shared daemon must exist in its own project")
@@ -298,7 +298,7 @@ func TestE2EHealthdCoexistence(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, local)
 
-	dc := projectClient(ctx, t, globalProject)
+	dc := projectClient(ctx, t, defaultGlobalProject)
 	global, err := dc.InstanceExists(globalHealthdName)
 	require.NoError(t, err)
 	assert.True(t, global, "the shared daemon must survive a project-scoped healthd down")
@@ -320,7 +320,7 @@ func TestE2EHealthdNoComposeFile(t *testing.T) {
 		return testlib.RunCompose(ctx, t, t.Name(), dir, nil, args...)
 	}
 
-	dc := projectClient(ctx, t, globalProject)
+	dc := projectClient(ctx, t, defaultGlobalProject)
 
 	// Start from no daemon at all, whatever earlier tests left behind.
 	_, _ = noProject("healthd", "down", "--force")
@@ -372,7 +372,7 @@ func TestE2EHealthdDownNeedsForce(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	dc := projectClient(ctx, t, globalProject)
+	dc := projectClient(ctx, t, defaultGlobalProject)
 
 	// Two projects carry scope=global, so taking the daemon down is refused:
 	// the tests have no terminal to confirm on.
@@ -432,7 +432,7 @@ func TestE2EHealthdMigratesToGlobal(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, local, "the project sidecar must be gone after the migration")
 
-	dc := projectClient(ctx, t, globalProject)
+	dc := projectClient(ctx, t, defaultGlobalProject)
 	global, err := dc.InstanceExists(globalHealthdName)
 	require.NoError(t, err)
 	assert.True(t, global)
@@ -491,8 +491,8 @@ func TestE2EPauseSurvivesHealthd(t *testing.T) {
 }
 
 // TestE2EUpgradeNonOVNToOVN simulates a pre-v1.4 installation on an OVN host:
-// legacy bridge icompose0 in project default and a non-OVN globalProject.
-// Upgrading must tear down the legacy bridge, recreate globalProject
+// legacy bridge icompose0 in project default and a non-OVN defaultGlobalProject.
+// Upgrading must tear down the legacy bridge, recreate the global project
 // with features.networks="true", and bring up OVN icompose0 and healthd.
 func TestE2EUpgradeNonOVNToOVN(t *testing.T) {
 	testlib.SkipE2E(t)
@@ -515,7 +515,7 @@ func TestE2EUpgradeNonOVNToOVN(t *testing.T) {
 	conn, err := gc.Connection()
 	require.NoError(t, err)
 
-	_ = gc.DeleteProject(globalProject, true)
+	_ = gc.DeleteProject(defaultGlobalProject, true)
 	_ = conn.DeleteNetwork(ctx, "default", globalHealthdNetwork)
 
 	err = conn.CreateNetwork(ctx, "default", incusApi.NetworksPost{
@@ -524,7 +524,7 @@ func TestE2EUpgradeNonOVNToOVN(t *testing.T) {
 	}, nil)
 	require.NoError(t, err)
 
-	_, err = gc.EnsureProject(globalProject, client.EnsureProjectWithCreate(), client.EnsureProjectWithConfig(map[string]string{
+	_, err = gc.EnsureProject(defaultGlobalProject, client.EnsureProjectWithCreate(), client.EnsureProjectWithConfig(map[string]string{
 		"features.networks": "false",
 	}))
 	require.NoError(t, err)
@@ -537,16 +537,16 @@ func TestE2EUpgradeNonOVNToOVN(t *testing.T) {
 	_, _, err = conn.GetNetwork(ctx, "default", globalHealthdNetwork)
 	assert.Error(t, err, "legacy bridge icompose0 in default must be deleted")
 
-	proj, _, err := conn.GetProject(ctx, globalProject)
+	proj, _, err := conn.GetProject(ctx, defaultGlobalProject)
 	require.NoError(t, err)
 	assert.Equal(t, "true", proj.Config["features.networks"], "global project must have features.networks")
 
-	net, _, err := conn.GetNetwork(ctx, globalProject, globalHealthdNetwork)
+	net, _, err := conn.GetNetwork(ctx, defaultGlobalProject, globalHealthdNetwork)
 	require.NoError(t, err)
 	assert.Equal(t, "ovn", net.Type, "icompose0 must be an OVN network")
 	assert.NotEmpty(t, net.Config["ipv4.dhcp.ranges"], "icompose0 must have ipv4.dhcp.ranges configured")
 
-	dc := projectClient(ctx, t, globalProject)
+	dc := projectClient(ctx, t, defaultGlobalProject)
 	global, err := dc.InstanceExists(globalHealthdName)
 	require.NoError(t, err)
 	assert.True(t, global)

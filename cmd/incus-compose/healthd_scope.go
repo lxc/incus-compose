@@ -45,9 +45,9 @@ func healthdClient(p *project.Project, c *client.Client) (*client.Client, string
 		return c, scope, nil
 	}
 
-	hc, err := c.Global().EnsureProject(globalProject)
+	hc, err := c.Global().EnsureProject(c.Global().GlobalProject())
 	if err != nil {
-		return nil, "", fmt.Errorf("getting the %s project: %w", globalProject, err)
+		return nil, "", fmt.Errorf("getting the %s project: %w", c.Global().GlobalProject(), err)
 	}
 
 	return hc, scope, nil

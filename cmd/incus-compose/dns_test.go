@@ -448,7 +448,7 @@ func TestDNSInstance_GlobalStaticIP(t *testing.T) {
 	gc, err := client.NewTestClient(ctx)
 	require.NoError(t, err)
 
-	c, err := gc.EnsureProject(globalProject)
+	c, err := gc.EnsureProject(defaultGlobalProject)
 	require.NoError(t, err)
 
 	params := dnsParams{

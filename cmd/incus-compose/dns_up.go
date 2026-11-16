@@ -180,7 +180,7 @@ func dnsUp(ctx context.Context, p *project.Project, c *client.Client, args dnsUp
 		}
 
 		hc, err = c.Global().EnsureProject(
-			globalProject,
+			c.Global().GlobalProject(),
 			client.EnsureProjectWithCreate(),
 			client.EnsureProjectWithConfig(map[string]string{managedKey: "true"}),
 		)
@@ -414,7 +414,7 @@ func removeDNSACLs(ctx context.Context, c *client.Client, p *project.Project) er
 	}
 	defer release()
 
-	sysClient, err := c.Global().EnsureProject(globalProject)
+	sysClient, err := c.Global().EnsureProject(c.Global().GlobalProject())
 	if err != nil {
 		return err
 	}
@@ -547,7 +547,7 @@ func dnsUpGlobal(ctx context.Context, gc *client.GlobalClient, cfg project.XICDN
 	}
 
 	hc, err := gc.EnsureProject(
-		globalProject,
+		gc.GlobalProject(),
 		client.EnsureProjectWithCreate(),
 		client.EnsureProjectWithConfig(map[string]string{managedKey: "true"}),
 	)

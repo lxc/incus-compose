@@ -88,7 +88,7 @@ func newDNSDownCommand() *cli.Command {
 			defer done()
 
 			c := target.client
-			global := target.client.IncusProject() == globalProject
+			global := target.client.IncusProject() == globalClient.GlobalProject()
 
 			if global && !cmd.Bool("force") {
 				others, err := globalClient.ProjectsWithConfig(shared.DNSScopeKey, shared.DNSScopeGlobal)
