@@ -33,6 +33,10 @@ form.
   (`--image-cache ""`); only the cache needs the server on the network. (by
   @tallica)
 
+- `up` no longer starts a healthd sidecar when
+  `x-incus-compose.healthd.external` is set in the compose file; only
+  `--external-healthd` was honoured. (by @tallica)
+
 ## [v1.4.0] - 2026-11-11
 
 ### Added

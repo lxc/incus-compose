@@ -203,11 +203,7 @@ func TestE2EUpRestrictedCertificate(t *testing.T) {
 	// service is named for this test: Incus refuses an instance DNS name a
 	// parallel test already holds on the shared bridge. The healthcheck puts
 	// healthd in use, so its skip is exercised along with the DNS one.
-	dir := testlib.WriteTempFiles(t, map[string]string{
-		"compose.yaml": `x-incus:
-  features.networks: "false"
-
-services:
+	body := `services:
   restricted:
     image: docker.io/alpine:edge
     healthcheck:
@@ -220,7 +216,14 @@ networks:
     external: true
     x-incus-compose:
       network: incusbr0
-`})
+`
+	// healthd.external set in the file rather than by --external-healthd: up
+	// must leave healthd to the admin either way, not mint it a trust token.
+	dir := testlib.WriteTempFiles(t, map[string]string{
+		"compose.yaml": "x-incus:\n  features.networks: \"false\"\n\n" + body,
+		"external.yaml": "x-incus:\n  features.networks: \"false\"\n\n" +
+			"x-incus-compose:\n  healthd:\n    external: true\n\n" + body,
+	})
 	compose := filepath.Join(dir, "compose.yaml")
 
 	gc, err := client.NewTestClient(context.Background())
@@ -316,10 +319,9 @@ networks:
 		"--client-cert-file", filepath.Join(certDir, incustrust.CertFile),
 		"--client-key-file", filepath.Join(certDir, incustrust.KeyFile),
 		"--server-fingerprint", info.CertificateFingerprint,
-		"-f", compose,
 	}
 
-	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "up", "--detach")...)
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, "up", "--detach")...)
 	require.ErrorContains(t, err, "certificate is restricted")
 	require.ErrorContains(t, err, "incus project set")
 
@@ -331,11 +333,15 @@ networks:
 
 	// The sidecars enroll with a trust token, which only an unrestricted
 	// certificate can mint: up passing at all is up skipping them.
-	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "up", "--detach")...)
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, "up", "--detach")...)
+	require.NoError(t, err)
+
+	external := filepath.Join(dir, "external.yaml")
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", external, "up", "--detach")...)
 	require.NoError(t, err)
 
 	// Not --project: deleting the project is the admin's, like creating it.
-	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "down")...)
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, "down")...)
 	require.NoError(t, err)
 
 	names, err := conn.GetInstanceNames(ctx, client.SanitizeProjectName(testlib.ProjectName(pn)), nil)

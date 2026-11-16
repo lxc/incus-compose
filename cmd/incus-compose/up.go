@@ -317,7 +317,7 @@ func newUpCommand() *cli.Command {
 				}
 			}
 
-			if usesHealthd && !cmd.Bool("external-healthd") {
+			if usesHealthd && !p.ClientConfig.Healthd.External {
 				err = healthdUp(ctx, p, c, healthdUpArgs{
 					Binary:  cmd.String("healthd-binary"),
 					Image:   healthdImage(),
