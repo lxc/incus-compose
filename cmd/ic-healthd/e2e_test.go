@@ -554,6 +554,44 @@ func TestE2EDynamicScope(t *testing.T) {
 	}, 20*time.Second, time.Second, "a project without the marker must not be watched")
 }
 
+// TestE2EProjectMarkedAfterItsFirstRead covers a project marked once the daemon
+// has already read it unmarked, which is what `up` does to a project its
+// instances were created in first. The enricher kept that first read until the
+// next sweep, hours away, so the project stayed unwatched however it was marked.
+func TestE2EProjectMarkedAfterItsFirstRead(t *testing.T) {
+	t.Parallel()
+	testlib.SkipE2E(t)
+
+	c := testProject(t, "healthd-marked-later-")
+
+	const marker = "user.healthcheck.watched-by-marked-later-test"
+
+	cfg := healthdConfig(t, c, c.IncusProject())
+	cfg.Projects = nil
+	cfg.ProjectMarker = marker
+
+	runDaemon(t, c, cfg)
+
+	// Started under the running daemon, so the start is an event it reads the
+	// project for, and finds it unmarked.
+	name := testContainer(t, c, "web", healthKeys(map[string]string{
+		"test":     `["CMD","/bin/true"]`,
+		"interval": "2s",
+		"timeout":  "5s",
+		"retries":  "2",
+	}), true)
+
+	conn, project := testConn(t, c), c.Project()
+	require.Never(t, func() bool {
+		inst, _, err := conn.GetInstance(t.Context(), project, name, nil)
+		return err == nil && inst.Config[shared.HealthStatusKey] == shared.HealthStatusHealthy
+	}, 15*time.Second, time.Second, "an unmarked project was watched")
+
+	markProject(t, c, marker, "true")
+
+	requireStatus(t, conn, project, name, shared.HealthStatusHealthy, 60*time.Second)
+}
+
 // TestE2EProjectRenamed covers a project moving under the daemon: Incus only
 // renames empty projects, so nothing is tracked at the moment of the rename,
 // and what is created under the new name must be watched.
