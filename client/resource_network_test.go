@@ -1015,10 +1015,16 @@ func TestNetworkTypeRestricted(t *testing.T) {
 		t.Skipf("No incusbr0: %v", err)
 	}
 
-	cache := gc.imageCache.IncusProject()
-	rc := restrictedTestClient(ctx, t, gc, []string{cache})
+	// A bridge project of its own: on an OVN server the shared cache project
+	// has networks of its own, and nothing is inherited from default.
+	project := "ic-test-nettype-" + strings.ToLower(shared.RandString(8))
+	_, err = gc.EnsureProject(project, EnsureProjectWithCreate(), EnsureProjectWithNetworkDriver("bridge"))
+	require.NoError(t, err)
+	deleteProjectOnCleanup(t, gc, project)
 
-	c, err := rc.EnsureProject(cache)
+	rc := restrictedTestClient(ctx, t, gc, []string{project, gc.imageCache.IncusProject()})
+
+	c, err := rc.EnsureProject(project)
 	require.NoError(t, err)
 	require.False(t, c.FeaturesNetworks(), "the network must be inherited from default")
 
