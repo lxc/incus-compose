@@ -29,6 +29,9 @@ no history an update could lose, and each one costs a read per instance in the
 project, so the last of a burst is the one worth paying for. A delete lost in a
 burst is a delete lost.
 
+The project actions are the same: `project-updated` is collapsible, while
+`project-deleted` and `project-renamed` are not.
+
 It is a plugin at a position rather than something ahead of the chain, which is
 what lets [[developer/ievent/debounce|debounce]] sit before and collapse a burst
 before it costs a read.
@@ -125,7 +128,7 @@ flowchart TD
     QRelease --> Downstream
 ```
 
-## Four Things Happen Here
+## Five Things Happen Here
 
 Only the first is a read of the event's own subject.
 
@@ -145,11 +148,18 @@ Except a delete: Incus refuses to delete a profile still expanded into anything,
 so the event names a profile no instance uses any more, and fanning out would
 read a whole project's instances to learn nothing changed.
 
+**A project action** reads the project again, even where held, and the read fans
+out over the instances held in it, like a first read of it does. An update drops
+a read already out instead of joining it, since that read may have been answered
+before the update. A delete, and the old name of a rename, drop the project from
+the model along with its instances' archive entries, so one recreated under the
+same name is read as the new project it is.
+
 **A round** goes over the whole fleet by name, for ever, at its own pace. Each
 name it hands back takes the first path above; what it holds and the listing
 does not is dropped.
 
-The middle two are fan-out. They issue reads through the pool; once settled,
+The middle three are fan-out. They issue reads through the pool; once settled,
 each updated instance is handed forward through `next`, skipping `Command` so
 `debounce` does not collapse them into one.
 
@@ -159,7 +169,7 @@ is, so the two can never collide.
 
 ## Every Event Carries Its Project's Labels Too
 
-Before any of the four paths above, an event whose action somebody wants
+Before any of the five paths above, an event whose action somebody wants
 `EnrichedProject` for gets the owning project's own configuration attached - not
 a read of its own, but what the round already holds from its project listing,
 read once per whole-fleet pass rather than again each time one of its instances
@@ -172,6 +182,11 @@ naming a project the model does not hold issues a targeted project read through
 the pool rather than waiting on the next round. Once the read lands, the
 project's config is stored, and the enricher fans out re-reads over that
 project's instances so their events walk with labels attached.
+
+What is held is kept until a project action or the next round says otherwise.
+Without the project actions, a project marked after its first read - the way
+ic-healthd and ic-dns pick the projects they serve - stayed unmarked here for up
+to a whole sweep interval.
 
 ## An Incomplete Read Is No Read
 
