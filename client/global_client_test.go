@@ -112,16 +112,10 @@ func TestDetectOVNMatchesProbe(t *testing.T) {
 	require.Equal(t, createErr == nil, got, "probe error: %v", createErr)
 }
 
-// TestConnectRestrictedCertificate is a regression test for #127: a
-// project-restricted certificate reads no server config, so core.https_address
-// looked unset and Connect refused a server that was listening.
-func TestConnectRestrictedCertificate(t *testing.T) {
-	t.Parallel()
-	skipLocal(t)
-	ctx := testContext(t)
-
-	gc, err := NewTestClient(ctx)
-	require.NoError(t, err)
+// restrictedTestClient enrolls a certificate restricted to projects and
+// returns a connected client using it, next to the admin client gc.
+func restrictedTestClient(ctx context.Context, t *testing.T, gc *GlobalClient, projects []string) *GlobalClient {
+	t.Helper()
 
 	if !gc.IsRemote() {
 		t.Skip("a restricted certificate needs an https remote")
@@ -134,7 +128,6 @@ func TestConnectRestrictedCertificate(t *testing.T) {
 	require.NoError(t, err)
 
 	name := "ic-test-restricted-" + strings.ToLower(shared.RandString(12))
-	projects := []string{gc.imageCache.IncusProject()}
 
 	t.Cleanup(func() {
 		certs, err := conn.GetCertificates(ctx)
@@ -179,8 +172,24 @@ func TestConnectRestrictedCertificate(t *testing.T) {
 	}, token.String())
 	require.NoError(t, err)
 
-	rc := New(ctx, ClientProvideConnection(restricted), ClientCacheProject(projects[0]))
+	rc := New(ctx, ClientProvideConnection(restricted), ClientCacheProject(gc.imageCache.IncusProject()))
 	require.NoError(t, rc.Connect())
+
+	return rc
+}
+
+// TestConnectRestrictedCertificate is a regression test for #127: a
+// project-restricted certificate reads no server config, so core.https_address
+// looked unset and Connect refused a server that was listening.
+func TestConnectRestrictedCertificate(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := testContext(t)
+
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
+
+	rc := restrictedTestClient(ctx, t, gc, []string{gc.imageCache.IncusProject()})
 
 	// Only the port survives the fallback; an empty host means any address,
 	// the same as core.https_address=":8443".
