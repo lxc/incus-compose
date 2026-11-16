@@ -333,6 +333,12 @@ networks:
 		"--global-project", global,
 	}
 
+	// A project the certificate was not given looks missing to it, so up
+	// would try to create it.
+	_, err = testlib.RunCompose(ctx, t, pn+"Ungranted", "", nil, append(restricted, "-f", compose, "up", "--detach")...)
+	require.ErrorContains(t, err, "certificate is restricted")
+	require.ErrorContains(t, err, "the admin creates it")
+
 	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, "up", "--detach")...)
 	require.ErrorContains(t, err, "certificate is restricted")
 	require.ErrorContains(t, err, "incus project set")
