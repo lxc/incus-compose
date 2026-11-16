@@ -1248,6 +1248,20 @@ func retryBusy[T any](ctx context.Context, r *Instance, write func() (T, error))
 	return out, err
 }
 
+// isIdmapRace reports the refusal incusd gives a container starting while
+// another one sharing a custom volume is still being created: incusd compares
+// the idmaps of every container on the volume, and the other has none yet
+// (internal/server/device/disk.go). It is gone once that create finishes.
+func isIdmapRace(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := err.Error()
+
+	return strings.Contains(msg, "Idmaps of container") && strings.Contains(msg, "are not identical")
+}
+
 // waitBusyOperation blocks until no queryable operation holds the instance's
 // operation lock.
 func (r *Instance) waitBusyOperation(ctx context.Context) error {
@@ -1440,16 +1454,28 @@ func (r *Instance) start(ctx context.Context, options Options) error {
 		return ErrRunning
 	}
 
-	_, err = retryBusy(ctx, r, func() (struct{}, error) {
-		op, err := conn.UpdateInstanceState(ctx, r.client.incusProject, r.incusName, incusApi.InstanceStatePut{
-			Action:  "start",
-			Timeout: options.incusTimeout(),
-		}, "")
-		if err != nil {
-			return struct{}{}, ErrOperation.WithText("creating an instance start operation").Wrap(err)
-		}
+	// Longer than retryBusy's: the race lasts as long as the other create does.
+	err = retry.New(
+		retry.Context(ctx),
+		retry.Attempts(20),
+		retry.Delay(500*time.Millisecond),
+		retry.DelayType(retry.FixedDelay),
+		retry.LastErrorOnly(true),
+		retry.RetryIf(isIdmapRace),
+	).Do(func() error {
+		_, err := retryBusy(ctx, r, func() (struct{}, error) {
+			op, err := conn.UpdateInstanceState(ctx, r.client.incusProject, r.incusName, incusApi.InstanceStatePut{
+				Action:  "start",
+				Timeout: options.incusTimeout(),
+			}, "")
+			if err != nil {
+				return struct{}{}, ErrOperation.WithText("creating an instance start operation").Wrap(err)
+			}
 
-		return struct{}{}, r.client.hookOperation(ctx, ActionStart, r, options, op, nil)
+			return struct{}{}, r.client.hookOperation(ctx, ActionStart, r, options, op, nil)
+		})
+
+		return err
 	})
 	if err != nil {
 		return ErrOperation.WithText("starting an instance").Wrap(err)

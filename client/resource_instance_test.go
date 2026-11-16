@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -696,4 +697,15 @@ func TestInstanceConfigChanged(t *testing.T) {
 			require.Equal(t, tt.want, inst.ConfigChanged())
 		})
 	}
+}
+
+// TestIsIdmapRace pins the start retry to the refusal incusd gives while a
+// container sharing the volume is still being created, as CI saw it.
+func TestIsIdmapRace(t *testing.T) {
+	t.Parallel()
+
+	assert.False(t, isIdmapRace(nil))
+	assert.False(t, isIdmapRace(errors.New("Failed to start device \"data\": no such file")))
+	assert.True(t, isIdmapRace(errors.New(`starting an instance: Failed to start device "incus-compose-tools": Failed mounting volume: Failed shifting custom storage volume "vol-incus-compose-tools" on storage pool "local": Idmaps of container "web-2-pre-start-0" and storage volume "vol-incus-compose-tools" are not identical`)))
+	assert.True(t, isIdmapRace(errors.New("Idmaps of container and storage volume are not identical")))
 }
