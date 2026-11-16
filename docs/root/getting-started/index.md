@@ -142,7 +142,11 @@ On an OVN server the admin can instead create the project with
 `-c features.networks=true`, and the certificate then creates its own OVN
 networks and ACLs inside it. It cannot list the uplinks in `default`, so name
 one with `--network-uplink` or `x-incus-compose.network.uplink`, unless only one
-is available to the project, which Incus then picks itself.
+is available to the project, which Incus then picks itself. To offer just one,
+the admin restricts the project with `-c restricted=true` and
+`-c restricted.networks.uplinks=<uplink>`; a restricted project also needs
+`-c restricted.containers.lowlevel=allow`, since incus-compose sets `raw.lxc` on
+its containers.
 
 With a restricted certificate incus-compose:
 
