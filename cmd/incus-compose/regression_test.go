@@ -4,12 +4,14 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/stretchr/testify/require"
 
 	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/iclient"
 	"github.com/lxc/incus-compose/incustrust"
 	"github.com/lxc/incus-compose/internal/testlib"
 	"github.com/lxc/incus-compose/shared"
@@ -189,6 +191,66 @@ func TestE2EGlobalProjectFlag(t *testing.T) {
 	require.NoError(t, client.RunAction(ctx, locks, client.ActionEnsure), "the locks are not in the global project given")
 }
 
+// restrictedCertificate enrolls a certificate restricted to projects and
+// returns the global flags that connect incus-compose with it.
+func restrictedCertificate(ctx context.Context, t *testing.T, conn *iclient.Connection, name string, projects []string) []string {
+	t.Helper()
+
+	info, err := conn.GetConnectionInfo(ctx)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		certs, err := conn.GetCertificates(context.Background())
+		if err != nil {
+			return
+		}
+
+		for _, cert := range certs {
+			if cert.Name == name {
+				_ = conn.DeleteCertificate(context.Background(), cert.Fingerprint)
+			}
+		}
+	})
+
+	// A token operation never finishes, only its first update carries the token.
+	tokenCtx, release := context.WithCancel(ctx)
+	updates, err := conn.CreateCertificateToken(tokenCtx, incusApi.CertificatesPost{
+		CertificatePut: incusApi.CertificatePut{
+			Name:       name,
+			Type:       "client",
+			Restricted: true,
+			Projects:   projects,
+		},
+		Token: true,
+	})
+	require.NoError(t, err)
+
+	opAPI, ok := <-updates
+	release()
+	require.True(t, ok, "the certificate token operation reported nothing")
+
+	token, err := opAPI.ToCertificateAddToken()
+	require.NoError(t, err)
+
+	certDir := t.TempDir()
+	_, err = incustrust.Enroll(ctx, incustrust.Config{
+		Name:              name,
+		URL:               info.URL,
+		ServerFingerprint: info.CertificateFingerprint,
+		DataDir:           certDir,
+		Restricted:        true,
+		Projects:          projects,
+	}, token.String())
+	require.NoError(t, err)
+
+	return []string{
+		"--server-url", info.URL,
+		"--client-cert-file", filepath.Join(certDir, incustrust.CertFile),
+		"--client-key-file", filepath.Join(certDir, incustrust.KeyFile),
+		"--server-fingerprint", info.CertificateFingerprint,
+	}
+}
+
 // TestE2EUpRestrictedCertificate is a regression test for #127: `up` with a
 // certificate restricted to the projects it uses. Incus hides the server
 // config from such a certificate, which is where core.https_address lives.
@@ -275,63 +337,8 @@ networks:
 		require.NoError(t, err)
 	}
 
-	info, err := conn.GetConnectionInfo(ctx)
-	require.NoError(t, err)
-
-	name := "ic-test-" + client.SanitizeProjectName(pn)
 	projects := []string{client.SanitizeProjectName(testlib.ProjectName(pn)), cache, client.SanitizeProjectName(global)}
-
-	t.Cleanup(func() {
-		certs, err := conn.GetCertificates(context.Background())
-		if err != nil {
-			return
-		}
-
-		for _, cert := range certs {
-			if cert.Name == name {
-				_ = conn.DeleteCertificate(context.Background(), cert.Fingerprint)
-			}
-		}
-	})
-
-	// A token operation never finishes, only its first update carries the token.
-	tokenCtx, release := context.WithCancel(ctx)
-	updates, err := conn.CreateCertificateToken(tokenCtx, incusApi.CertificatesPost{
-		CertificatePut: incusApi.CertificatePut{
-			Name:       name,
-			Type:       "client",
-			Restricted: true,
-			Projects:   projects,
-		},
-		Token: true,
-	})
-	require.NoError(t, err)
-
-	opAPI, ok := <-updates
-	release()
-	require.True(t, ok, "the certificate token operation reported nothing")
-
-	token, err := opAPI.ToCertificateAddToken()
-	require.NoError(t, err)
-
-	certDir := t.TempDir()
-	_, err = incustrust.Enroll(ctx, incustrust.Config{
-		Name:              name,
-		URL:               info.URL,
-		ServerFingerprint: info.CertificateFingerprint,
-		DataDir:           certDir,
-		Restricted:        true,
-		Projects:          projects,
-	}, token.String())
-	require.NoError(t, err)
-
-	restricted := []string{
-		"--server-url", info.URL,
-		"--client-cert-file", filepath.Join(certDir, incustrust.CertFile),
-		"--client-key-file", filepath.Join(certDir, incustrust.KeyFile),
-		"--server-fingerprint", info.CertificateFingerprint,
-		"--global-project", global,
-	}
+	restricted := slices.Concat(restrictedCertificate(ctx, t, conn, "ic-test-"+client.SanitizeProjectName(pn), projects), []string{"--global-project", global})
 
 	// A project the certificate was not given looks missing to it, so up
 	// would try to create it.
