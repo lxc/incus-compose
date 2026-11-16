@@ -11,6 +11,14 @@ final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced
 form.
 
+## [Unreleased]
+
+### Fixed
+
+- `down` no longer fails on an OVN server with a `--global-project` that never
+  ran DNS, looking for a resolver network to unwire that is not there. (by
+  @tallica)
+
 ## [v1.4.0] - 2026-11-11
 
 ### Added
