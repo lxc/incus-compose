@@ -37,6 +37,10 @@ form.
   `x-incus-compose.healthd.external` is set in the compose file; only
   `--external-healthd` was honoured. (by @tallica)
 
+- `down` no longer fails on an OVN server with a `--global-project` that never
+  ran DNS, looking for a resolver network to unwire that is not there. (by
+  @tallica)
+
 ## [v1.4.0] - 2026-11-11
 
 ### Added

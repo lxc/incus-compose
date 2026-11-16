@@ -441,8 +441,13 @@ func removeDNSACLs(ctx context.Context, c *client.Client, p *project.Project) er
 		return client.ErrUnknown.WithResource(resolverRes)
 	}
 
-	// Fetch, so the detach has state to work from.
+	// Fetch, so the detach has state to work from. Without the resolver network
+	// there is no wiring to remove: DNS never ran against this global project.
 	err = client.RunAction(ctx, resolverNet, client.ActionEnsure)
+	if errors.Is(err, client.ErrNotFound) {
+		return nil
+	}
+
 	if err != nil {
 		return err
 	}
