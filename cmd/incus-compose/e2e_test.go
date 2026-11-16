@@ -712,12 +712,22 @@ func TestE2EUpDownWithProjectOptions(t *testing.T) {
 	testlib.SkipE2E(t)
 
 	ctx := t.Context()
-	pn := t.Name()
+	// A name of its own per run: ic-healthd keeps a project's config from its
+	// first read until a sweep, across a delete, so a project recreated under a
+	// name it saw unmarked stays unwatched.
+	pn := t.Name() + "-" + strings.ToLower(shared.RandString(6))
 	compose := testlib.Fixture(t, "with-project-options", "compose.yaml")
 
 	testlib.CleanupCompose(t, pn, "-f", compose, "down", "--project")
 
+	// The fixture sets healthd.external, so up leaves healthd to someone else
+	// and waits for it to mark the restarting services healthy. Here the test
+	// is that someone.
 	tests := []e2eTest{
+		{
+			name: "healthd up with-project-options",
+			args: []string{"-f", compose, "healthd", "up"},
+		},
 		{
 			name: "up with-project-options",
 			args: []string{"-f", compose, "up", "--detach"},
