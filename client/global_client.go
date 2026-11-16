@@ -458,9 +458,11 @@ func (c *GlobalClient) Connect() error {
 		return ErrServerNotListening
 	}
 
-	// For a TLS client auth_user_name is the certificate's fingerprint, and a
-	// restricted certificate may read its own record. One trusted through a
-	// CA has none, and is not restricted.
+	// For a TLS client auth_user_name names the trust store entry that let it
+	// in, which a restricted certificate may read: its own, or that of the CA
+	// in the trust store that issued it, whose restriction it shares. One
+	// trusted through core.trust_ca_certificates has no entry, and is not
+	// restricted.
 	restricted := false
 	if server.AuthUserMethod == incusApi.AuthenticationMethodTLS {
 		cert, err := c.incus.GetCertificate(c.ctx, server.AuthUserName)
