@@ -358,13 +358,20 @@ networks:
 	require.NoError(t, err)
 
 	// The sidecars enroll with a trust token, which only an unrestricted
-	// certificate can mint: up passing at all is up skipping them.
-	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, "up", "--detach")...)
+	// certificate can mint, so up skips them and says so. The bridge is the
+	// admin's too, so the service names on it are left out.
+	_, stderr, err := testlib.RunComposeStderr(ctx, t, pn, "", nil, append(restricted, "-f", compose, "up", "--detach")...)
 	require.NoError(t, err)
+	require.Contains(t, stderr, "Skipping healthd: its sidecar enrolls with a trust token")
+	require.Contains(t, stderr, restrictedDNSWarning)
+	require.Contains(t, stderr, "Skipping service DNS records")
 
+	// An external healthd is the admin's, so there is nothing to skip.
 	external := filepath.Join(dir, "external.yaml")
-	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", external, "up", "--detach")...)
+	_, stderr, err = testlib.RunComposeStderr(ctx, t, pn, "", nil, append(restricted, "-f", external, "up", "--detach")...)
 	require.NoError(t, err)
+	require.NotContains(t, stderr, "Skipping healthd")
+	require.Contains(t, stderr, restrictedDNSWarning)
 
 	// Run directly, the sidecars stop on the trust token rather than skip.
 	for _, sidecar := range []string{"healthd", "dns"} {
@@ -372,8 +379,9 @@ networks:
 		require.ErrorContains(t, err, "certificate is restricted", sidecar)
 	}
 
-	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, "down")...)
+	_, stderr, err = testlib.RunComposeStderr(ctx, t, pn, "", nil, append(restricted, "-f", compose, "down")...)
 	require.NoError(t, err)
+	require.Contains(t, stderr, restrictedDNSWarning)
 
 	// Deleting the project is the admin's, like creating it.
 	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, "down", "--project")...)
