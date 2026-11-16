@@ -197,6 +197,11 @@ services:
 	_, err := testlib.RunCompose(ctx, t, pn, "", nil, "-f", compose, "up", "--detach", "--no-healthd")
 	require.NoError(t, err)
 
+	// The down a recreate runs reads DNS.Disabled rather than a NoDNS of its
+	// own; with DNS off in the file there is no sidecar or wiring to find.
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, "-f", compose, "up", "--detach", "--no-healthd", "--recreate")
+	require.NoError(t, err)
+
 	c := projectClient(ctx, t, pn)
 
 	dnsName := dnsInstanceName(c.IncusProject(), false)
