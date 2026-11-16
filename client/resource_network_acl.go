@@ -47,7 +47,7 @@ func (r *Network) Type(ctx context.Context) string {
 		return net.Type
 	}
 
-	typ, err := r.client.globalClient.NetworkType(ctx, r.incusProject(), r.incusName)
+	typ, err := r.client.globalClient.NetworkType(ctx, r.readProject(), r.incusName)
 	if err != nil {
 		if r.Config.Type != "" {
 			return r.Config.Type

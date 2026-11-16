@@ -367,18 +367,16 @@ func (r *Network) incusProject() string {
 	return incusApi.ProjectDefaultName
 }
 
-// fetch reads the network from the project it lives in. A restricted
-// certificate cannot read the default project, but may view a network
+// readProject is the project to read the network through. A restricted
+// certificate may not read the default project, but may view a network
 // inherited from it when asked through a project it is trusted for, where
-// Incus resolves it to default itself; that is the second try.
-func (r *Network) fetch(ctx context.Context, conn *iclient.Connection) (*incusApi.Network, string, error) {
-	proj := r.incusProject()
-	network, eTag, err := conn.GetNetwork(ctx, proj, r.incusName)
-	if err != nil && proj == incusApi.ProjectDefaultName && r.client.incusProject != proj {
-		network, eTag, err = conn.GetNetwork(ctx, r.client.incusProject, r.incusName)
+// Incus resolves it to default itself.
+func (r *Network) readProject() string {
+	if r.client.Global().Restricted() {
+		return r.client.incusProject
 	}
 
-	return network, eTag, err
+	return r.incusProject()
 }
 
 func (r *Network) get(ctx context.Context) error {
@@ -387,7 +385,7 @@ func (r *Network) get(ctx context.Context) error {
 		return err
 	}
 
-	network, eTag, err := r.fetch(ctx, conn)
+	network, eTag, err := conn.GetNetwork(ctx, r.readProject(), r.incusName)
 	if err != nil && r.Config.External && r.client.FeaturesNetworks() {
 		network, eTag, err = conn.GetNetwork(ctx, incusApi.ProjectDefaultName, r.incusName)
 	}
@@ -730,7 +728,7 @@ func (r *Network) updateDNSAliases(ctx context.Context, ownedServices []string, 
 		retry.LastErrorOnly(true),
 		retry.RetryIf(isConcurrencyConflict),
 	).Do(func() error {
-		net, etag, readErr := r.fetch(ctx, conn)
+		net, etag, readErr := conn.GetNetwork(ctx, r.readProject(), r.incusName)
 		if readErr != nil {
 			return fmt.Errorf("reading network %q: %w", r.Name(), readErr)
 		}
