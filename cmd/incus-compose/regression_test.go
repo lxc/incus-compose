@@ -340,9 +340,18 @@ networks:
 	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", external, "up", "--detach")...)
 	require.NoError(t, err)
 
-	// Not --project: deleting the project is the admin's, like creating it.
+	// Run directly, the sidecars stop on the trust token rather than skip.
+	for _, sidecar := range []string{"healthd", "dns"} {
+		_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, sidecar, "up")...)
+		require.ErrorContains(t, err, "certificate is restricted", sidecar)
+	}
+
 	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, "down")...)
 	require.NoError(t, err)
+
+	// Deleting the project is the admin's, like creating it.
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, "down", "--project")...)
+	require.ErrorContains(t, err, "may not delete project")
 
 	names, err := conn.GetInstanceNames(ctx, client.SanitizeProjectName(testlib.ProjectName(pn)), nil)
 	require.NoError(t, err)

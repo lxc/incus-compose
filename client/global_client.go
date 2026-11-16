@@ -1027,6 +1027,11 @@ func (c *GlobalClient) DeleteProject(name string, force bool) error {
 
 	incusName := SanitizeProjectName(name)
 
+	// Incus would refuse the delete; say who can do it instead.
+	if c.Restricted() {
+		return ErrRestricted.WithText(fmt.Sprintf("the certificate may not delete project %q; the admin deletes it", incusName))
+	}
+
 	// c.logger.DebugContext(c.Ctx, "Deleting project", "name", name, "incus_name", incusName)
 
 	err := c.incus.DeleteProject(c.ctx, incusName, &iclient.DeleteProjectArgs{Force: force})

@@ -791,6 +791,10 @@ func newDNSUpCommand() *cli.Command {
 				return err
 			}
 
+			if globalClient.Restricted() {
+				return client.ErrRestricted.WithText("ic-dns enrolls with a trust token, which only the admin can mint; the admin runs it")
+			}
+
 			p, err := dnsProject(ctx, cmd)
 			if err != nil {
 				globalClient.LogError("Configuring the project", "error", err)
