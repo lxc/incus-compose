@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/stretchr/testify/require"
 
 	"github.com/lxc/incus-compose/shared"
@@ -983,4 +984,39 @@ func TestIsNodeSpecificNetworkConfig(t *testing.T) {
 	require.False(t, isNodeSpecificNetworkConfig("ovn", "parent"))
 	require.False(t, isNodeSpecificNetworkConfig("bridge", "ipv4.address"))
 	require.False(t, isNodeSpecificNetworkConfig("bridge", "ipv4.nat"))
+}
+
+// TestNetworkTypeRestricted pins that a restricted certificate reads a network
+// inherited from default through its own project. Asked in default, Incus
+// answers "not found" for a managed network, and Type falls back to the type
+// configured on the resource; the test configures a wrong one to tell them apart.
+func TestNetworkTypeRestricted(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := testContext(t)
+
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
+
+	conn, err := gc.Connection()
+	require.NoError(t, err)
+
+	want, _, err := conn.GetNetwork(ctx, incusApi.ProjectDefaultName, "incusbr0")
+	if err != nil {
+		t.Skipf("No incusbr0: %v", err)
+	}
+
+	cache := gc.imageCache.IncusProject()
+	rc := restrictedTestClient(ctx, t, gc, []string{cache})
+
+	c, err := rc.EnsureProject(cache)
+	require.NoError(t, err)
+	require.False(t, c.FeaturesNetworks(), "the network must be inherited from default")
+
+	res, err := c.Resource(KindNetwork, "lan", &NetworkConfig{External: true, OverrideName: want.Name, Type: "macvlan"})
+	require.NoError(t, err)
+
+	network, ok := res.(*Network)
+	require.True(t, ok)
+	require.Equal(t, want.Type, network.Type(ctx))
 }
