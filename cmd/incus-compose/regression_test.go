@@ -214,15 +214,13 @@ func TestE2EUpRestrictedCertificate(t *testing.T) {
 networks:
   br0:
     external: true
-    x-incus-compose:
-      network: incusbr0
+    name: incusbr0
 `
 	// healthd.external set in the file rather than by --external-healthd: up
 	// must leave healthd to the admin either way, not mint it a trust token.
 	dir := testlib.WriteTempFiles(t, map[string]string{
-		"compose.yaml": "x-incus:\n  features.networks: \"false\"\n\n" + body,
-		"external.yaml": "x-incus:\n  features.networks: \"false\"\n\n" +
-			"x-incus-compose:\n  healthd:\n    external: true\n\n" + body,
+		"compose.yaml":  body,
+		"external.yaml": "x-incus-compose:\n  healthd:\n    external: true\n\n" + body,
 	})
 	compose := filepath.Join(dir, "compose.yaml")
 
@@ -245,9 +243,10 @@ networks:
 
 	// A restricted certificate cannot create or edit projects, so the admin
 	// hands one over. Without the marks up sets, first, to see it say which.
+	// Bridge, as `incus project create` leaves it: the auto driver may pick OVN.
 	_, err = gc.EnsureProject(testlib.ProjectName(pn),
 		client.EnsureProjectWithCreate(),
-		client.EnsureProjectWithConfig(map[string]string{"features.networks": "false"}),
+		client.EnsureProjectWithNetworkDriver("bridge"),
 	)
 	require.NoError(t, err)
 
@@ -257,9 +256,21 @@ networks:
 	}
 
 	// The cache and the global project, which holds the image locks, are
-	// shared across projects, so the admin grants them rather than the
-	// certificate creating them.
-	for _, p := range []string{cache, defaultGlobalProject} {
+	// projects too, so the admin grants them rather than the certificate
+	// creating them. The global one is the tenant's own, as the docs suggest.
+	global := testlib.ProjectName(pn) + "-global"
+	t.Cleanup(func() {
+		if testlib.KeepTestData() {
+			return
+		}
+
+		err := gc.DeleteProject(global, true)
+		if err != nil {
+			t.Errorf("deleting the global project %s: %v", global, err)
+		}
+	})
+
+	for _, p := range []string{cache, global} {
 		_, err = gc.EnsureProject(p, client.EnsureProjectWithCreate())
 		require.NoError(t, err)
 	}
@@ -268,7 +279,7 @@ networks:
 	require.NoError(t, err)
 
 	name := "ic-test-" + client.SanitizeProjectName(pn)
-	projects := []string{client.SanitizeProjectName(testlib.ProjectName(pn)), cache, defaultGlobalProject}
+	projects := []string{client.SanitizeProjectName(testlib.ProjectName(pn)), cache, client.SanitizeProjectName(global)}
 
 	t.Cleanup(func() {
 		certs, err := conn.GetCertificates(context.Background())
@@ -319,6 +330,7 @@ networks:
 		"--client-cert-file", filepath.Join(certDir, incustrust.CertFile),
 		"--client-key-file", filepath.Join(certDir, incustrust.KeyFile),
 		"--server-fingerprint", info.CertificateFingerprint,
+		"--global-project", global,
 	}
 
 	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, "up", "--detach")...)
