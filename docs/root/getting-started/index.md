@@ -100,36 +100,29 @@ for it.
 The admin, with an unrestricted certificate:
 
 ```bash
-# The project, with the config incus-compose would otherwise set on it
+# The project, with the marks incus-compose would otherwise set on it
 incus project create myapp \
-  -c features.networks=false \
   -c user.incus-compose.managed=true \
   -c user.healthcheck.enabled=true
 
-# The image cache, here one per tenant, and the global project, which holds
-# the locks and the tools volume
+# The image cache, and the global project holding the locks and the tools
+# volume, both here one per tenant
 incus project create myapp-cache
-incus project create incus-compose
+incus project create myapp-global
 
 # The certificate, restricted to those three
-incus config trust add myapp-ci --restricted --projects myapp,myapp-cache,incus-compose
+incus config trust add myapp-ci --restricted --projects myapp,myapp-cache,myapp-global
 ```
 
-The global project `incus-compose` is shared by everyone on the server who uses
-incus-compose, so each of them can see the others' locks.
-
-The user then points incus-compose at the cache, and attaches services to a
-bridge the admin made in `default`, as an
+The user then points incus-compose at the cache and the global project, and
+attaches services to a bridge the admin made in `default`, as an
 [external network](/compose-compatibility/networks):
 
 ```bash
-incus-compose --image-cache myapp-cache up
+incus-compose --image-cache myapp-cache --global-project myapp-global up
 ```
 
 ```yaml
-x-incus:
-  features.networks: "false"
-
 services:
   web:
     image: docker.io/library/nginx
@@ -139,18 +132,27 @@ services:
 networks:
   lan:
     external: true
-    x-incus-compose:
-      network: incusbr0
+    name: incusbr0
 ```
+
+A global project shared by several tenants works too, at the cost of each of
+them seeing the others' locks.
+
+On an OVN server the admin can instead create the project with
+`-c features.networks=true`, and the certificate then creates its own OVN
+networks and ACLs inside it. It cannot list the uplinks in `default`, so name
+one with `--network-uplink` or `x-incus-compose.network.uplink`, unless only one
+is available to the project, which Incus then picks itself.
 
 With a restricted certificate incus-compose:
 
 - skips healthd and DNS with a warning: both sidecars enroll with a trust token,
-  and DNS wires itself up in the `default` project. An admin can run healthd for
-  the project; use it with `--external-healthd`
+  which only the admin can mint. An admin can run healthd for the project; use
+  it with `--external-healthd` or `x-incus-compose.healthd.external`. Run
+  directly, `healthd up` and `dns up` stop with an error
 - skips the service-name DNS records on a bridge it may not edit, with a warning
 - stops with a message naming what to ask the admin for when the project is
-  missing, not granted, or lacks the config above
+  missing, not granted, or lacks the marks above, and on `down --project`
 
 ## Local vs Remote Incus
 
