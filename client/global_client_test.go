@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -181,6 +182,17 @@ func TestConnectRestrictedCertificate(t *testing.T) {
 	rc := New(ctx, ClientProvideConnection(restricted), ClientCacheProject(projects[0]))
 	require.NoError(t, rc.Connect())
 
-	_, err = rc.HTTPSAddress()
+	// Only the port survives the fallback; an empty host means any address,
+	// the same as core.https_address=":8443".
+	admin, err := gc.HTTPSAddress()
 	require.NoError(t, err)
+
+	_, port, err := net.SplitHostPort(admin)
+	require.NoError(t, err)
+
+	got, err := rc.HTTPSAddress()
+	require.NoError(t, err)
+	require.Equal(t, net.JoinHostPort("", port), got)
+	require.True(t, rc.Restricted())
+	require.False(t, gc.Restricted())
 }
