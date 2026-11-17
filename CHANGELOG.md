@@ -23,6 +23,11 @@ form.
   longer fail now and then with `object not found` while attaching or
   detaching ACLs. (by @tallica)
 
+- `ic-healthd` and `ic-dns` now pick up a project marked for them after they
+  first saw it, or deleted and created again under the same name. They kept the
+  project as first read until their next full sweep, hours later, so its
+  instances went unwatched. (by @tallica)
+
 ## [v1.4.0] - 2026-11-11
 
 ### Added

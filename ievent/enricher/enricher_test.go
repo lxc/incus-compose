@@ -46,6 +46,9 @@ var wanted = map[string]iutil.Want{
 	incusapi.EventLifecycleNetworkRenamed: {Action: incusapi.EventLifecycleNetworkRenamed},
 	incusapi.EventLifecycleProfileUpdated: {Action: incusapi.EventLifecycleProfileUpdated},
 	incusapi.EventLifecycleProfileDeleted: {Action: incusapi.EventLifecycleProfileDeleted},
+	incusapi.EventLifecycleProjectUpdated: {Action: incusapi.EventLifecycleProjectUpdated},
+	incusapi.EventLifecycleProjectDeleted: {Action: incusapi.EventLifecycleProjectDeleted},
+	incusapi.EventLifecycleProjectRenamed: {Action: incusapi.EventLifecycleProjectRenamed},
 }
 
 // fixture wires one plugin to a collecting successor and runs it the way main
@@ -1609,7 +1612,7 @@ func TestWantsWhatItActsOnItself(t *testing.T) {
 
 	got := New(slog.Default()).Wants()
 
-	require.Len(t, got, 5)
+	require.Len(t, got, 8)
 
 	for _, want := range got {
 		assert.Zero(t, want.Enrich, "the enricher asked to be enriched")
@@ -1628,6 +1631,15 @@ func TestWantsWhatItActsOnItself(t *testing.T) {
 
 	assert.Equal(t, incusapi.EventLifecycleNetworkRenamed, got[4].Action)
 	assert.False(t, got[4].Debounce, "a rename collapsed into a burst is a rename lost")
+
+	assert.Equal(t, incusapi.EventLifecycleProjectUpdated, got[5].Action)
+	assert.True(t, got[5].Debounce, "every update in a burst costs a read per instance")
+
+	assert.Equal(t, incusapi.EventLifecycleProjectDeleted, got[6].Action)
+	assert.False(t, got[6].Debounce, "a delete collapsed into a burst is a delete lost")
+
+	assert.Equal(t, incusapi.EventLifecycleProjectRenamed, got[7].Action)
+	assert.False(t, got[7].Debounce, "a rename collapsed into a burst is a rename lost")
 }
 
 // TestTheFleetIsWrittenOnTheWayDown: what the enricher held when it stopped is
