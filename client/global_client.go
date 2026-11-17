@@ -200,6 +200,7 @@ type GlobalClient struct {
 	imageCache *Client
 	unix       bool
 	connected  bool
+	restricted bool
 
 	// Read once at connect: GetServer memoizes into the shared *ProtocolIncus,
 	// so calling it per service/network/port both races and re-queries.
@@ -430,21 +431,52 @@ func (c *GlobalClient) Connect() error {
 
 	c.logger.Debug("Connected", "url", c.config.URL)
 
-	// Image caching copies images between Incus projects using pull mode, which
-	// needs the server reachable over the network. Fail early with a clear
-	// message instead of a cryptic copy error later.
 	server, _, err := c.incus.GetServer(c.ctx)
 	if err != nil {
 		return ErrConnectionFailed.Wrap(err)
 	}
 
-	if server.Config["core.https_address"] == "" {
+	// A restricted certificate gets no server config, so core.https_address
+	// reads empty there whatever it is set to. Environment.Addresses is derived
+	// from it and is shown to every trusted client; its port is all that is
+	// left to keep, and an unspecified host falls back the same way ":8443" does.
+	httpsAddress := server.Config["core.https_address"]
+	if httpsAddress == "" && len(server.Environment.Addresses) > 0 {
+		_, port, err := net.SplitHostPort(server.Environment.Addresses[0])
+		if err != nil {
+			return ErrConnectionFailed.Wrap(err)
+		}
+
+		httpsAddress = net.JoinHostPort("", port)
+	}
+
+	// Image caching copies images between Incus projects using pull mode, which
+	// needs the server reachable over the network. Fail early with a clear
+	// message instead of a cryptic copy error later. Without a cache nothing
+	// here needs it: healthd and the sidecars check HTTPSAddress themselves.
+	if httpsAddress == "" && c.config.CacheProject != "" {
 		return ErrServerNotListening
 	}
 
+	// For a TLS client auth_user_name names the trust store entry that let it
+	// in, which a restricted certificate may read: its own, or that of the CA
+	// in the trust store that issued it, whose restriction it shares. One
+	// trusted through core.trust_ca_certificates has no entry, and is not
+	// restricted.
+	restricted := false
+	if server.AuthUserMethod == incusApi.AuthenticationMethodTLS {
+		cert, err := c.incus.GetCertificate(c.ctx, server.AuthUserName)
+		if err != nil && !incusApi.StatusErrorCheck(err, http.StatusNotFound) {
+			return ErrConnectionFailed.Wrap(err)
+		}
+
+		restricted = err == nil && cert.Restricted
+	}
+
 	c.mu.Lock()
+	c.restricted = restricted
 	c.apiExtensions = server.APIExtensions
-	c.httpsAddress = server.Config["core.https_address"]
+	c.httpsAddress = httpsAddress
 	c.clustered = server.Environment.ServerClustered
 	if server.Environment.ServerClustered {
 		c.serverName = server.Environment.ServerName
@@ -802,6 +834,19 @@ func (c *GlobalClient) AddMissingProjectConfig(name string, config map[string]st
 	}
 
 	slices.Sort(missing)
+
+	// Incus would refuse the update; name what the admin has to set instead.
+	if c.Restricted() {
+		set := make([]string, 0, len(missing))
+		for _, key := range missing {
+			set = append(set, key+"="+config[key])
+		}
+
+		return ErrRestricted.WithText(fmt.Sprintf(
+			"project %q lacks config the certificate may not set; the admin sets it with `incus project set %s %s`",
+			incusName, incusName, strings.Join(set, " ")))
+	}
+
 	c.logger.DebugContext(c.ctx, "Adding missing project config", "name", name, "incus_name", incusName, "keys", missing)
 
 	err = c.incus.UpdateProject(c.ctx, incusName, writable, etag)
@@ -916,6 +961,13 @@ func (c *GlobalClient) EnsureProject(name string, opts ...EnsureProjectOption) (
 		return nil, ErrNotFound.WithKindName(KindProject, name).Wrap(err)
 	}
 
+	// Incus would refuse the create; say who can do it instead.
+	if c.Restricted() {
+		return nil, ErrRestricted.WithText(fmt.Sprintf(
+			"project %q does not exist or is not one of the certificate's projects; the admin creates it and adds it to them",
+			SanitizeProjectName(name))).Wrap(err)
+	}
+
 	if options.config == nil {
 		options.config = map[string]string{}
 	}
@@ -976,6 +1028,11 @@ func (c *GlobalClient) DeleteProject(name string, force bool) error {
 	}
 
 	incusName := SanitizeProjectName(name)
+
+	// Incus would refuse the delete; say who can do it instead.
+	if c.Restricted() {
+		return ErrRestricted.WithText(fmt.Sprintf("the certificate may not delete project %q; the admin deletes it", incusName))
+	}
 
 	// c.logger.DebugContext(c.Ctx, "Deleting project", "name", name, "incus_name", incusName)
 
@@ -1274,6 +1331,15 @@ func (c *GlobalClient) HTTPSAddress() (string, error) {
 // GlobalProject returns the project holding the instances the library runs.
 func (c *GlobalClient) GlobalProject() string {
 	return c.config.GlobalProject
+}
+
+// Restricted reports whether the certificate is restricted to projects: it can
+// neither create nor edit them, nor reach the default project.
+func (c *GlobalClient) Restricted() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.restricted
 }
 
 // HasExtension returns whether the server has the given extension.

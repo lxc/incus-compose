@@ -76,6 +76,16 @@ func Fixture(t *testing.T, parts ...string) string {
 func Exec(ctx context.Context, t *testing.T, cwd string, env []string, name string, args ...string) (string, error) {
 	t.Helper()
 
+	out, _, err := ExecStderr(ctx, t, cwd, env, name, args...)
+
+	return out, err
+}
+
+// ExecStderr is Exec that also returns what the command wrote to stderr, for
+// a test asserting on the warnings of a command that succeeded.
+func ExecStderr(ctx context.Context, t *testing.T, cwd string, env []string, name string, args ...string) (string, string, error) {
+	t.Helper()
+
 	var out, stderr bytes.Buffer
 
 	cmd := exec.CommandContext(ctx, name, args...) // nolint:gosec
@@ -108,5 +118,5 @@ func Exec(ctx context.Context, t *testing.T, cwd string, env []string, name stri
 		err = fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 
-	return out.String(), err
+	return out.String(), stderr.String(), err
 }

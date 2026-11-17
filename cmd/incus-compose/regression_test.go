@@ -2,14 +2,20 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/stretchr/testify/require"
 
 	"github.com/lxc/incus-compose/client"
+	"github.com/lxc/incus-compose/iclient"
+	"github.com/lxc/incus-compose/incustrust"
 	"github.com/lxc/incus-compose/internal/testlib"
+	"github.com/lxc/incus-compose/shared"
 )
 
 // TestNoDanglingNetworksAfterDown is a regression test for the project default
@@ -184,4 +190,375 @@ func TestE2EGlobalProjectFlag(t *testing.T) {
 	locks, err := c.Resource(client.KindStorageVolume, locksVolume, &client.StorageVolumeConfig{})
 	require.NoError(t, err)
 	require.NoError(t, client.RunAction(ctx, locks, client.ActionEnsure), "the locks are not in the global project given")
+}
+
+// restrictedCertificate enrolls a certificate restricted to projects and
+// returns the global flags that connect incus-compose with it.
+func restrictedCertificate(ctx context.Context, t *testing.T, conn *iclient.Connection, name string, projects []string) []string {
+	t.Helper()
+
+	info, err := conn.GetConnectionInfo(ctx)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		certs, err := conn.GetCertificates(context.Background())
+		if err != nil {
+			return
+		}
+
+		for _, cert := range certs {
+			if cert.Name == name {
+				_ = conn.DeleteCertificate(context.Background(), cert.Fingerprint)
+			}
+		}
+	})
+
+	// A token operation never finishes, only its first update carries the token.
+	tokenCtx, release := context.WithCancel(ctx)
+	updates, err := conn.CreateCertificateToken(tokenCtx, incusApi.CertificatesPost{
+		CertificatePut: incusApi.CertificatePut{
+			Name:       name,
+			Type:       "client",
+			Restricted: true,
+			Projects:   projects,
+		},
+		Token: true,
+	})
+	require.NoError(t, err)
+
+	opAPI, ok := <-updates
+	release()
+	require.True(t, ok, "the certificate token operation reported nothing")
+
+	token, err := opAPI.ToCertificateAddToken()
+	require.NoError(t, err)
+
+	certDir := t.TempDir()
+	_, err = incustrust.Enroll(ctx, incustrust.Config{
+		Name:              name,
+		URL:               info.URL,
+		ServerFingerprint: info.CertificateFingerprint,
+		DataDir:           certDir,
+		Restricted:        true,
+		Projects:          projects,
+	}, token.String())
+	require.NoError(t, err)
+
+	return []string{
+		"--server-url", info.URL,
+		"--client-cert-file", filepath.Join(certDir, incustrust.CertFile),
+		"--client-key-file", filepath.Join(certDir, incustrust.KeyFile),
+		"--server-fingerprint", info.CertificateFingerprint,
+	}
+}
+
+// TestE2EUpRestrictedCertificate is a regression test for #127: `up` with a
+// certificate restricted to the projects it uses. Incus hides the server
+// config from such a certificate, which is where core.https_address lives.
+func TestE2EUpRestrictedCertificate(t *testing.T) {
+	t.Parallel()
+	testlib.SkipE2E(t)
+
+	ctx := t.Context()
+	pn := t.Name()
+	// A bridge lives in the default project, which a restricted certificate
+	// cannot create networks in, so it attaches to one the admin made. The
+	// service is named for this test: Incus refuses an instance DNS name a
+	// parallel test already holds on the shared bridge. The healthcheck puts
+	// healthd in use, so its skip is exercised along with the DNS one.
+	body := `services:
+  restricted:
+    image: docker.io/alpine:edge
+    healthcheck:
+      test: ["CMD", "true"]
+    networks:
+      - br0
+
+networks:
+  br0:
+    external: true
+    name: incusbr0
+`
+	// healthd.external set in the file rather than by --external-healthd: up
+	// must leave healthd to the admin either way, not mint it a trust token.
+	dir := testlib.WriteTempFiles(t, map[string]string{
+		"compose.yaml":  body,
+		"external.yaml": "x-incus-compose:\n  healthd:\n    external: true\n\n" + body,
+	})
+	compose := filepath.Join(dir, "compose.yaml")
+
+	gc, err := client.NewTestClient(context.Background())
+	require.NoError(t, err)
+
+	if !gc.IsRemote() {
+		t.Skip("a restricted certificate needs an https remote")
+	}
+
+	conn, err := gc.Connection()
+	require.NoError(t, err)
+
+	_, _, err = conn.GetNetwork(ctx, incusApi.ProjectDefaultName, "incusbr0")
+	if err != nil {
+		t.Skipf("No incusbr0: %v", err)
+	}
+
+	testlib.CleanupCompose(t, pn, "-f", compose, "down", "--project")
+
+	// A restricted certificate cannot create or edit projects, so the admin
+	// hands one over. Without the marks up sets, first, to see it say which.
+	// Bridge, as `incus project create` leaves it: the auto driver may pick OVN.
+	_, err = gc.EnsureProject(testlib.ProjectName(pn),
+		client.EnsureProjectWithCreate(),
+		client.EnsureProjectWithNetworkDriver("bridge"),
+	)
+	require.NoError(t, err)
+
+	cache := os.Getenv("INCUS_COMPOSE_IMAGE_CACHE")
+	if cache == "" {
+		cache = client.DefaultCacheProject
+	}
+
+	// The cache and the global project, which holds the image locks, are
+	// projects too, so the admin grants them rather than the certificate
+	// creating them. The global one is the tenant's own, as the docs suggest.
+	global := testlib.ProjectName(pn) + "-global"
+	t.Cleanup(func() {
+		if testlib.KeepTestData() {
+			return
+		}
+
+		err := gc.DeleteProject(global, true)
+		if err != nil {
+			t.Errorf("deleting the global project %s: %v", global, err)
+		}
+	})
+
+	for _, p := range []string{cache, global} {
+		_, err = gc.EnsureProject(p, client.EnsureProjectWithCreate())
+		require.NoError(t, err)
+	}
+
+	projects := []string{client.SanitizeProjectName(testlib.ProjectName(pn)), cache, client.SanitizeProjectName(global)}
+	restricted := slices.Concat(restrictedCertificate(ctx, t, conn, "ic-test-"+client.SanitizeProjectName(pn), projects), []string{"--global-project", global})
+
+	// A project the certificate was not given looks missing to it, so up
+	// would try to create it.
+	_, err = testlib.RunCompose(ctx, t, pn+"Ungranted", "", nil, append(restricted, "-f", compose, "up", "--detach")...)
+	require.ErrorContains(t, err, "certificate is restricted")
+	require.ErrorContains(t, err, "the admin creates it")
+
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, "up", "--detach")...)
+	require.ErrorContains(t, err, "certificate is restricted")
+	require.ErrorContains(t, err, "incus project set")
+
+	err = gc.UpdateProjectConfig(testlib.ProjectName(pn), map[string]string{
+		managedKey:              "true",
+		shared.HealthEnabledKey: "true",
+	})
+	require.NoError(t, err)
+
+	// The sidecars enroll with a trust token, which only an unrestricted
+	// certificate can mint, so up skips them and says so. The bridge is the
+	// admin's too, so the service names on it are left out.
+	_, stderr, err := testlib.RunComposeStderr(ctx, t, pn, "", nil, append(restricted, "-f", compose, "up", "--detach")...)
+	require.NoError(t, err)
+	require.Contains(t, stderr, "Skipping healthd: its sidecar enrolls with a trust token")
+	require.Contains(t, stderr, restrictedDNSWarning)
+	require.Contains(t, stderr, "Skipping service DNS records")
+
+	// An external healthd is the admin's, so there is nothing to skip.
+	external := filepath.Join(dir, "external.yaml")
+	_, stderr, err = testlib.RunComposeStderr(ctx, t, pn, "", nil, append(restricted, "-f", external, "up", "--detach")...)
+	require.NoError(t, err)
+	require.NotContains(t, stderr, "Skipping healthd")
+	require.Contains(t, stderr, restrictedDNSWarning)
+
+	// Run directly, the sidecars stop on the trust token rather than skip.
+	for _, sidecar := range []string{"healthd", "dns"} {
+		_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, sidecar, "up")...)
+		require.ErrorContains(t, err, "certificate is restricted", sidecar)
+	}
+
+	_, stderr, err = testlib.RunComposeStderr(ctx, t, pn, "", nil, append(restricted, "-f", compose, "down")...)
+	require.NoError(t, err)
+	require.Contains(t, stderr, restrictedDNSWarning)
+
+	// Deleting the project is the admin's, like creating it.
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, "down", "--project")...)
+	require.ErrorContains(t, err, "may not delete project")
+
+	names, err := conn.GetInstanceNames(ctx, client.SanitizeProjectName(testlib.ProjectName(pn)), nil)
+	require.NoError(t, err)
+	require.Empty(t, names, "down left instances behind")
+}
+
+// TestE2EUpHealthdExternalInCompose is a regression test for
+// x-incus-compose.healthd.external: up honored only --external-healthd and
+// started a sidecar of its own when the compose file said the same.
+func TestE2EUpHealthdExternalInCompose(t *testing.T) {
+	t.Parallel()
+	testlib.SkipE2E(t)
+
+	ctx := t.Context()
+	pn := t.Name()
+	dir := testlib.WriteTempFiles(t, map[string]string{
+		"compose.yaml": `x-incus-compose:
+  healthd:
+    external: true
+
+services:
+  web:
+    image: docker.io/alpine:edge
+    command: sh
+    healthcheck:
+      test: ["CMD", "true"]
+`})
+	compose := filepath.Join(dir, "compose.yaml")
+
+	// Its own global project, so a sidecar there can only be this test's.
+	global := testlib.ProjectName(pn) + "-global"
+
+	gc, err := client.NewTestClient(context.Background())
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		if testlib.KeepTestData() {
+			return
+		}
+
+		err := gc.DeleteProject(global, true)
+		if err != nil {
+			t.Errorf("deleting the global project %s: %v", global, err)
+		}
+	})
+
+	args := []string{"--global-project", global, "-f", compose}
+	testlib.CleanupCompose(t, pn, append(args, "down", "--project", "--no-dns")...)
+
+	// Not started: nothing would mark web healthy without the external healthd.
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(args, "up", "--detach", "--no-dns", "--no-start")...)
+	require.NoError(t, err)
+
+	conn, err := gc.Connection()
+	require.NoError(t, err)
+
+	for project, want := range map[string][]string{
+		client.SanitizeProjectName(testlib.ProjectName(pn)): {"web-1"},
+		client.SanitizeProjectName(global):                  nil,
+	} {
+		names, err := conn.GetInstanceNames(ctx, project, nil)
+		require.NoError(t, err)
+		require.ElementsMatch(t, want, names, "instances in %s", project)
+	}
+}
+
+// TestE2EUpRestrictedCertificateOVN pins that a restricted certificate gets
+// OVN networks in its own project without naming an uplink, as long as the
+// project allows just one. It may not list the uplinks in default, so the
+// auto-discovery up does before creating an OVN network finds nothing, and
+// Incus picks the only allowed one itself.
+func TestE2EUpRestrictedCertificateOVN(t *testing.T) {
+	t.Parallel()
+	testlib.SkipE2E(t)
+	testlib.SkipNoExtension(t, shared.Incus75Extension, "OVN networks require incus 7.5")
+
+	ctx := t.Context()
+	pn := t.Name()
+	dir := testlib.WriteTempFiles(t, map[string]string{
+		"compose.yaml": `services:
+  web:
+    image: docker.io/library/busybox:1.36-glibc
+    x-incus:
+      oci.entrypoint: sh
+    networks:
+      - lan
+
+networks:
+  lan:
+    driver: ovn
+`})
+	compose := filepath.Join(dir, "compose.yaml")
+
+	gc, err := client.NewTestClient(context.Background())
+	require.NoError(t, err)
+
+	if !gc.IsRemote() {
+		t.Skip("a restricted certificate needs an https remote")
+	}
+
+	ovn, err := gc.DetectOVN()
+	require.NoError(t, err)
+	if !ovn {
+		t.Skip("no OVN on this server")
+	}
+
+	conn, err := gc.Connection()
+	require.NoError(t, err)
+
+	networks, err := conn.GetNetworks(ctx, incusApi.ProjectDefaultName)
+	require.NoError(t, err)
+
+	uplink := ""
+	for _, n := range networks {
+		if (n.Type == "bridge" || n.Type == "physical") && (n.Config["ipv4.ovn.ranges"] != "" || n.Config["ipv6.ovn.ranges"] != "") {
+			uplink = n.Name
+			break
+		}
+	}
+	if uplink == "" {
+		t.Skip("no OVN uplink on this server")
+	}
+
+	testlib.CleanupCompose(t, pn, "-f", compose, "down", "--project", "--no-dns")
+
+	// An unrestricted project may use every bridge in default as its uplink,
+	// so Incus would ask which; restricting it to one leaves no choice. A
+	// restricted project also blocks the raw.lxc instances carry.
+	project := testlib.ProjectName(pn)
+	_, err = gc.EnsureProject(project,
+		client.EnsureProjectWithCreate(),
+		client.EnsureProjectWithConfig(map[string]string{
+			"features.networks":              "true",
+			"restricted":                     "true",
+			"restricted.networks.uplinks":    uplink,
+			"restricted.containers.lowlevel": "allow",
+			managedKey:                       "true",
+			shared.HealthEnabledKey:          "true",
+		}),
+	)
+	require.NoError(t, err)
+
+	cache := os.Getenv("INCUS_COMPOSE_IMAGE_CACHE")
+	if cache == "" {
+		cache = client.DefaultCacheProject
+	}
+
+	global := project + "-global"
+	t.Cleanup(func() {
+		if testlib.KeepTestData() {
+			return
+		}
+
+		err := gc.DeleteProject(global, true)
+		if err != nil {
+			t.Errorf("deleting the global project %s: %v", global, err)
+		}
+	})
+
+	for _, p := range []string{cache, global} {
+		_, err = gc.EnsureProject(p, client.EnsureProjectWithCreate())
+		require.NoError(t, err)
+	}
+
+	projects := []string{client.SanitizeProjectName(project), cache, client.SanitizeProjectName(global)}
+	restricted := slices.Concat(restrictedCertificate(ctx, t, conn, "ic-test-"+client.SanitizeProjectName(pn), projects), []string{"--global-project", global})
+
+	// Not started, as in TestE2ENetworkACL_OVN: the uplink is picked at create.
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, append(restricted, "-f", compose, "up", "--detach", "--no-start")...)
+	require.NoError(t, err)
+
+	lan, _, err := conn.GetNetwork(ctx, client.SanitizeProjectName(project), client.SanitizeNetworkName(strings.ToLower(pn), "ic-", "lan"))
+	require.NoError(t, err)
+	require.Equal(t, "ovn", lan.Type)
+	require.Equal(t, uplink, lan.Config["network"])
 }

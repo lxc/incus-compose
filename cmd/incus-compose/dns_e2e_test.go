@@ -134,6 +134,43 @@ services:
 	assert.Empty(t, inst.Config["oci.dns.search"], "instance must not have search domain set when DNS is disabled")
 }
 
+// TestE2EDNSUpRecreateNoDNS pins that `up --recreate --no-dns` takes DNS down
+// with the networks it deletes. Honoring --no-dns in that down would leave
+// the project-scoped sidecar on a network the recreate then cannot delete.
+func TestE2EDNSUpRecreateNoDNS(t *testing.T) {
+	testlib.SkipE2E(t)
+
+	ctx := t.Context()
+	pn := strings.ToLower(t.Name())
+
+	dir := testlib.WriteTempFiles(t, map[string]string{
+		"compose.yaml": `name: ` + pn + `
+x-incus-compose:
+  dns:
+    scope: project
+services:
+  web:
+    image: docker.io/alpine:edge
+    command: sh
+`,
+	})
+	compose := filepath.Join(dir, "compose.yaml")
+
+	testlib.CleanupCompose(t, pn, "-f", compose, "down", "--project")
+
+	_, err := testlib.RunCompose(ctx, t, pn, "", nil, "-f", compose, "up", "--detach", "--no-healthd")
+	require.NoError(t, err)
+
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, "-f", compose, "up", "--detach", "--no-healthd", "--recreate", "--no-dns")
+	require.NoError(t, err)
+
+	c := projectClient(ctx, t, pn)
+
+	exists, err := c.InstanceExists(dnsInstanceName(c.IncusProject(), false))
+	require.NoError(t, err)
+	assert.False(t, exists, "up --recreate --no-dns kept the dns sidecar on the recreated network")
+}
+
 func TestE2EDNSUpDisabledInCompose(t *testing.T) {
 	testlib.SkipE2E(t)
 
@@ -158,6 +195,11 @@ services:
 	testlib.CleanupCompose(t, pn, "-f", compose, "down", "--project")
 
 	_, err := testlib.RunCompose(ctx, t, pn, "", nil, "-f", compose, "up", "--detach", "--no-healthd")
+	require.NoError(t, err)
+
+	// The down a recreate runs reads DNS.Disabled rather than a NoDNS of its
+	// own; with DNS off in the file there is no sidecar or wiring to find.
+	_, err = testlib.RunCompose(ctx, t, pn, "", nil, "-f", compose, "up", "--detach", "--no-healthd", "--recreate")
 	require.NoError(t, err)
 
 	c := projectClient(ctx, t, pn)

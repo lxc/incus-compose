@@ -2,12 +2,22 @@ package client
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/tls"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 
+	incusApi "github.com/lxc/incus/v7/shared/api"
 	"github.com/stretchr/testify/require"
 
+	"github.com/lxc/incus-compose/iclient"
 	"github.com/lxc/incus-compose/shared"
 )
 
@@ -983,4 +993,127 @@ func TestIsNodeSpecificNetworkConfig(t *testing.T) {
 	require.False(t, isNodeSpecificNetworkConfig("ovn", "parent"))
 	require.False(t, isNodeSpecificNetworkConfig("bridge", "ipv4.address"))
 	require.False(t, isNodeSpecificNetworkConfig("bridge", "ipv4.nat"))
+}
+
+// TestNetworkTypeRestricted pins that a restricted certificate reads a network
+// inherited from default through its own project. Asked in default, Incus
+// answers "not found" for a managed network, and Type falls back to the type
+// configured on the resource; the test configures a wrong one to tell them apart.
+func TestNetworkTypeRestricted(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := testContext(t)
+
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
+
+	conn, err := gc.Connection()
+	require.NoError(t, err)
+
+	want, _, err := conn.GetNetwork(ctx, incusApi.ProjectDefaultName, "incusbr0")
+	if err != nil {
+		t.Skipf("No incusbr0: %v", err)
+	}
+
+	// A bridge project of its own: on an OVN server the shared cache project
+	// has networks of its own, and nothing is inherited from default.
+	project := "ic-test-nettype-" + strings.ToLower(shared.RandString(8))
+	_, err = gc.EnsureProject(project, EnsureProjectWithCreate(), EnsureProjectWithNetworkDriver("bridge"))
+	require.NoError(t, err)
+	deleteProjectOnCleanup(t, gc, project)
+
+	rc := restrictedTestClient(ctx, t, gc, []string{project, gc.imageCache.IncusProject()})
+
+	c, err := rc.EnsureProject(project)
+	require.NoError(t, err)
+	require.False(t, c.FeaturesNetworks(), "the network must be inherited from default")
+
+	res, err := c.Resource(KindNetwork, "lan", &NetworkConfig{External: true, OverrideName: want.Name, Type: "macvlan"})
+	require.NoError(t, err)
+
+	network, ok := res.(*Network)
+	require.True(t, ok)
+	require.Equal(t, want.Type, network.Type(ctx))
+}
+
+// TestNetworkExternalProbesEachNameOnce pins that looking up an external
+// network asks Incus once per candidate name. Every miss used to be asked again
+// through the client's project, a retry only a restricted certificate needs.
+// A proxy in front of the real daemon counts what reaches it.
+func TestNetworkExternalProbesEachNameOnce(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+	ctx := testContext(t)
+
+	gc, err := NewTestClient(ctx)
+	require.NoError(t, err)
+
+	if !gc.IsRemote() {
+		t.Skip("the counting proxy needs an https remote")
+	}
+
+	remote := os.Getenv("INCUS_REMOTE")
+	config, err := iclient.ReadConfig("")
+	require.NoError(t, err)
+
+	info, err := config.RemoteInfos(remote)
+	require.NoError(t, err)
+
+	upstream, err := url.Parse(info.Addrs[0])
+	require.NoError(t, err)
+
+	cert, err := tls.X509KeyPair([]byte(info.ClientCert), []byte(info.ClientKey))
+	require.NoError(t, err)
+
+	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	proxy.Transport = &http.Transport{TLSClientConfig: &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		// The test remote, already trusted by the admin client above.
+		InsecureSkipVerify: true, //nolint:gosec
+	}}
+
+	var mu sync.Mutex
+	lookups := map[string]int{}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/1.0/networks/") {
+			mu.Lock()
+			lookups[r.URL.Path+"?project="+r.URL.Query().Get("project")]++
+			mu.Unlock()
+		}
+
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	proxied := *info
+	proxied.Addrs = []string{server.URL}
+	proxied.ServerCert = ""
+	proxied.ServerFingerprint = fmt.Sprintf("%x", sha256.Sum256(server.Certificate().Raw))
+
+	conn, err := iclient.NewConnection(&proxied)
+	require.NoError(t, err)
+
+	project := "ic-test-netprobe-" + strings.ToLower(shared.RandString(8))
+	_, err = gc.EnsureProject(project, EnsureProjectWithCreate(), EnsureProjectWithNetworkDriver("bridge"))
+	require.NoError(t, err)
+	deleteProjectOnCleanup(t, gc, project)
+
+	pc := New(ctx, ClientProvideConnection(conn), ClientCacheProject(gc.imageCache.IncusProject()))
+	require.NoError(t, pc.Connect())
+
+	c, err := pc.EnsureProject(project)
+	require.NoError(t, err)
+
+	res, err := c.Resource(KindNetwork, "missing", &NetworkConfig{External: true, OverrideName: "ic-missing-" + strings.ToLower(shared.RandString(8))})
+	require.NoError(t, err)
+	require.ErrorIs(t, RunAction(ctx, res, ActionEnsure), ErrNotFound)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	require.NotEmpty(t, lookups)
+	for lookup, n := range lookups {
+		require.Equal(t, 1, n, "%s asked %d times", lookup, n)
+		require.True(t, strings.HasSuffix(lookup, "?project="+incusApi.ProjectDefaultName), "%s asked outside default", lookup)
+	}
 }

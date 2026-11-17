@@ -15,6 +15,31 @@ form.
 
 ### Added
 
+- `up` and `down` work with a project-restricted certificate on a server its
+  admin prepared: healthd and DNS are skipped with a warning, as are service DNS
+  records on a bridge it may not edit, and a missing project or project config
+  stops `up` with what to ask the admin for. See
+  [Getting started](https://incus-compose.org/getting-started). (by @tallica,
+  #127)
+
+### Fixed
+
+- A certificate restricted to projects (`incus config trust add --restricted`)
+  is no longer refused on connect as if the server were not listening on the
+  network: Incus hides `core.https_address` from such a certificate. (by
+  @tallica, #127)
+
+- A server without `core.https_address` is accepted when image caching is off
+  (`--image-cache ""`); only the cache needs the server on the network. (by
+  @tallica)
+
+- `up` no longer starts a healthd sidecar when
+  `x-incus-compose.healthd.external` is set in the compose file; only
+  `--external-healthd` was honoured. (by @tallica)
+
+- `down` no longer fails on an OVN server with a `--global-project` that never
+  ran DNS, looking for a resolver network to unwire that is not there. (by
+  @tallica)
 - `--global-project` (env `INCUS_COMPOSE_GLOBAL_PROJECT`) names the Incus
   project that holds the locks, the tools volume and the global-scope sidecars,
   so tenants sharing a server can each have their own. (by @tallica, #265)

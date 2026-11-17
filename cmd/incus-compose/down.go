@@ -278,9 +278,18 @@ func newDownCommand() *cli.Command {
 				}
 			}
 
+			if cmd.Bool("external-healthd") {
+				p.ClientConfig.Healthd.External = true
+			}
+
 			usesHealthd := !cmd.Bool("no-healthd")
 			if usesHealthd && !healthdInUseByProject(globalClient, p) {
 				usesHealthd = false
+			}
+
+			if !cmd.Bool("no-dns") && !p.ClientConfig.DNS.Disabled && globalClient.Restricted() {
+				globalClient.LogWarn(restrictedDNSWarning)
+				p.ClientConfig.DNS.Disabled = true
 			}
 
 			usesDNS := !cmd.Bool("no-dns")
@@ -289,9 +298,6 @@ func newDownCommand() *cli.Command {
 			}
 
 			// Get the per Project client early, gives early errors if the project does not exists
-			if cmd.Bool("external-healthd") {
-				p.ClientConfig.Healthd.External = true
-			}
 
 			c, err := globalClient.EnsureProject(
 				p.Name,

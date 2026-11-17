@@ -46,6 +46,16 @@ func CleanupCompose(t *testing.T, project string, args ...string) {
 func RunCompose(ctx context.Context, t *testing.T, project, dir string, env []string, args ...string) (string, error) {
 	t.Helper()
 
+	out, _, err := RunComposeStderr(ctx, t, project, dir, env, args...)
+
+	return out, err
+}
+
+// RunComposeStderr is RunCompose that also returns what incus-compose wrote to
+// stderr, where its log lines and warnings go.
+func RunComposeStderr(ctx context.Context, t *testing.T, project, dir string, env []string, args ...string) (string, string, error) {
+	t.Helper()
+
 	full := []string{}
 	if len(env) > 0 {
 		full = append(full, "--os-env")
@@ -63,5 +73,5 @@ func RunCompose(ctx context.Context, t *testing.T, project, dir string, env []st
 		env = append(env, "GOCOVERDIR="+cover)
 	}
 
-	return Exec(ctx, t, RepoRoot(t), env, ComposeBin(t), full...)
+	return ExecStderr(ctx, t, RepoRoot(t), env, ComposeBin(t), full...)
 }

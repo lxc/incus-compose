@@ -301,6 +301,8 @@ stdout, err := testlib.RunCompose(ctx, t, t.Name(), "", nil,
 
 Stdout comes back as a string. Stderr is carried on the error, so a command that
 failed says why wherever its error is reported and one that worked says nothing.
+A test asserting on the warnings of a run that succeeded, which go to stderr,
+uses `testlib.RunComposeStderr`: the same runner, returning stderr as well.
 
 **It is a subprocess on purpose.** In-process the CLI's package globals are
 shared by every parallel test in `cmd/incus-compose`, and `main`, `os.Args`

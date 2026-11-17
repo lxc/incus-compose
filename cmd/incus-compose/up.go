@@ -179,6 +179,12 @@ func newUpCommand() *cli.Command {
 			if cmd.Bool("external-healthd") {
 				p.ClientConfig.Healthd.External = true
 			}
+			// Before anything reads it: a --recreate runs down first, which
+			// removes the DNS wiring unless DNS is off.
+			if !cmd.Bool("no-dns") && !p.ClientConfig.DNS.Disabled && globalClient.Restricted() {
+				globalClient.LogWarn(restrictedDNSWarning)
+				p.ClientConfig.DNS.Disabled = true
+			}
 			if cmd.Bool("allow-local-storage") {
 				p.ClientConfig.AllowLocalStorage = true
 			}
@@ -311,7 +317,7 @@ func newUpCommand() *cli.Command {
 				}
 			}
 
-			if usesHealthd && !cmd.Bool("external-healthd") {
+			if usesHealthd && !p.ClientConfig.Healthd.External {
 				err = healthdUp(ctx, p, c, healthdUpArgs{
 					Binary:  cmd.String("healthd-binary"),
 					Image:   healthdImage(),
@@ -330,6 +336,9 @@ func newUpCommand() *cli.Command {
 				}
 			}
 
+			// Only now, after the --recreate down: that one deletes the
+			// project's networks, so it has to take the DNS sidecar and wiring
+			// attached to them down too, or the delete fails with "in use".
 			var dnsConfigs map[string]string
 			if cmd.Bool("no-dns") {
 				p.ClientConfig.DNS.Disabled = true
