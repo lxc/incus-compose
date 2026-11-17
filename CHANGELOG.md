@@ -13,15 +13,36 @@ form.
 
 ## [Unreleased]
 
+### Added
+
+- `--global-project` (env `INCUS_COMPOSE_GLOBAL_PROJECT`) names the Incus
+  project that holds the locks, the tools volume and the global-scope sidecars,
+  so tenants sharing a server can each have their own. (by @tallica, #265)
+
 ### Fixed
 
 - `down` no longer fails on an OVN server with a `--global-project` that never
   ran DNS, looking for a resolver network to unwire that is not there. (by
-  @tallica)
+  @tallica, #268)
 
 - `up` and `down` of projects running at the same time on one OVN server no
   longer fail now and then with `object not found` while attaching or
-  detaching ACLs. (by @tallica)
+  detaching ACLs. (by @tallica, #264, #268)
+
+- Error messages link to the getting started guide on incus-compose.org instead
+  of a page that no longer exists. (by @snorfalorpagus, #262)
+
+- Starting an instance while another one on the same shared volume is being
+  created no longer fails now and then with `Idmaps of container ... and
+  storage volume ... are not identical`. (by @tallica, #266)
+
+## [v1.4.1] - 2026-11-15
+
+### Changed
+
+- The minimum Go version to build incus-compose is now 1.26.9, the same as
+  Incus, so distribution packagers do not need the newest Go. Releases are
+  still built with the latest 1.27.x. (by @tallica, #261)
 
 - `ic-healthd` and `ic-dns` now pick up a project marked for them after they
   first saw it, or deleted and created again under the same name. They kept the
