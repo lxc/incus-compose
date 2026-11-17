@@ -696,11 +696,14 @@ func isConcurrencyConflict(err error) bool {
 
 	msg := strings.ToLower(err.Error())
 
+	// "object not found" is libovsdb's ErrNotFound: a concurrent update removed
+	// the OVN row this one was about to change. Incus reports it from many call
+	// sites (routes, router SNAT, ACL port groups), each with its own prefix,
+	// so the suffix is matched rather than each site.
 	return strings.Contains(msg, "referential integrity violation") ||
 		strings.Contains(msg, "constraint violation") ||
 		strings.Contains(msg, "failed getting acl usage") ||
-		strings.Contains(msg, "failed removing default routes") ||
-		strings.Contains(msg, "failed removing internal subnet routes") ||
+		strings.Contains(msg, "object not found") ||
 		strings.Contains(msg, "failed to load project")
 }
 

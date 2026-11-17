@@ -304,6 +304,14 @@ func (p *Plugin) Wants() []iutil.Want {
 		// describes.
 		{Action: incusapi.EventLifecycleNetworkDeleted},
 		{Action: incusapi.EventLifecycleNetworkRenamed},
+
+		// Collapsible like a profile: the read answers with the configuration
+		// as it is, whichever update asked for it.
+		{Action: incusapi.EventLifecycleProjectUpdated, Debounce: true},
+
+		// Not collapsed, for the same reason as a network's.
+		{Action: incusapi.EventLifecycleProjectDeleted},
+		{Action: incusapi.EventLifecycleProjectRenamed},
 	}
 }
 
@@ -655,8 +663,9 @@ func (p *Plugin) accept(ctx context.Context, ev *iutil.Event) {
 	}
 
 	// A network moving changes every record on it, so that path patches and fans
-	// out rather than enriching the event before it.
-	if p.acceptNetwork(ctx, ev) {
+	// out rather than enriching the event before it. A project the same, for the
+	// configuration every instance event in it carries.
+	if p.acceptNetwork(ctx, ev) || p.acceptProject(ctx, ev) {
 		return
 	}
 
