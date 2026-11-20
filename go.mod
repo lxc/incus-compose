@@ -53,7 +53,6 @@ require (
 	github.com/davidmz/go-pageant v1.1.0 // indirect
 	github.com/dnstap/golang-dnstap v0.4.0 // indirect
 	github.com/docker/go-connections v0.8.2 // indirect
-	github.com/docker/go-units v0.5.0 // indirect
 	github.com/farsightsec/golang-framestream v0.3.0 // indirect
 	github.com/flynn/go-shlex v0.0.0-20150515145356-3f9db97f8568 // indirect
 	github.com/go-fed/httpsig v1.1.0 // indirect
