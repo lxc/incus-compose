@@ -1,6 +1,8 @@
 package project
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1362,6 +1364,45 @@ func TestInstanceImage(t *testing.T) {
 		assert.Equal(t, ".", img.Config.Build.Context)
 		assert.Equal(t, "ghcr.io/nix-containers/images/valkey:latest", img.Name())
 	})
+}
+
+func TestInstanceNetworkDevicesNetworkMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		mode string
+		warn bool
+	}{
+		{mode: "none", warn: false},
+		{mode: "host", warn: true},
+		{mode: "service:db", warn: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.mode, func(t *testing.T) {
+			t.Parallel()
+
+			var logs bytes.Buffer
+			c := client.NewOfflineClient(t.Context(), "test",
+				client.ClientLogger(slog.New(slog.NewTextHandler(&logs, nil))),
+			)
+
+			service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+				NetworkMode: tt.mode,
+			}}
+
+			devices, _, err := instanceNetworkDevices(c, &types.Project{}, service, "")
+			require.NoError(t, err)
+			assert.Empty(t, devices)
+
+			if tt.warn {
+				assert.Contains(t, logs.String(), "is not supported; the instance gets no network")
+				assert.Contains(t, logs.String(), "network_mode="+tt.mode)
+			} else {
+				assert.Empty(t, logs.String())
+			}
+		})
+	}
 }
 
 func TestInstanceNetworkDevices(t *testing.T) {
