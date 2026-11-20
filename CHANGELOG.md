@@ -60,6 +60,9 @@ form.
   as Docker Compose does, so `pull` followed by `up` rolls out a moved tag.
   Previously only `up --pull always` did. (by @tallica, #271)
 
+- `mac_address` under a service's `networks.<name>` sets the NIC's `hwaddr`; it
+  was ignored. (by @tallica, #272)
+
 ## [v1.4.1] - 2026-11-15
 
 ### Changed

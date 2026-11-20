@@ -762,6 +762,9 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 		if sNet != nil {
 			ipv4Address = sNet.Ipv4Address
 			ipv6Address = sNet.Ipv6Address
+			if sNet.MacAddress != "" {
+				extensions["hwaddr"] = sNet.MacAddress
+			}
 		}
 
 		// A gateway set on the NIC supplies what the missing network address would
