@@ -61,6 +61,11 @@ form.
   primary network, the one with the highest `priority`, as in Docker Compose.
   (by @tallica, #272)
 
+- A new instance attached to several networks numbers its NICs in a fixed
+  order: `eth0` is the one with the highest `priority`, ties going by name. The
+  order was random, so replicas of one service could differ. Existing instances
+  keep theirs until recreated. (by @tallica, #276)
+
 ## [v1.4.1] - 2026-11-15
 
 ### Changed

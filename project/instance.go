@@ -94,7 +94,8 @@ func serviceToInstance(c *client.Client, p *types.Project, serviceName string, o
 		_, hasAliases := config["user.label.dns.aliases"]
 		if !hasAliases {
 			var dnsAliases []string
-			for _, sNet := range service.Networks {
+			for _, name := range service.NetworksByPriority() {
+				sNet := service.Networks[name]
 				if sNet == nil {
 					continue
 				}
@@ -720,13 +721,17 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 		}
 	}
 
+	// Docker Compose connects networks in this order, so eth0 is the primary
+	// one; ranging over the map would number the NICs differently per instance.
+	networks := service.NetworksByPriority()
+
 	// Docker Compose gives a service-level mac_address to the primary network
 	// and rejects a different one set there (prepareContainerMACAddress).
 	var primaryNetwork string
-	if service.MacAddress != "" && len(service.Networks) == 0 {
+	if service.MacAddress != "" && len(networks) == 0 {
 		c.LogWarn("Ignoring `mac_address`: the service has no network", "service", service.Name)
 	} else if service.MacAddress != "" {
-		primaryNetwork = service.NetworksByPriority()[0]
+		primaryNetwork = networks[0]
 		primary := service.Networks[primaryNetwork]
 		if primary != nil && primary.MacAddress != "" && primary.MacAddress != service.MacAddress {
 			errs = errors.Join(errs, fmt.Errorf(
@@ -737,7 +742,8 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 	}
 
 	ethIdx := 0
-	for name, sNet := range service.Networks {
+	for _, name := range networks {
+		sNet := service.Networks[name]
 		network, netConfig, gateway4, gateway6, err := ensureProjectNetwork(c, p, name, service.Name, uplink)
 		if err != nil {
 			errs = errors.Join(errs, err)
