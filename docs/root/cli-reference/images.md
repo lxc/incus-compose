@@ -52,6 +52,9 @@ incus-compose pull [SERVICE...]
 and `run` helper images alongside the service images. That is what an
 [air-gapped or proxied install](/air-gapped) is built on.
 
+`pull` leaves running instances alone; see [up](/cli-reference/up-and-down#up)
+for when the next `up` recreates them.
+
 ## Environment variables
 
 Flags given on the command line win. See

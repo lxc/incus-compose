@@ -435,11 +435,13 @@ func newUpCommand() *cli.Command {
 				return errLogged.Wrap(err)
 			}
 
-			// A pulled image only reaches an instance created from it again, so
-			// the ones the ensure above found on the previous fingerprint are
+			// A replaced image only reaches an instance created from it again,
+			// so the ones the ensure above found on the previous fingerprint are
 			// torn down and made from the new one, as are the ones created from
-			// an older service config.
-			stale := staleInstances(myResources, pullMode)
+			// an older service config. Not gated on the pull policy: compose's
+			// `up` recreates a container whose image changed, whatever changed
+			// it, `pull` included (#271).
+			stale := staleInstances(myResources)
 			if len(stale) > 0 {
 				c.LogDebug("Recreating outdated instances", "instances", stale)
 
@@ -557,9 +559,9 @@ func builtServices(p *project.Project, args filterResourcesArgs) []string {
 }
 
 // staleInstances returns the ensured instances created from an older service
-// config or, under PullAlways, running an image other than the one their
-// service holds now, sorted by Incus name.
-func staleInstances(resources map[string][]client.Resource, pullMode client.PullMode) []client.Resource {
+// config or from an image other than the one their service's image now resolves
+// to in the project, sorted by Incus name.
+func staleInstances(resources map[string][]client.Resource) []client.Resource {
 	stale := []client.Resource{}
 
 	for _, res := range resources {
@@ -588,7 +590,7 @@ func staleInstances(resources map[string][]client.Resource, pullMode client.Pull
 				continue
 			}
 
-			if instance.ConfigChanged() || pullMode == client.PullAlways && pulledImageChanged(info.Config["volatile.base_image"], image.State().IncusAlias) {
+			if instance.ConfigChanged() || imageChanged(info.Config["volatile.base_image"], image.State().IncusAlias) {
 				stale = append(stale, instance)
 			}
 		}
@@ -601,9 +603,9 @@ func staleInstances(resources map[string][]client.Resource, pullMode client.Pull
 	return stale
 }
 
-// pulledImageChanged reports whether the pulled alias differs from the image
-// the instance runs today.
-func pulledImageChanged(baseImage string, alias *incusApi.ImageAliasesEntry) bool {
+// imageChanged reports whether the project alias differs from the image the
+// instance runs today.
+func imageChanged(baseImage string, alias *incusApi.ImageAliasesEntry) bool {
 	return alias != nil && alias.Target != "" && alias.Target != baseImage
 }
 

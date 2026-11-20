@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -971,9 +973,10 @@ func TestE2EUpReconcilesToReplicas(t *testing.T) {
 	assertCount(3)
 }
 
-// TestE2EUpPullAlwaysRecreates pins that --pull always replaces an instance
-// whose image moved under it, and that every other policy leaves it alone.
-func TestE2EUpPullAlwaysRecreates(t *testing.T) {
+// TestE2EUpRecreatesOnImageChange pins that up replaces an instance whose image
+// in the project moved off the one it was created from, under every pull policy,
+// and that `pull` followed by a plain `up` rolls a moved tag out (#271).
+func TestE2EUpRecreatesOnImageChange(t *testing.T) {
 	t.Parallel()
 	testlib.SkipE2E(t)
 
@@ -1035,21 +1038,54 @@ func TestE2EUpPullAlwaysRecreates(t *testing.T) {
 
 	inst, _, err = conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
 	require.NoError(t, err)
-	assert.Equal(t, created, inst.Config["volatile.base_image"], "only --pull always recreates")
+	assert.NotEqual(t, created, inst.Config["volatile.base_image"], "the new image must reach the instance without a pull policy")
+	assert.Equal(t, "Running", inst.Status)
+
+	tag := "docker.io/library/busybox:1.37-glibc"
+
+	// Stands in for a registry tag moving, which a test cannot do: the project
+	// holds the tag on an older image than the registry, and the instance runs
+	// it. The 1.36 image is still in the project under its own tag.
+	_, _, err = conn.RawQuery(ctx, http.MethodPut,
+		"/1.0/images/aliases/"+url.PathEscape(tag)+"?project="+url.QueryEscape(c.IncusProject()),
+		incusApi.ImageAliasesEntryPut{Target: created}, "")
+	require.NoError(t, err)
 
 	runE2ETests(ctx, t, pn, []e2eTest{
 		{
-			name: "up on the new image with --pull always",
-			args: []string{"-f", newCompose, "up", "--detach", "--pull", "always"},
+			name: "up on the tag moved in the store",
+			args: []string{"-f", newCompose, "up", "--detach"},
 		},
 	})
 
 	inst, _, err = conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
 	require.NoError(t, err)
-	assert.NotEqual(t, created, inst.Config["volatile.base_image"], "the replaced image must reach the instance")
-	assert.Equal(t, "Running", inst.Status)
+	require.Equal(t, created, inst.Config["volatile.base_image"], "setup: the instance runs the older image under the tag")
 
-	pulled := inst.Config["volatile.base_image"]
+	runE2ETests(ctx, t, pn, []e2eTest{
+		{
+			name: "pull the tag back from the registry",
+			args: []string{"-f", newCompose, "pull"},
+		},
+	})
+
+	// What pull put in the project, not what the first up took: that came from
+	// the shared cache, which can be older than the registry.
+	alias, _, err := conn.GetImageAlias(ctx, c.IncusProject(), tag, nil)
+	require.NoError(t, err)
+	require.NotEqual(t, created, alias.Target, "pull must replace the older image")
+
+	runE2ETests(ctx, t, pn, []e2eTest{
+		{
+			name: "up after pull",
+			args: []string{"-f", newCompose, "up", "--detach"},
+		},
+	})
+
+	inst, _, err = conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
+	require.NoError(t, err)
+	assert.Equal(t, alias.Target, inst.Config["volatile.base_image"], "the pulled image must reach the instance")
+	assert.Equal(t, "Running", inst.Status)
 
 	runE2ETests(ctx, t, pn, []e2eTest{
 		{
@@ -1060,7 +1096,7 @@ func TestE2EUpPullAlwaysRecreates(t *testing.T) {
 
 	inst, _, err = conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
 	require.NoError(t, err)
-	assert.Equal(t, pulled, inst.Config["volatile.base_image"], "an unchanged image must not recreate")
+	assert.Equal(t, alias.Target, inst.Config["volatile.base_image"], "an unchanged image must not recreate")
 }
 
 // TestE2EUpRecreateChanged pins that ps flags a drifted instance and up
