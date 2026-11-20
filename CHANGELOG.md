@@ -56,8 +56,10 @@ form.
   created no longer fails now and then with `Idmaps of container ... and
   storage volume ... are not identical`. (by @tallica, #266)
 
-- `mac_address` under a service's `networks.<name>` sets the NIC's `hwaddr`; it
-  was ignored. (by @tallica, #272)
+- `mac_address` sets the NIC's `hwaddr`; it was ignored. Under a service's
+  `networks.<name>` it applies to that network; on the service itself to its
+  primary network, the one with the highest `priority`, as in Docker Compose.
+  (by @tallica, #272)
 
 ## [v1.4.1] - 2026-11-15
 
