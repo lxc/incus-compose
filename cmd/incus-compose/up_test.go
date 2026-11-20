@@ -113,9 +113,9 @@ func TestParseScale(t *testing.T) {
 	}
 }
 
-// TestPulledImageChanged covers what up feeds the recreate teardown: an
+// TestImageChanged covers what up feeds the recreate teardown: an
 // unensured image never recreates, a changed fingerprint does.
-func TestPulledImageChanged(t *testing.T) {
+func TestImageChanged(t *testing.T) {
 	t.Parallel()
 
 	imgAlias := func(target string) *incusApi.ImageAliasesEntry {
@@ -157,7 +157,7 @@ func TestPulledImageChanged(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.want, pulledImageChanged(tt.baseImage, tt.alias))
+			assert.Equal(t, tt.want, imageChanged(tt.baseImage, tt.alias))
 		})
 	}
 }

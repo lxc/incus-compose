@@ -56,6 +56,10 @@ form.
   created no longer fails now and then with `Idmaps of container ... and
   storage volume ... are not identical`. (by @tallica, #266)
 
+- `up` recreates the instances whose image was replaced since they were created,
+  as Docker Compose does, so `pull` followed by `up` rolls out a moved tag.
+  Previously only `up --pull always` did. (by @tallica, #271)
+
 ## [v1.4.1] - 2026-11-15
 
 ### Changed

@@ -20,31 +20,31 @@ Create and start containers.
 incus-compose up [SERVICE...]
 ```
 
-| Option                 | Description                                                                                                                                                                                                                                        |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-d`, `--detach`       | Detached mode: run containers in the background                                                                                                                                                                                                    |
-| `--recreate`           | Recreate containers even if they exist                                                                                                                                                                                                             |
-| `--no-start`           | Don't start containers after creating; implies `--detach`                                                                                                                                                                                          |
-| `--pull`               | Pull policy: `always` (refresh from the registry, recreating instances the refresh moved off their image), `missing`/`policy` (use the store if present), `never` (never contact a registry; fail when the image is not stored); default: `policy` |
-| `--build`              | Rebuild build-configured service images before starting containers, recreating the instances that use them                                                                                                                                         |
-| `--no-build`           | Do not build images; fail if a required built image is missing                                                                                                                                                                                     |
-| `--builder`            | Preferred builder, binary name or absolute path; empty for auto-detect                                                                                                                                                                             |
-| `--no-deps`            | Don't start linked services (depends_on)                                                                                                                                                                                                           |
-| `--timeout`            | Stop/start timeout (default: 1m)                                                                                                                                                                                                                   |
-| `--dependency-timeout` | Max time to wait for `service_healthy` depends_on (default: 5m; `0` = no limit)                                                                                                                                                                    |
-| `--scale`              | Scale service: `web=3` (repeatable)                                                                                                                                                                                                                |
-| `--no-dns`             | Don't start or configure DNS for the project                                                                                                                                                                                                       |
-| `--dns-image`          | ic-dns image (default: `ghcr.io/lxc/incus-compose/ic-dns:latest`)                                                                                                                                                                                  |
-| `--no-healthd`         | Don't create healthd sidecar for healthchecks                                                                                                                                                                                                      |
-| `--external-healthd`   | Use an existing (unmanaged) healthd; don't create or look one up                                                                                                                                                                                   |
-| `--healthd-image`      | Healthd OCI image; `{version}` is replaced with the incus-compose version                                                                                                                                                                          |
-| `--init`               | Image the `run` helper comes from, fetched here so a one-off works later; `{version}` is replaced with the incus-compose version                                                                                                                   |
-| `--healthd-binary`     | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)                                                                                                                                                                     |
-| `--healthd-incus`      | Incus API URL healthd connects to; overrides `x-incus-compose.healthd.incus`; unset uses `core.https_address`, else the bridge IP                                                                                                                  |
-| `--healthd-network`    | Network for healthd; overrides `x-incus-compose.healthd.network`; the bridge of the project it runs in if unset                                                                                                                                    |
-| `--healthd-scope`      | `global` (shared daemon in the Incus `incus-compose` project, the default) or `project`; loses to a scope the project already carries                                                                                                              |
-| `--network-driver`     | Network driver to use for project networks: `auto` (default), `ovn`, or `bridge`                                                                                                                                                                   |
-| `--network-uplink`     | Uplink network for OVN networks (e.g. `incusbr0`)                                                                                                                                                                                                  |
+| Option                 | Description                                                                                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `-d`, `--detach`       | Detached mode: run containers in the background                                                                                                                                            |
+| `--recreate`           | Recreate containers even if they exist                                                                                                                                                     |
+| `--no-start`           | Don't start containers after creating; implies `--detach`                                                                                                                                  |
+| `--pull`               | Pull policy: `always` (refresh from the registry), `missing`/`policy` (use the store if present), `never` (never contact a registry; fail when the image is not stored); default: `policy` |
+| `--build`              | Rebuild build-configured service images before starting containers, recreating the instances that use them                                                                                 |
+| `--no-build`           | Do not build images; fail if a required built image is missing                                                                                                                             |
+| `--builder`            | Preferred builder, binary name or absolute path; empty for auto-detect                                                                                                                     |
+| `--no-deps`            | Don't start linked services (depends_on)                                                                                                                                                   |
+| `--timeout`            | Stop/start timeout (default: 1m)                                                                                                                                                           |
+| `--dependency-timeout` | Max time to wait for `service_healthy` depends_on (default: 5m; `0` = no limit)                                                                                                            |
+| `--scale`              | Scale service: `web=3` (repeatable)                                                                                                                                                        |
+| `--no-dns`             | Don't start or configure DNS for the project                                                                                                                                               |
+| `--dns-image`          | ic-dns image (default: `ghcr.io/lxc/incus-compose/ic-dns:latest`)                                                                                                                          |
+| `--no-healthd`         | Don't create healthd sidecar for healthchecks                                                                                                                                              |
+| `--external-healthd`   | Use an existing (unmanaged) healthd; don't create or look one up                                                                                                                           |
+| `--healthd-image`      | Healthd OCI image; `{version}` is replaced with the incus-compose version                                                                                                                  |
+| `--init`               | Image the `run` helper comes from, fetched here so a one-off works later; `{version}` is replaced with the incus-compose version                                                           |
+| `--healthd-binary`     | Path to local ic-healthd binary (uses images:alpine/edge instead of OCI image)                                                                                                             |
+| `--healthd-incus`      | Incus API URL healthd connects to; overrides `x-incus-compose.healthd.incus`; unset uses `core.https_address`, else the bridge IP                                                          |
+| `--healthd-network`    | Network for healthd; overrides `x-incus-compose.healthd.network`; the bridge of the project it runs in if unset                                                                            |
+| `--healthd-scope`      | `global` (shared daemon in the Incus `incus-compose` project, the default) or `project`; loses to a scope the project already carries                                                      |
+| `--network-driver`     | Network driver to use for project networks: `auto` (default), `ovn`, or `bridge`                                                                                                           |
+| `--network-uplink`     | Uplink network for OVN networks (e.g. `incusbr0`)                                                                                                                                          |
 
 Without `--detach`, `up` streams logs from all started services (equivalent to
 running `logs --follow` immediately after). Use `--detach` to return as soon as
@@ -58,11 +58,14 @@ a rebuilt image only reaches an instance created from it again. Every other
 service is left alone; `--recreate` is how you recreate the whole project. See
 [Builds](/builds) for details.
 
-`--pull always` recreates on the same rule: an instance whose image the refresh
-replaced is torn down and made again from the new one. Only what the pull itself
-replaced counts - under every other policy a running instance keeps the image it
-was created from while its tag moves. Naming a different image changes the
-service config, which recreates it as below.
+`up` recreates on the same rule whenever the image a service names in the
+project is no longer the one its instance was created from: the instance is torn
+down and made again from the new one. What replaced the image does not matter -
+`--pull always`, an earlier [`pull`](/cli-reference/images#pull), or a build -
+so `pull` followed by `up` rolls out a moved tag, as in Docker Compose. Only the
+project's copy counts: a tag that moved on its registry recreates once `pull` or
+`--pull always` fetches it. Naming a different image also changes the service
+config, which recreates it as below.
 
 `up` recreates the instances whose service config differs from what they were
 created from. Every instance carries the hash of its service in the
@@ -70,14 +73,14 @@ created from. Every instance carries the hash of its service in the
 hash of the current file. The hash covers the service as written, `x-incus` and
 `x-incus-compose` blocks included, but not `build`, `pull_policy`, `scale`,
 `depends_on`, `profiles` or `deploy.replicas`, and not a new image behind an
-unchanged tag (that is `--pull always`). Nothing outside the service counts
-either: the top-level `x-incus-compose` block, the network, volume, secret and
-config definitions, and the contents of secret and config files. The service is
-hashed after interpolation and path resolution, so moving the project directory
-or changing a variable the file interpolates marks its instances changed.
-`config --hash '*'` (quoted, or the shell expands it) prints every service.
-Instances created before this version have no label and are never treated as
-changed. `ps` marks drifted instances `(config changed)`.
+unchanged tag (that recreates on the image rule above). Nothing outside the
+service counts either: the top-level `x-incus-compose` block, the network,
+volume, secret and config definitions, and the contents of secret and config
+files. The service is hashed after interpolation and path resolution, so moving
+the project directory or changing a variable the file interpolates marks its
+instances changed. `config --hash '*'` (quoted, or the shell expands it) prints
+every service. Instances created before this version have no label and are never
+treated as changed. `ps` marks drifted instances `(config changed)`.
 
 _Since: v1.3.0_
 
