@@ -56,6 +56,9 @@ form.
   created no longer fails now and then with `Idmaps of container ... and
   storage volume ... are not identical`. (by @tallica, #266)
 
+- `mac_address` under a service's `networks.<name>` sets the NIC's `hwaddr`; it
+  was ignored. (by @tallica, #272)
+
 ## [v1.4.1] - 2026-11-15
 
 ### Changed
