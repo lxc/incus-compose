@@ -347,6 +347,33 @@ default. Pass `--allow-local-storage` (`INCUS_COMPOSE_ALLOW_LOCAL_STORAGE`) or
 set `x-incus-compose.allow-local-storage: true` to override this check when
 member-local storage per replica is intended.
 
+#### Co-location
+
+Every cluster member holds its own copy of a `bridge` network, so services on
+one only reach each other when they run on the same member. Single-replica
+services that share a bridge network are therefore placed together, on a member
+that satisfies all of their `constraints`:
+
+```yaml
+services:
+  app:
+    image: docker.io/nginx:alpine
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == m2
+  tunnel: # shares the default network with app, so it runs on m2 too
+    image: docker.io/cloudflare/cloudflared:latest
+```
+
+A group whose services already run picks the member they run on, so recreating
+one of them through another member keeps them together. Otherwise it picks the
+connected member, if it qualifies. Services that scale (`replicas > 1` or
+`mode: global`) are not grouped by a shared bridge network and keep their own
+spread, unless they name a service to follow in `affinity`. To co-locate or
+separate services on any network, use
+[`affinity` and `anti-affinity`](/extras#affinity-and-anti-affinity).
+
 ### Resource Limits (`deploy.resources.limits`)
 
 `deploy.resources.limits` maps to Incus instance limits:
