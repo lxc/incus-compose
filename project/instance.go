@@ -704,6 +704,16 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 	devices := []client.InstanceDevice{}
 	resources := []client.Resource{}
 
+	// compose-go leaves a service with `network_mode` set without networks,
+	// so only `none` gets what it asked for.
+	if service.NetworkMode != "" && service.NetworkMode != "none" {
+		c.LogWarn(
+			"`network_mode` other than `none` is not supported; the instance gets no network",
+			"service", service.Name,
+			"network_mode", service.NetworkMode,
+		)
+	}
+
 	var uplink string
 	if len(opts) > 0 && opts[0] != nil && opts[0].uplink != "" {
 		uplink = opts[0].uplink
