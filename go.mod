@@ -8,7 +8,7 @@ require (
 	github.com/adrg/xdg v0.5.3
 	github.com/avast/retry-go/v5 v5.1.1
 	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
-	github.com/compose-spec/compose-go/v2 v2.17.0
+	github.com/compose-spec/compose-go/v2 v2.16.2
 	github.com/coredns/coredns v1.15.0
 	github.com/creativeprojects/go-selfupdate v1.7.1
 	github.com/distribution/reference v0.6.0
@@ -53,6 +53,7 @@ require (
 	github.com/davidmz/go-pageant v1.1.0 // indirect
 	github.com/dnstap/golang-dnstap v0.4.0 // indirect
 	github.com/docker/go-connections v0.8.2 // indirect
+	github.com/docker/go-units v0.5.0 // indirect
 	github.com/farsightsec/golang-framestream v0.3.0 // indirect
 	github.com/flynn/go-shlex v0.0.0-20150515145356-3f9db97f8568 // indirect
 	github.com/go-fed/httpsig v1.1.0 // indirect
