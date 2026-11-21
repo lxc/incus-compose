@@ -69,16 +69,18 @@ const ImageOverrideKey = "user.incus-compose.image-override"
 // the override replaces, as user.image_alias holds it.
 const ImageOverrideOfKey = "user.incus-compose.image-override-of"
 
-// FeaturesKey is the instance key listing, comma separated, the contracts this
-// incus-compose honors for the instance.
+// FeaturesKey is the instance key listing, comma separated, the contracts the
+// incus-compose that created the instance honors. create writes every entry at
+// once; an updater looks for its own entry rather than comparing the value.
 const FeaturesKey = "user.incus-compose.features"
 
 // FeatureImageOverride is the FeaturesKey entry for ImageOverrideKey.
 const FeatureImageOverride = "image-override"
 
 // ImageOverridden reports whether an image override in config is in force for
-// a service whose image is named image. One set against another image is not:
-// the compose file has moved on since the updater set it.
+// a service whose image resource has the IncusName image, the name create
+// writes to user.image_alias. One set against another image is not: the
+// compose file has moved on since the updater set it.
 func ImageOverridden(config map[string]string, image string) bool {
 	return config[ImageOverrideKey] != "" && config[ImageOverrideOfKey] == image
 }

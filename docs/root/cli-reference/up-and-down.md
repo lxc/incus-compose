@@ -104,9 +104,12 @@ incus config set web-1 --project <project> \
 
 The override is in force while both keys are set and `image-override-of` matches
 the image the compose file names. It is then never a reason to recreate the
-instance, not with `--pull always` and not after a `pull`. Once the compose file
-names another image, the override no longer applies, and the change of service
-config recreates the instance from the file's image without the two keys.
+instance, not with `--pull always` and not after a `pull`. `--recreate`, and the
+recreate of a service whose image `--build` rebuilt, take the instance down
+first: it comes back from the compose file's image, without the two keys. Once
+the compose file names another image, the override no longer applies, and the
+change of service config recreates the instance from the file's image without
+the two keys.
 
 A change to the rest of the service config recreates the instance on the
 override, keeping both keys. An override image missing from the project is

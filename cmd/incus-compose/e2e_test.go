@@ -1129,6 +1129,9 @@ func upOnImageOverride(ctx context.Context, t *testing.T, pn string, compose str
 	serviceImage := inst.Config["user.image_alias"]
 	require.NotEmpty(t, serviceImage)
 
+	hash := inst.Config[client.ConfigHashKey]
+	require.NotEmpty(t, hash)
+
 	alias, _, err := conn.GetImageAlias(ctx, c.IncusProject(), overrideTag, nil)
 	require.NoError(t, err)
 	require.NotEqual(t, inst.Config["volatile.base_image"], alias.Target, "setup: the two tags must be different images")
@@ -1163,7 +1166,7 @@ func upOnImageOverride(ctx context.Context, t *testing.T, pn string, compose str
 	require.NoError(t, err)
 	require.Equal(t, alias.Target, inst.Config["volatile.base_image"], "setup: the rebuild must land the override image")
 	require.Equal(t, serviceImage, inst.Config["user.image_alias"], "a rebuild must keep the user keys")
-	require.NotEmpty(t, inst.Config[client.ConfigHashKey], "a rebuild must keep the config hash")
+	require.Equal(t, hash, inst.Config[client.ConfigHashKey], "a rebuild must keep the config hash")
 
 	return c, alias.Target
 }
@@ -1201,6 +1204,11 @@ func TestE2EUpKeepsImageOverride(t *testing.T) {
 	conn, err := c.Connection()
 	require.NoError(t, err)
 
+	inst, _, err := conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
+	require.NoError(t, err)
+	rebuilt := inst.Config["volatile.uuid"]
+	serviceImage := inst.Config["user.image_alias"]
+
 	for _, args := range [][]string{
 		{"-f", compose, "up", "--detach"},
 		{"-f", compose, "up", "--detach", "--pull", "always"},
@@ -1212,12 +1220,31 @@ func TestE2EUpKeepsImageOverride(t *testing.T) {
 			},
 		})
 
-		inst, _, err := conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
+		inst, _, err = conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
 		require.NoError(t, err)
+		assert.Equal(t, rebuilt, inst.Config["volatile.uuid"], "an override in force must not recreate")
 		assert.Equal(t, override, inst.Config["volatile.base_image"], "an override in force must not be undone")
 		assert.Equal(t, newTag, inst.Config[client.ImageOverrideKey])
 		assert.Equal(t, "Running", inst.Status)
 	}
+
+	// --recreate takes the project down first, so nothing is left to carry
+	// the override over: the instance comes back from the compose file.
+	runE2ETests(ctx, t, pn, []e2eTest{
+		{
+			name: "up --recreate",
+			args: []string{"-f", compose, "up", "--detach", "--recreate"},
+		},
+	})
+
+	service, _, err := conn.GetImageAlias(ctx, c.IncusProject(), serviceImage, nil)
+	require.NoError(t, err)
+
+	inst, _, err = conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
+	require.NoError(t, err)
+	assert.Equal(t, service.Target, inst.Config["volatile.base_image"], "--recreate must use the compose file's image")
+	assert.NotContains(t, inst.Config, client.ImageOverrideKey)
+	assert.NotContains(t, inst.Config, client.ImageOverrideOfKey)
 }
 
 // TestE2EUpRecreatesOnImageOverride pins that a change to the rest of the
