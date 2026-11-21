@@ -370,8 +370,10 @@ A group whose services already run picks the member they run on, so recreating
 one of them through another member keeps them together. Otherwise it picks the
 connected member, if it qualifies. Services that scale (`replicas > 1` or
 `mode: global`) are not grouped by a shared bridge network and keep their own
-spread, unless they name a service to follow in `affinity`. To co-locate or
-separate services on any network, use
+spread, unless they name a service to follow in `affinity`. Unlike on a single
+Docker host, a peer on the bridge network then reaches, and resolves, only the
+replicas on its own member; put scaled services on an OVN network to reach them
+all. To co-locate or separate services on any network, use
 [`affinity` and `anti-affinity`](/extras#affinity-and-anti-affinity).
 
 ### Resource Limits (`deploy.resources.limits`)
