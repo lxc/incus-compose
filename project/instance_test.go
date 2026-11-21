@@ -1555,6 +1555,35 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		assert.Empty(t, devices)
 	})
 
+	t.Run("nics are numbered by network priority then name", func(t *testing.T) {
+		t.Parallel()
+
+		p := &types.Project{Networks: types.Networks{"alpha": {}, "bravo": {}, "charlie": {}, "delta": {}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"charlie": nil,
+				"alpha":   {},
+				"delta":   {Priority: 5},
+				"bravo":   nil,
+			},
+		}}
+
+		devices, _, err := instanceNetworkDevices(c, p, service, "")
+		require.NoError(t, err)
+
+		got := map[string]string{}
+		for _, device := range devices {
+			got[device.Name] = device.Config.Network.Name()
+		}
+
+		assert.Equal(t, map[string]string{
+			"eth0": "delta",
+			"eth1": "alpha",
+			"eth2": "bravo",
+			"eth3": "charlie",
+		}, got)
+	})
+
 	t.Run("network address none or unset does not error", func(t *testing.T) {
 		t.Parallel()
 
@@ -2894,6 +2923,24 @@ func TestServiceToInstance_DNSAliases(t *testing.T) {
 
 		aliases := inst.Config.Extensions["user.label.dns.aliases"]
 		assert.Equal(t, "frontend,web.mydomain.lan.", aliases)
+	})
+
+	t.Run("orders aliases by network priority then name", func(t *testing.T) {
+		t.Parallel()
+
+		c, p := newProject()
+		service := p.Services["web"]
+		service.Networks = map[string]*types.ServiceNetworkConfig{
+			"charlie": {Aliases: []string{"c"}},
+			"alpha":   {Aliases: []string{"a"}},
+			"delta":   {Aliases: []string{"d"}, Priority: 5},
+			"bravo":   {Aliases: []string{"b"}},
+		}
+		p.Services["web"] = service
+
+		inst, _, err := serviceToInstance(c, p, "web", &ResourcesOptions{}, 1, 1)
+		require.NoError(t, err)
+		assert.Equal(t, "d,a,b,c", inst.Config.Extensions["user.label.dns.aliases"])
 	})
 
 	t.Run("omits user.label.dns.aliases when noDNS is true", func(t *testing.T) {
