@@ -1,8 +1,11 @@
 package project
 
 import (
+	"errors"
 	"fmt"
+	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/types"
@@ -47,76 +50,578 @@ func serviceRestartPolicy(service types.ServiceConfig) string {
 	}
 }
 
-// clusterPlacementEnv holds the cluster state needed to resolve placement for a service.
+// serviceAffinity returns the service names listed in
+// x-incus-compose.affinity and x-incus-compose.anti-affinity.
+func serviceAffinity(service types.ServiceConfig) ([]string, []string, error) {
+	var ext struct {
+		Affinity     []string `mapstructure:"affinity"`
+		AntiAffinity []string `mapstructure:"anti-affinity"`
+	}
+
+	// Unlike allow-local-storage, a malformed value fails: ignoring
+	// `affinity: app` would quietly place the services apart.
+	_, err := service.Extensions.Get("x-incus-compose", &ext)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parsing x-incus-compose: %w", err)
+	}
+
+	return ext.Affinity, ext.AntiAffinity, nil
+}
+
+// serviceDeployMode returns deploy.mode, defaulting to replicated.
+func serviceDeployMode(service types.ServiceConfig) string {
+	if service.Deploy != nil && service.Deploy.Mode != "" {
+		return service.Deploy.Mode
+	}
+
+	return "replicated"
+}
+
+// clusterPlacementEnv holds the cluster-wide state placement is resolved against.
 type clusterPlacementEnv struct {
 	clustered   bool
 	serverName  string
 	networkType string
-	remotePool  bool
 	members     []incusApi.ClusterMember
+
+	// locations maps the Incus name of every existing instance to the member
+	// it runs on.
+	locations map[string]string
 }
 
-// resolveServicePlacement computes the desired replica count and per-replica
-// cluster target member names for a service.
-func (p *Project) resolveServicePlacement(c *client.Client, service types.ServiceConfig, scaleOverride *int) (int, []string, error) {
+// servicePlacementInput holds what placement reads about one service.
+type servicePlacementInput struct {
+	service       types.ServiceConfig
+	scaleOverride *int
+	remotePool    bool
+
+	// bridges names the service's networks that every cluster member holds a
+	// separate copy of, so peers on them only reach each other on one member.
+	bridges []string
+}
+
+// servicePlacement is the replica count and per-replica cluster targets
+// resolved for a service.
+type servicePlacement struct {
+	desired int
+	targets []string
+}
+
+// resolveProjectPlacement resolves the placement of every service, keyed by
+// service name.
+func (p *Project) resolveProjectPlacement(c *client.Client, scale map[string]int) (map[string]servicePlacement, error) {
+	clustered := c != nil && c.Global().IsClustered()
+
 	var env clusterPlacementEnv
-	if c != nil && c.Global().IsClustered() {
+	if clustered {
 		members, err := c.Global().ClusterMembers()
 		if err != nil {
-			return 0, nil, fmt.Errorf("service %q: listing cluster members: %w", service.Name, err)
+			return nil, fmt.Errorf("listing cluster members: %w", err)
 		}
 
-		remotePool, err := p.isServiceStorageRemote(c, service)
+		locations, err := c.InstanceLocations()
 		if err != nil {
-			return 0, nil, fmt.Errorf("service %q: checking storage pool: %w", service.Name, err)
+			return nil, err
 		}
 
 		env = clusterPlacementEnv{
 			clustered:   true,
 			serverName:  c.Global().ServerName(),
 			networkType: c.NetworkType(),
-			remotePool:  remotePool,
 			members:     members,
+			locations:   locations,
 		}
 	}
 
-	desired, targets, warnLocal, err := resolveServicePlacementEnv(env, service, scaleOverride, p.ClientConfig.AllowLocalStorage)
-	if err != nil {
-		return 0, nil, err
+	inputs := make(map[string]servicePlacementInput, len(p.Services))
+	for name, service := range p.Services {
+		in := servicePlacementInput{service: service}
+
+		s, ok := scale[name]
+		if ok {
+			in.scaleOverride = &s
+		}
+
+		if clustered {
+			remotePool, err := p.isServiceStorageRemote(c, service)
+			if err != nil {
+				return nil, fmt.Errorf("service %q: checking storage pool: %w", name, err)
+			}
+
+			in.remotePool = remotePool
+
+			// The type of an external network is only known to Incus; one
+			// without a driver is taken to be of the project's default type.
+			for netName := range service.Networks {
+				driver := p.Networks[netName].Driver
+				if driver == "bridge" || ((driver == "" || driver == "auto") && !c.FeaturesNetworks()) {
+					in.bridges = append(in.bridges, netName)
+				}
+			}
+		}
+
+		inputs[name] = in
 	}
 
-	if warnLocal && c != nil {
-		c.LogWarn(
-			"Deploying multiple replicas on a cluster with local storage; volumes and instances are member-local",
-			"service", service.Name,
-			"replicas", desired,
-		)
+	warn := func(msg string, args ...any) {
+		if c != nil {
+			c.LogWarn(msg, args...)
+		}
 	}
 
-	return desired, targets, nil
+	return resolveProjectPlacementEnv(env, inputs, p.ClientConfig.AllowLocalStorage, warn)
 }
 
-func resolveServicePlacementEnv(env clusterPlacementEnv, service types.ServiceConfig, scaleOverride *int, projectAllowLocal bool) (int, []string, bool, error) {
-	mode := "replicated"
-	if service.Deploy != nil && service.Deploy.Mode != "" {
-		mode = service.Deploy.Mode
+func resolveProjectPlacementEnv(env clusterPlacementEnv, inputs map[string]servicePlacementInput, projectAllowLocal bool, warn func(msg string, args ...any)) (map[string]servicePlacement, error) {
+	names := slices.Sorted(maps.Keys(inputs))
+
+	var errs error
+	affinity := map[string][]string{}
+	anti := map[string][]string{}
+	for _, name := range names {
+		aff, apart, err := serviceAffinity(inputs[name].service)
+		if err != nil {
+			errs = errors.Join(errs, fmt.Errorf("service %q: %w", name, err))
+			continue
+		}
+
+		for _, peer := range slices.Concat(aff, apart) {
+			_, ok := inputs[peer]
+			switch {
+			case peer == name:
+				errs = errors.Join(errs, fmt.Errorf("service %q: affinity and anti-affinity cannot name the service itself", name))
+			case !ok:
+				errs = errors.Join(errs, fmt.Errorf("service %q: affinity or anti-affinity names unknown service %q", name, peer))
+			}
+		}
+
+		if !env.clustered && len(apart) > 0 {
+			warn("anti-affinity has no effect on a standalone server", "service", name)
+		}
+
+		affinity[name] = aff
+		for _, peer := range apart {
+			if !slices.Contains(anti[name], peer) {
+				anti[name] = append(anti[name], peer)
+				anti[peer] = append(anti[peer], name)
+			}
+		}
 	}
 
-	switch mode {
-	case "replicated", "global":
-	default:
-		return 0, nil, false, fmt.Errorf("service %q: unsupported deploy.mode %q (must be replicated or global)", service.Name, mode)
+	placements := map[string]servicePlacement{}
+	for _, name := range names {
+		desired, targets, warnLocal, err := resolveServicePlacementEnv(env, inputs[name], projectAllowLocal)
+		if err != nil {
+			errs = errors.Join(errs, err)
+			continue
+		}
+
+		if warnLocal {
+			warn(
+				"Deploying multiple replicas on a cluster with local storage; volumes and instances are member-local",
+				"service", name,
+				"replicas", desired,
+			)
+		}
+
+		placements[name] = servicePlacement{desired: desired, targets: targets}
 	}
 
-	desired := 1
-	if scaleOverride != nil {
-		desired = *scaleOverride
-	} else if service.Deploy != nil && service.Deploy.Replicas != nil {
-		desired = *service.Deploy.Replicas
+	if errs != nil {
+		return nil, errs
 	}
 
 	if !env.clustered {
-		if mode == "global" && scaleOverride == nil {
+		return placements, nil
+	}
+
+	err := colocateServices(env, inputs, placements, affinity, anti, projectAllowLocal, warn)
+	if err != nil {
+		return nil, err
+	}
+
+	return placements, nil
+}
+
+// colocateServices rewrites placements so that services sharing a bridge
+// network or naming each other in affinity share a cluster member, and
+// services naming each other in anti-affinity do not.
+//
+// Single-replica services that must share a member form one group and get one
+// member. A scaled or global service is never grouped implicitly: it follows
+// the members of the services its affinity names, and is otherwise resolved
+// as before on the members anti-affinity leaves it. Groups and services are
+// resolved in dependency order, ties broken by name, and each one avoids the
+// members of the anti-affinity peers resolved before it.
+func colocateServices(
+	env clusterPlacementEnv,
+	inputs map[string]servicePlacementInput,
+	placements map[string]servicePlacement,
+	affinity map[string][]string,
+	anti map[string][]string,
+	projectAllowLocal bool,
+	warn func(msg string, args ...any),
+) error {
+	names := slices.Sorted(maps.Keys(placements))
+
+	single := func(name string) bool {
+		return placements[name].desired == 1 && serviceDeployMode(inputs[name].service) != "global"
+	}
+
+	root := map[string]string{}
+	for _, name := range names {
+		root[name] = name
+	}
+
+	find := func(name string) string {
+		for root[name] != name {
+			name = root[name]
+		}
+
+		return name
+	}
+
+	// The smallest name roots a group, so the order groups resolve in does
+	// not depend on which edge joined them.
+	union := func(a, b string) {
+		ra, rb := find(a), find(b)
+		if rb < ra {
+			ra, rb = rb, ra
+		}
+
+		root[rb] = ra
+	}
+
+	// Services left out of every relation keep their placement.
+	related := map[string]bool{}
+
+	onBridge := map[string]string{}
+	for _, name := range names {
+		if !single(name) {
+			continue
+		}
+
+		for _, bridge := range inputs[name].bridges {
+			first, ok := onBridge[bridge]
+			if !ok {
+				onBridge[bridge] = name
+				continue
+			}
+
+			union(first, name)
+			related[first], related[name] = true, true
+		}
+	}
+
+	var errs error
+	follows := map[string][]string{}
+	for _, name := range names {
+		if len(anti[name]) > 0 {
+			related[name] = true
+		}
+
+		for _, peer := range affinity[name] {
+			// A peer scaled to zero has no member to follow.
+			if placements[peer].desired == 0 {
+				continue
+			}
+
+			related[name], related[peer] = true, true
+
+			if single(name) && single(peer) {
+				union(name, peer)
+				continue
+			}
+
+			follows[name] = append(follows[name], peer)
+		}
+	}
+
+	for _, name := range names {
+		for _, peer := range anti[name] {
+			if name < peer && single(name) && single(peer) && find(name) == find(peer) {
+				errs = errors.Join(errs, fmt.Errorf(
+					"service %q: anti-affinity with service %q, which must share its cluster member (shared bridge network or affinity)",
+					name, peer,
+				))
+			}
+		}
+	}
+
+	if errs != nil {
+		return errs
+	}
+
+	nodes := map[string][]string{}
+	for _, name := range names {
+		if placements[name].desired == 0 || !related[name] {
+			continue
+		}
+
+		node := name
+		if single(name) {
+			node = find(name)
+		}
+
+		nodes[node] = append(nodes[node], name)
+	}
+
+	deps := map[string][]string{}
+	for node, members := range nodes {
+		for _, name := range members {
+			for _, peer := range follows[name] {
+				peerNode := peer
+				if single(peer) {
+					peerNode = find(peer)
+				}
+
+				if peerNode != node {
+					deps[node] = append(deps[node], peerNode)
+				}
+			}
+		}
+	}
+
+	done := map[string]bool{}
+	resolved := map[string]bool{}
+	for len(done) < len(nodes) {
+		var node string
+		for _, candidate := range slices.Sorted(maps.Keys(nodes)) {
+			if done[candidate] {
+				continue
+			}
+
+			ready := true
+			for _, dep := range deps[candidate] {
+				if !done[dep] {
+					ready = false
+					break
+				}
+			}
+
+			if ready {
+				node = candidate
+				break
+			}
+		}
+
+		if node == "" {
+			var pending []string
+			for _, candidate := range slices.Sorted(maps.Keys(nodes)) {
+				if !done[candidate] {
+					pending = append(pending, nodes[candidate]...)
+				}
+			}
+
+			return fmt.Errorf("services %s: affinity between scaled services forms a cycle", quoteJoin(pending))
+		}
+
+		done[node] = true
+		members := nodes[node]
+
+		// Anti-affinity is symmetric: only peers resolved earlier hold a
+		// member to avoid, and the later of the two avoids the earlier.
+		var avoid []string
+		for _, name := range members {
+			for _, peer := range anti[name] {
+				if resolved[peer] {
+					avoid = append(avoid, placements[peer].targets...)
+				}
+			}
+		}
+
+		var err error
+		if single(members[0]) {
+			err = placeGroup(env, inputs, placements, follows, members, avoid, warn)
+		} else {
+			err = placeScaled(env, inputs[node], placements, follows[node], avoid, projectAllowLocal)
+		}
+
+		if err != nil {
+			return err
+		}
+
+		for _, name := range members {
+			resolved[name] = true
+		}
+	}
+
+	return nil
+}
+
+// placeGroup puts every single-replica service of a group on one member.
+func placeGroup(
+	env clusterPlacementEnv,
+	inputs map[string]servicePlacementInput,
+	placements map[string]servicePlacement,
+	follows map[string][]string,
+	group []string,
+	avoid []string,
+	warn func(msg string, args ...any),
+) error {
+	candidates := env.members
+	for _, name := range group {
+		var constraints []string
+		service := inputs[name].service
+		if service.Deploy != nil {
+			constraints = service.Deploy.Placement.Constraints
+		}
+
+		allowed, err := filterClusterMembers(candidates, constraints)
+		if err != nil {
+			return fmt.Errorf("service %q: %w", name, err)
+		}
+
+		for _, peer := range follows[name] {
+			allowed = slices.DeleteFunc(allowed, func(m incusApi.ClusterMember) bool {
+				return !slices.Contains(placements[peer].targets, m.ServerName)
+			})
+		}
+
+		candidates = allowed
+	}
+
+	candidates = slices.DeleteFunc(slices.Clone(candidates), func(m incusApi.ClusterMember) bool {
+		return slices.Contains(avoid, m.ServerName)
+	})
+
+	if len(candidates) == 0 {
+		if len(group) == 1 {
+			return fmt.Errorf("service %q: no online cluster member satisfies placement constraints, affinity and anti-affinity", group[0])
+		}
+
+		return fmt.Errorf("services %s must share a cluster member, but none online satisfies their placement constraints, affinity and anti-affinity", quoteJoin(group))
+	}
+
+	// An existing instance pins the group, so recreating one of its services
+	// through another member does not split it.
+	var running []string
+	for _, name := range group {
+		location := env.locations[client.SanitizeIncusName(instanceName(inputs[name].service, 1, 1), -1)]
+		if location != "" && !slices.Contains(running, location) {
+			running = append(running, location)
+		}
+	}
+
+	if len(running) > 1 {
+		warn("Services that must share a cluster member run on different members", "services", group, "members", running)
+	}
+
+	member := orderClusterMembers(candidates, nil, env.serverName)[0].ServerName
+	for _, location := range running {
+		if slices.ContainsFunc(candidates, func(m incusApi.ClusterMember) bool { return m.ServerName == location }) {
+			member = location
+			break
+		}
+	}
+
+	for _, name := range group {
+		placements[name] = servicePlacement{desired: 1, targets: []string{member}}
+	}
+
+	return nil
+}
+
+// placeScaled resolves a scaled or global service: onto the members of the
+// first service its affinity names, or as resolveServicePlacementEnv would on
+// the members anti-affinity leaves it.
+func placeScaled(
+	env clusterPlacementEnv,
+	in servicePlacementInput,
+	placements map[string]servicePlacement,
+	follows []string,
+	avoid []string,
+	projectAllowLocal bool,
+) error {
+	name := in.service.Name
+
+	if len(follows) == 0 {
+		if len(avoid) == 0 {
+			return nil
+		}
+
+		env.members = slices.DeleteFunc(slices.Clone(env.members), func(m incusApi.ClusterMember) bool {
+			return slices.Contains(avoid, m.ServerName)
+		})
+
+		desired, targets, _, err := resolveServicePlacementEnv(env, in, projectAllowLocal)
+		if err != nil {
+			return fmt.Errorf("%w (after anti-affinity)", err)
+		}
+
+		placements[name] = servicePlacement{desired: desired, targets: targets}
+
+		return nil
+	}
+
+	var constraints []string
+	var maxReplicas uint64
+	if in.service.Deploy != nil {
+		constraints = in.service.Deploy.Placement.Constraints
+		maxReplicas = in.service.Deploy.Placement.MaxReplicas
+	}
+
+	allowed, err := filterClusterMembers(env.members, constraints)
+	if err != nil {
+		return fmt.Errorf("service %q: %w", name, err)
+	}
+
+	lead := placements[follows[0]].targets
+	desired := placements[name].desired
+	targets := make([]string, desired)
+	perMember := map[string]uint64{}
+	for i := range desired {
+		target := lead[i%len(lead)]
+
+		ok := slices.ContainsFunc(allowed, func(m incusApi.ClusterMember) bool { return m.ServerName == target }) &&
+			!slices.Contains(avoid, target)
+		for _, peer := range follows[1:] {
+			ok = ok && slices.Contains(placements[peer].targets, target)
+		}
+
+		if !ok {
+			return fmt.Errorf("service %q: cluster member %q, where affinity places replica %d, does not satisfy placement constraints, affinity and anti-affinity", name, target, i+1)
+		}
+
+		perMember[target]++
+		if maxReplicas > 0 && perMember[target] > maxReplicas {
+			return fmt.Errorf("service %q: affinity places more than max_replicas_per_node (%d) replicas on cluster member %q", name, maxReplicas, target)
+		}
+
+		targets[i] = target
+	}
+
+	placements[name] = servicePlacement{desired: desired, targets: targets}
+
+	return nil
+}
+
+func quoteJoin(names []string) string {
+	quoted := make([]string, len(names))
+	for i, name := range names {
+		quoted[i] = strconv.Quote(name)
+	}
+
+	return strings.Join(quoted, ", ")
+}
+
+func resolveServicePlacementEnv(env clusterPlacementEnv, in servicePlacementInput, projectAllowLocal bool) (int, []string, bool, error) {
+	mode := serviceDeployMode(in.service)
+	switch mode {
+	case "replicated", "global":
+	default:
+		return 0, nil, false, fmt.Errorf("service %q: unsupported deploy.mode %q (must be replicated or global)", in.service.Name, mode)
+	}
+
+	desired := 1
+	if in.scaleOverride != nil {
+		desired = *in.scaleOverride
+	} else if in.service.Deploy != nil && in.service.Deploy.Replicas != nil {
+		desired = *in.service.Deploy.Replicas
+	}
+
+	if !env.clustered {
+		if mode == "global" && in.scaleOverride == nil {
 			desired = 1
 		}
 
@@ -126,22 +631,22 @@ func resolveServicePlacementEnv(env clusterPlacementEnv, service types.ServiceCo
 	var constraints []string
 	var preferences []types.PlacementPreferences
 	var maxReplicas uint64
-	if service.Deploy != nil {
-		constraints = service.Deploy.Placement.Constraints
-		preferences = service.Deploy.Placement.Preferences
-		maxReplicas = service.Deploy.Placement.MaxReplicas
+	if in.service.Deploy != nil {
+		constraints = in.service.Deploy.Placement.Constraints
+		preferences = in.service.Deploy.Placement.Preferences
+		maxReplicas = in.service.Deploy.Placement.MaxReplicas
 	}
 
 	candidates, err := filterClusterMembers(env.members, constraints)
 	if err != nil {
-		return 0, nil, false, fmt.Errorf("service %q: %w", service.Name, err)
+		return 0, nil, false, fmt.Errorf("service %q: %w", in.service.Name, err)
 	}
 
 	if len(candidates) == 0 {
-		return 0, nil, false, fmt.Errorf("service %q: no online cluster members satisfy placement constraints", service.Name)
+		return 0, nil, false, fmt.Errorf("service %q: no online cluster members satisfy placement constraints", in.service.Name)
 	}
 
-	if mode == "global" && scaleOverride == nil {
+	if mode == "global" && in.scaleOverride == nil {
 		desired = len(candidates)
 	}
 
@@ -152,19 +657,19 @@ func resolveServicePlacementEnv(env clusterPlacementEnv, service types.ServiceCo
 	if maxReplicas > 0 && uint64(desired) > uint64(len(candidates))*maxReplicas {
 		return 0, nil, false, fmt.Errorf(
 			"service %q: desired replicas (%d) exceed max_replicas_per_node (%d) across %d matching cluster member(s)",
-			service.Name, desired, maxReplicas, len(candidates),
+			in.service.Name, desired, maxReplicas, len(candidates),
 		)
 	}
 
 	scales := desired > 1 || mode == "global"
-	allowLocal := projectAllowLocal || serviceAllowLocalStorage(service)
+	allowLocal := projectAllowLocal || serviceAllowLocalStorage(in.service)
 	warnLocal := false
 
-	if scales && !env.remotePool {
+	if scales && !in.remotePool {
 		if !allowLocal {
 			return 0, nil, false, fmt.Errorf(
 				"service %q: cannot deploy multiple replicas on a cluster without shared (remote) storage; use a remote storage pool or set x-incus-compose.allow-local-storage: true (--allow-local-storage)",
-				service.Name,
+				in.service.Name,
 			)
 		}
 
@@ -176,14 +681,14 @@ func resolveServicePlacementEnv(env clusterPlacementEnv, service types.ServiceCo
 	// Single replica with no explicit placement co-locates on the connected
 	// cluster member when using a bridge network or a local storage pool (#213).
 	if desired == 1 && !hasPlacement {
-		if env.networkType == "bridge" || !env.remotePool {
+		if env.networkType == "bridge" || !in.remotePool {
 			return 1, []string{env.serverName}, warnLocal, nil
 		}
 
 		return 1, []string{""}, warnLocal, nil
 	}
 
-	if mode == "global" && scaleOverride == nil {
+	if mode == "global" && in.scaleOverride == nil {
 		targets := make([]string, len(candidates))
 		for i, m := range candidates {
 			targets[i] = m.ServerName

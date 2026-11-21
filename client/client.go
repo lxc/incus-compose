@@ -556,6 +556,26 @@ func (c *Client) InstanceExists(name string) (bool, error) {
 	return err == nil, nil
 }
 
+// InstanceLocations maps the Incus name of every instance in the project to
+// the cluster member it runs on.
+func (c *Client) InstanceLocations() (map[string]string, error) {
+	if c.incus == nil {
+		return nil, nil
+	}
+
+	instances, err := c.incus.GetInstances(c.ctx, c.incusProject, nil)
+	if err != nil {
+		return nil, ErrUnknown.Wrap(fmt.Errorf("listing instances: %w", err))
+	}
+
+	locations := make(map[string]string, len(instances))
+	for _, inst := range instances {
+		locations[inst.Name] = inst.Location
+	}
+
+	return locations, nil
+}
+
 // ResolveImageFingerprint returns the first alias name for the given fingerprint,
 // or the fingerprint itself if no alias is found or the lookup fails.
 func (c *Client) ResolveImageFingerprint(fingerprint string) string {

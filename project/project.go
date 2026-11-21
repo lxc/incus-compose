@@ -628,35 +628,37 @@ func (p *Project) Resources(c *client.Client, opts ...ResourcesOption) (map[stri
 
 	var errs error
 
-	// Configure instances
-	for _, service := range p.Services {
-		// Determine the desired count and per-replica cluster targets:
-		// CLI --scale > deploy.replicas / deploy.mode: global > 1.
-		// A plain `up` reconciles to deploy.replicas in both directions, matching
-		// `docker compose up`: a manual --scale applies only to that invocation,
-		// and the next plain `up` restores replicas (scaling up or down).
-		var scaleOverride *int
-		s, ok := options.Scale[service.Name]
-		if ok {
-			scaleOverride = &s
+	// Determine the desired count and per-replica cluster targets:
+	// CLI --scale > deploy.replicas / deploy.mode: global > 1.
+	// A plain `up` reconciles to deploy.replicas in both directions, matching
+	// `docker compose up`: a manual --scale applies only to that invocation,
+	// and the next plain `up` restores replicas (scaling up or down).
+	// A one-off is a single instance, so its service resolves as one and
+	// cannot fail the checks for scaled services.
+	overrides := options.Scale
+	if options.oneOff != nil {
+		overrides = maps.Clone(options.Scale)
+		if overrides == nil {
+			overrides = map[string]int{}
 		}
 
-		var desired int
-		var targets []string
-		if options.oneOff != nil && options.oneOff.Service == service.Name {
-			desired = 1
-			if c != nil && c.Global().IsClustered() {
-				targets = []string{c.Global().ServerName()}
-			} else {
-				targets = []string{""}
-			}
-		} else {
-			var err error
-			desired, targets, err = p.resolveServicePlacement(c, service, scaleOverride)
-			if err != nil {
-				errs = errors.Join(errs, err)
-				continue
-			}
+		overrides[options.oneOff.Service] = 1
+	}
+
+	placements, err := p.resolveProjectPlacement(c, overrides)
+	if err != nil {
+		return nil, err
+	}
+
+	// Configure instances
+	for _, service := range p.Services {
+		desired := placements[service.Name].desired
+		targets := placements[service.Name].targets
+		// A one-off mounts the tools volume, which a member-local pool holds
+		// only on the connected member, so it runs there whatever its service
+		// resolved to.
+		if options.oneOff != nil && options.oneOff.Service == service.Name && c != nil && c.Global().IsClustered() {
+			targets = []string{c.Global().ServerName()}
 		}
 
 		// Discover existing instances above the desired count so they can be
