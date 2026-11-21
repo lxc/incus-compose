@@ -23,6 +23,8 @@ leafwiki_last_author_id: system
 - Automatic DHCP range configuration on creation (see below)
 - Static IP assignment per service via `ipv4_address` / `ipv6_address` (see
   below)
+- Fixed MAC address per service via `mac_address`, on a network attachment or on
+  the service (see below)
 
 Not supported:
 
@@ -216,6 +218,53 @@ Setting `internal: true` on a network disables its gateway by setting
 `x-incus-compose.internal: false`.
 
 _`internal: true` since: v1.1.0_
+
+## MAC Address
+
+The standard Compose `mac_address` field on a service's network attachment sets
+`hwaddr` on the Incus NIC device:
+
+```yaml
+services:
+  web:
+    image: docker.io/nginx:alpine
+    networks:
+      frontend:
+        mac_address: 00:16:3e:aa:bb:cc
+
+networks:
+  frontend:
+```
+
+An `hwaddr` under the attachment's `x-incus` overrides it.
+
+A `mac_address` set on the service itself goes to its primary network, the
+attachment with the highest `priority`, ties going to the first name in
+alphabetical order. This is how Docker Compose does it. A different
+`mac_address` on the primary network is an error; one on any other network stays
+that network's own.
+
+```yaml
+services:
+  web:
+    image: docker.io/nginx:alpine
+    mac_address: 00:16:3e:aa:bb:cc # lands on frontend
+    networks:
+      backend:
+      frontend:
+        priority: 10
+
+networks:
+  backend:
+  frontend:
+```
+
+`priority` is read for this choice only: it does not decide the order of the
+instance's NICs.
+
+> **Warning:** Like a static IP, the address is the same for every replica, so a
+> service running more than one instance (`deploy.replicas` or `up --scale`)
+> puts duplicate MACs on the network.
 
 ## Network Aliases
 

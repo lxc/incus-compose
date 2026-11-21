@@ -720,6 +720,22 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 		}
 	}
 
+	// Docker Compose gives a service-level mac_address to the primary network
+	// and rejects a different one set there (prepareContainerMACAddress).
+	var primaryNetwork string
+	if service.MacAddress != "" && len(service.Networks) == 0 {
+		c.LogWarn("Ignoring `mac_address`: the service has no network", "service", service.Name)
+	} else if service.MacAddress != "" {
+		primaryNetwork = service.NetworksByPriority()[0]
+		primary := service.Networks[primaryNetwork]
+		if primary != nil && primary.MacAddress != "" && primary.MacAddress != service.MacAddress {
+			errs = errors.Join(errs, fmt.Errorf(
+				"service %q: mac_address %q differs from mac_address %q on its primary network %q",
+				service.Name, service.MacAddress, primary.MacAddress, primaryNetwork,
+			))
+		}
+	}
+
 	ethIdx := 0
 	for name, sNet := range service.Networks {
 		network, netConfig, gateway4, gateway6, err := ensureProjectNetwork(c, p, name, service.Name, uplink)
@@ -758,10 +774,19 @@ func instanceNetworkDevices(c *client.Client, p *types.Project, service types.Se
 			noGateway = ext.Gateway != nil && !*ext.Gateway
 		}
 
-		ipv4Address, ipv6Address := "", ""
+		ipv4Address, ipv6Address, macAddress := "", "", ""
 		if sNet != nil {
 			ipv4Address = sNet.Ipv4Address
 			ipv6Address = sNet.Ipv6Address
+			macAddress = sNet.MacAddress
+		}
+
+		if macAddress == "" && name == primaryNetwork {
+			macAddress = service.MacAddress
+		}
+
+		if macAddress != "" {
+			extensions["hwaddr"] = macAddress
 		}
 
 		// A gateway set on the NIC supplies what the missing network address would

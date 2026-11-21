@@ -1404,6 +1404,157 @@ func TestInstanceNetworkDevices(t *testing.T) {
 		assert.Empty(t, resources)
 	})
 
+	t.Run("mac address sets hwaddr", func(t *testing.T) {
+		t.Parallel()
+
+		p := &types.Project{Networks: types.Networks{"frontend": {}, "backend": {}, "admin": {}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"frontend": {MacAddress: "00:16:3e:00:00:01"},
+				"backend":  {},
+				"admin":    nil,
+			},
+		}}
+
+		devices, _, err := instanceNetworkDevices(c, p, service, "")
+		require.NoError(t, err)
+		require.Len(t, devices, 3)
+
+		byNetwork := map[string]map[string]string{}
+		for _, device := range devices {
+			byNetwork[device.Config.Network.Name()] = device.Config.Extensions
+		}
+
+		assert.Equal(t, "00:16:3e:00:00:01", byNetwork["frontend"]["hwaddr"])
+		assert.NotContains(t, byNetwork["backend"], "hwaddr")
+		assert.NotContains(t, byNetwork["admin"], "hwaddr")
+	})
+
+	t.Run("x-incus hwaddr overrides mac address", func(t *testing.T) {
+		t.Parallel()
+
+		p := &types.Project{Networks: types.Networks{"frontend": {}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"frontend": {
+					MacAddress: "00:16:3e:00:00:01",
+					Extensions: types.Extensions{"x-incus": map[string]any{"hwaddr": "00:16:3e:00:00:02"}},
+				},
+			},
+		}}
+
+		devices, _, err := instanceNetworkDevices(c, p, service, "")
+		require.NoError(t, err)
+		require.Len(t, devices, 1)
+		assert.Equal(t, "00:16:3e:00:00:02", devices[0].Config.Extensions["hwaddr"])
+	})
+
+	t.Run("service mac address goes to the primary network", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name     string
+			networks map[string]*types.ServiceNetworkConfig
+			want     map[string]string
+		}{
+			{
+				name:     "single network",
+				networks: map[string]*types.ServiceNetworkConfig{"frontend": nil},
+				want:     map[string]string{"frontend": "00:16:3e:00:00:01"},
+			},
+			{
+				name: "highest priority wins",
+				networks: map[string]*types.ServiceNetworkConfig{
+					"backend":  {},
+					"frontend": {Priority: 10},
+				},
+				want: map[string]string{"frontend": "00:16:3e:00:00:01"},
+			},
+			{
+				name: "equal priority goes by name",
+				networks: map[string]*types.ServiceNetworkConfig{
+					"frontend": nil,
+					"backend":  nil,
+				},
+				want: map[string]string{"backend": "00:16:3e:00:00:01"},
+			},
+			{
+				name: "same address on the primary network",
+				networks: map[string]*types.ServiceNetworkConfig{
+					"frontend": {MacAddress: "00:16:3e:00:00:01"},
+				},
+				want: map[string]string{"frontend": "00:16:3e:00:00:01"},
+			},
+			{
+				name: "secondary network keeps its own address",
+				networks: map[string]*types.ServiceNetworkConfig{
+					"backend":  nil,
+					"frontend": {MacAddress: "00:16:3e:00:00:02"},
+				},
+				want: map[string]string{
+					"backend":  "00:16:3e:00:00:01",
+					"frontend": "00:16:3e:00:00:02",
+				},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				p := &types.Project{Networks: types.Networks{"frontend": {}, "backend": {}}}
+				service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+					MacAddress: "00:16:3e:00:00:01",
+					Networks:   tt.networks,
+				}}
+
+				devices, _, err := instanceNetworkDevices(c, p, service, "")
+				require.NoError(t, err)
+				require.Len(t, devices, len(tt.networks))
+
+				got := map[string]string{}
+				for _, device := range devices {
+					hwaddr, ok := device.Config.Extensions["hwaddr"]
+					if ok {
+						got[device.Config.Network.Name()] = hwaddr
+					}
+				}
+
+				assert.Equal(t, tt.want, got)
+			})
+		}
+	})
+
+	t.Run("service mac address conflicting with the primary network errors", func(t *testing.T) {
+		t.Parallel()
+
+		p := &types.Project{Networks: types.Networks{"frontend": {}}}
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			MacAddress: "00:16:3e:00:00:01",
+			Networks: map[string]*types.ServiceNetworkConfig{
+				"frontend": {MacAddress: "00:16:3e:00:00:02"},
+			},
+		}}
+
+		devices, _, err := instanceNetworkDevices(c, p, service, "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `primary network "frontend"`)
+		require.Len(t, devices, 1)
+		assert.Equal(t, "00:16:3e:00:00:02", devices[0].Config.Extensions["hwaddr"])
+	})
+
+	t.Run("service mac address without a network is ignored", func(t *testing.T) {
+		t.Parallel()
+
+		service := types.ServiceConfig{Name: "web", ContainerSpec: types.ContainerSpec{
+			MacAddress: "00:16:3e:00:00:01",
+		}}
+
+		devices, _, err := instanceNetworkDevices(c, &types.Project{}, service, "")
+		require.NoError(t, err)
+		assert.Empty(t, devices)
+	})
+
 	t.Run("network address none or unset does not error", func(t *testing.T) {
 		t.Parallel()
 
