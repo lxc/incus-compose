@@ -26,6 +26,12 @@ form.
   project that holds the locks, the tools volume and the global-scope sidecars,
   so tenants sharing a server can each have their own. (by @tallica, #265)
 
+- An instance can run another image than its service while
+  `user.incus-compose.image-override` is set; `up` no longer recreates it on the
+  service's image. See
+  [Up and Down](https://incus-compose.org/cli-reference/up-and-down#image-override).
+  (by @tallica)
+
 ### Fixed
 
 - A certificate restricted to projects (`incus config trust add --restricted`)

@@ -734,6 +734,34 @@ func TestInstanceConfigChanged(t *testing.T) {
 	}
 }
 
+// TestImageOverridden pins when an updater's image override holds against the
+// service's image.
+func TestImageOverridden(t *testing.T) {
+	t.Parallel()
+
+	const image = "docker.io/library/busybox:1.36-glibc"
+
+	tests := []struct {
+		name   string
+		config map[string]string
+		want   bool
+	}{
+		{name: "in force", config: map[string]string{ImageOverrideKey: "docker.io/library/busybox:1.37-glibc", ImageOverrideOfKey: image}, want: true},
+		{name: "no override", config: map[string]string{ImageOverrideOfKey: image}},
+		{name: "no override-of", config: map[string]string{ImageOverrideKey: "docker.io/library/busybox:1.37-glibc"}},
+		{name: "set against another image", config: map[string]string{ImageOverrideKey: "docker.io/library/busybox:1.37-glibc", ImageOverrideOfKey: "docker.io/library/busybox:1.35-glibc"}},
+		{name: "no keys", config: map[string]string{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tt.want, ImageOverridden(tt.config, image))
+		})
+	}
+}
+
 // TestIsIdmapRace pins the start retry to the refusal incusd gives while a
 // container sharing the volume is still being created, as CI saw it.
 func TestIsIdmapRace(t *testing.T) {

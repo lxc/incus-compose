@@ -440,7 +440,9 @@ func newUpCommand() *cli.Command {
 			// torn down and made from the new one, as are the ones created from
 			// an older service config. Not gated on the pull policy: compose's
 			// `up` recreates a container whose image changed, whatever changed
-			// it, `pull` included (#271).
+			// it, `pull` included (#271). An instance with an image override in
+			// force is the exception: something outside the compose file moved
+			// it to another image on purpose.
 			stale := staleInstances(myResources)
 			if len(stale) > 0 {
 				c.LogDebug("Recreating outdated instances", "instances", stale)
@@ -560,7 +562,8 @@ func builtServices(p *project.Project, args filterResourcesArgs) []string {
 
 // staleInstances returns the ensured instances created from an older service
 // config or from an image other than the one their service's image now resolves
-// to in the project, sorted by Incus name.
+// to in the project, unless an image override is in force, sorted by Incus
+// name.
 func staleInstances(resources map[string][]client.Resource) []client.Resource {
 	stale := []client.Resource{}
 
@@ -590,7 +593,11 @@ func staleInstances(resources map[string][]client.Resource) []client.Resource {
 				continue
 			}
 
-			if instance.ConfigChanged() || imageChanged(info.Config["volatile.base_image"], image.State().IncusAlias) {
+			// An updater that moved the instance off its service's image, and
+			// said so, is not undone: #271 is about a change to the image the
+			// compose file names, and this instance deliberately runs another.
+			overridden := client.ImageOverridden(info.Config, image.IncusName())
+			if instance.ConfigChanged() || (!overridden && imageChanged(info.Config["volatile.base_image"], image.State().IncusAlias)) {
 				stale = append(stale, instance)
 			}
 		}

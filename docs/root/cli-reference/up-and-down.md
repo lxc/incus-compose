@@ -84,6 +84,37 @@ treated as changed. `ps` marks drifted instances `(config changed)`.
 
 _Since: v1.3.0_
 
+### Image override
+
+An instance can run an image other than its service's, for example after an
+updater, a script or a person ran `incus rebuild` on it. Whoever moves it sets
+two keys, and `up` leaves it on its image:
+
+| Key                                    | Value                                                                        |
+| -------------------------------------- | ---------------------------------------------------------------------------- |
+| `user.incus-compose.image-override`    | The image the instance runs instead of its service's                         |
+| `user.incus-compose.image-override-of` | The service image it replaces, as the instance's `user.image_alias` holds it |
+
+```
+incus rebuild <fingerprint of the new image> web-1 --project <project>
+incus config set web-1 --project <project> \
+  user.incus-compose.image-override=docker.io/library/busybox:1.37-glibc \
+  user.incus-compose.image-override-of=<user.image_alias of web-1>
+```
+
+The override is in force while both keys are set and `image-override-of` matches
+the image the compose file names. It is then never a reason to recreate the
+instance, not with `--pull always` and not after a `pull`. Once the compose file
+names another image, the override no longer applies, and the change of service
+config recreates the instance from the file's image. A change to the rest of the
+service config also recreates the instance from the service's image.
+`incus config unset` on the two keys hands the instance back to the compose
+file; the next `up` recreates it.
+
+incus-compose does not write the two keys. It lists `image-override` in
+`user.incus-compose.features` on the instances it creates, so an updater can
+tell whether the incus-compose that made an instance honours the override.
+
 ## down
 
 Stop and remove containers. Per-project image copies are removed too; volumes
