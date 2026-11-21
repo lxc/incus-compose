@@ -555,6 +555,41 @@ func TestInstanceFileUnderAVolume(t *testing.T) {
 	require.NoError(t, err, "the running instance must see the file at its target")
 }
 
+// TestInstanceWaitIPsWithoutNIC pins that an instance with no NIC, which is
+// what `network_mode: none` gives, does not wait out the timeout for an
+// address that cannot come.
+func TestInstanceWaitIPsWithoutNIC(t *testing.T) {
+	t.Parallel()
+	skipLocal(t)
+
+	ctx := t.Context()
+	c := newRandomTestClient(t, "waitips-no-nic-")
+
+	imgRes, err := c.Resource(KindImage, "docker.io/library/busybox:glibc", &ImageConfig{})
+	require.NoError(t, err)
+
+	instRes, err := c.Resource(KindInstance, "web", &InstanceConfig{
+		Image:      imgRes.Name(),
+		Resources:  []Resource{imgRes},
+		Extensions: map[string]string{"oci.entrypoint": "sh"},
+	})
+	require.NoError(t, err)
+
+	inst, ok := instRes.(*Instance)
+	require.True(t, ok)
+
+	stack := NewStack(c)
+	stack.Add(imgRes, instRes)
+	require.NoError(t, stack.ForAction(ActionEnsure).Run(ctx, ActionEnsure, OptionCreate()))
+	require.NoError(t, RunAction(ctx, inst, ActionStart, OptionNoHealthd()))
+
+	start := time.Now()
+	ips, err := inst.WaitIPs(ctx, time.Minute)
+	require.NoError(t, err)
+	assert.Empty(t, ips)
+	assert.Less(t, time.Since(start), 10*time.Second, "must not wait for an address with no NIC")
+}
+
 // TestInstancePrefetchVolumes pins that a path the image declares as a volume
 // gets one of its own, prefetched, and that a declared mount wins over it.
 func TestInstancePrefetchVolumes(t *testing.T) {

@@ -29,6 +29,8 @@ leafwiki_last_author_id: system
 Not supported:
 
 - Custom network drivers
+- `network_mode` - a service with it set gets no network at all. That is what
+  `none` asks for; `host`, `service:` and other values warn on `up`.
 
 ## Network Drivers (OVN and Bridge)
 

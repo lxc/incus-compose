@@ -70,6 +70,11 @@ form.
   order was random, so replicas of one service could differ. Existing instances
   keep theirs until recreated. (by @tallica, #278)
 
+- `up` no longer waits for an IP address on an instance with no NIC, as a
+  service with `network_mode` gets, and then fails with `timeout waiting for an
+  IP address`. `network_mode` values other than `none` are not supported and now
+  warn that the instance gets no network. (by @tallica, #279)
+
 ## [v1.4.1] - 2026-11-15
 
 ### Changed
