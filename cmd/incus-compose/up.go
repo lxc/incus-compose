@@ -457,6 +457,7 @@ func newUpCommand() *cli.Command {
 					StartUpdated: !cmd.Bool("no-start"),
 					StartOptions: startOptions,
 					DNSConfigs:   dnsConfigs,
+					Pull:         pullMode,
 				})
 				if err != nil {
 					return err
@@ -640,6 +641,7 @@ type recreateStaleArgs struct {
 	StartUpdated bool
 	StartOptions []client.Option
 	DNSConfigs   map[string]string
+	Pull         client.PullMode
 }
 
 type staleBatch struct {
@@ -752,10 +754,23 @@ func recreateStaleInstances(ctx context.Context, p *project.Project, c *client.C
 			batchNames[r.IncusName()] = true
 		}
 
+		// Read before the delete, which takes the overrides with the instances,
+		// and ensured before it, so an override image that cannot be had fails
+		// the batch while its instances still run.
+		overrides, err := ensureImageOverrides(ctx, c, batch.instances, args.Pull)
+		if err != nil {
+			if batch.failureAction == "continue" {
+				c.LogWarn("Rolling update failed ensuring image overrides, continuing", "service", batch.service, "error", err)
+				continue
+			}
+			c.LogError("Ensuring image overrides", "error", err)
+			return nil, nil, errLogged.Wrap(err)
+		}
+
 		downStack := client.NewStack(c, client.StackSortDescending(), client.StackWorkers(args.Workers))
 		downStack.Add(batch.instances...)
 
-		err := downStack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionTimeout(args.Timeout))
+		err = downStack.ForAction(client.ActionStop).Run(ctx, client.ActionStop, client.OptionTimeout(args.Timeout))
 		if err != nil {
 			if batch.failureAction == "continue" {
 				c.LogWarn("Rolling update failed stopping batch, continuing", "service", batch.service, "error", err)
@@ -784,6 +799,23 @@ func recreateStaleInstances(ctx context.Context, p *project.Project, c *client.C
 		}
 
 		myResources = filterResources(p, resources, args.FilterArgs)
+
+		for name, image := range overrides {
+			// Missing when the new file no longer has the instance, e.g. scaled down.
+			r, err := c.Resource(client.KindInstance, name, nil)
+			if err != nil {
+				continue
+			}
+
+			inst, ok := r.(*client.Instance)
+			if !ok {
+				continue
+			}
+
+			c.LogInfo("Recreating on its image override", "instance", inst.Name(), "image", image)
+			inst.Config.ImageOverride = image
+		}
+
 		stack = client.NewStack(c, client.StackWorkers(args.Workers), client.StackFailFast())
 		stack.AddOrdered(args.Order, myResources)
 
@@ -838,4 +870,55 @@ func recreateStaleInstances(ctx context.Context, p *project.Project, c *client.C
 	}
 
 	return myResources, stack, nil
+}
+
+// ensureImageOverrides ensures the image of every override in force among
+// stale instances, and answers those images by instance Incus name.
+func ensureImageOverrides(ctx context.Context, c *client.Client, instances []client.Resource, pull client.PullMode) (map[string]string, error) {
+	overrides := map[string]string{}
+
+	for _, r := range instances {
+		inst, ok := r.(*client.Instance)
+		if !ok {
+			continue
+		}
+
+		config := inst.State().IncusInstance.Config
+		if config[client.ImageOverrideKey] == "" {
+			continue
+		}
+
+		res, err := c.Resource(client.KindImage, inst.Config.Image, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		service, ok := res.(*client.Image)
+		if !ok {
+			return nil, client.ErrUnknown.WithResource(res)
+		}
+
+		if !client.ImageOverridden(config, service.IncusName()) {
+			continue
+		}
+
+		image, err := c.Resource(client.KindImage, config[client.ImageOverrideKey], &client.ImageConfig{Platform: service.Config.Platform})
+		if err != nil {
+			return nil, fmt.Errorf("image override of %s: %w", inst.Name(), err)
+		}
+
+		stack := client.NewStack(c)
+		stack.Add(image)
+
+		// The pull mode reaches an image only through its ensure here: up's
+		// pull step covers the service images, not an override.
+		err = stack.ForAction(client.ActionEnsure).Run(ctx, client.ActionEnsure, client.OptionCreate(), client.OptionPullMode(pull))
+		if err != nil {
+			return nil, fmt.Errorf("image override of %s, unset %s to recreate it on its service's image: %w", inst.Name(), client.ImageOverrideKey, err)
+		}
+
+		overrides[inst.IncusName()] = config[client.ImageOverrideKey]
+	}
+
+	return overrides, nil
 }

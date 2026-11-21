@@ -106,10 +106,15 @@ The override is in force while both keys are set and `image-override-of` matches
 the image the compose file names. It is then never a reason to recreate the
 instance, not with `--pull always` and not after a `pull`. Once the compose file
 names another image, the override no longer applies, and the change of service
-config recreates the instance from the file's image. A change to the rest of the
-service config also recreates the instance from the service's image.
-`incus config unset` on the two keys hands the instance back to the compose
-file; the next `up` recreates it.
+config recreates the instance from the file's image without the two keys.
+
+A change to the rest of the service config recreates the instance on the
+override, keeping both keys. An override image missing from the project is
+fetched as `--pull` allows. If it cannot be had, `up` fails before it stops the
+instance, which keeps running on the override; a rolling update with
+`failure_action: continue` skips the batch instead. `incus config unset` on the
+two keys hands the instance back to the compose file; the next `up` recreates
+it.
 
 incus-compose does not write the two keys. It lists `image-override` in
 `user.incus-compose.features` on the instances it creates, so an updater can

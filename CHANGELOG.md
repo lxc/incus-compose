@@ -28,7 +28,8 @@ form.
 
 - An instance can run another image than its service while
   `user.incus-compose.image-override` is set; `up` no longer recreates it on the
-  service's image. See
+  service's image, and recreates it on the override when the rest of the service
+  changes. See
   [Up and Down](https://incus-compose.org/cli-reference/up-and-down#image-override).
   (by @tallica)
 

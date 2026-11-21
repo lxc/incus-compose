@@ -94,6 +94,11 @@ type InstanceConfig struct {
 	// Image is the OCI image to create the instance from.
 	Image string
 
+	// ImageOverride, when set, is the image to create the instance from
+	// instead of Image, carried over from the instance this one replaces.
+	// Image stays the service's: the override is recorded against it.
+	ImageOverride string
+
 	// ConfigHash is the service hash, empty for one-offs and internal instances.
 	ConfigHash string
 
@@ -659,7 +664,12 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 		}
 	}
 
-	imageResource, err := r.client.Resource(KindImage, r.Config.Image, &ImageConfig{})
+	imageName := r.Config.Image
+	if r.Config.ImageOverride != "" {
+		imageName = r.Config.ImageOverride
+	}
+
+	imageResource, err := r.client.Resource(KindImage, imageName, &ImageConfig{})
 	if err != nil {
 		return err
 	}
@@ -758,6 +768,18 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 
 	// Store the image name
 	config["user.image_alias"] = image.IncusName()
+
+	// The service's image even here, so the override stays in force against it.
+	if r.Config.ImageOverride != "" {
+		service, err := r.client.Resource(KindImage, r.Config.Image, nil)
+		if err != nil {
+			return err
+		}
+
+		config["user.image_alias"] = service.IncusName()
+		config[ImageOverrideKey] = r.Config.ImageOverride
+		config[ImageOverrideOfKey] = service.IncusName()
+	}
 
 	// Not an Extension either: an updater must not take an older instance,
 	// stamped by addMissingConfig, as one whose creator honors the override.

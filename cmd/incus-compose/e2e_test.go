@@ -1100,6 +1100,74 @@ func TestE2EUpRecreatesOnImageChange(t *testing.T) {
 	assert.Equal(t, alias.Target, inst.Config["volatile.base_image"], "an unchanged image must not recreate")
 }
 
+// upOnImageOverride brings compose up, then does what an updater does: stops
+// web-1, rebuilds it onto overrideTag, which overrideCompose names, sets the
+// image override and starts it. It answers the project client and the
+// fingerprint web-1 runs.
+func upOnImageOverride(ctx context.Context, t *testing.T, pn string, compose string, overrideCompose string, overrideTag string) (*client.Client, string) {
+	t.Helper()
+
+	runE2ETests(ctx, t, pn, []e2eTest{
+		{
+			name: "up on the service's image",
+			args: []string{"-f", compose, "up", "--detach"},
+		},
+		{
+			name: "pull the image the updater moves to",
+			args: []string{"-f", overrideCompose, "pull"},
+		},
+	})
+
+	c := projectClient(ctx, t, pn)
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	inst, _, err := conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
+	require.NoError(t, err)
+	assert.Equal(t, client.FeatureImageOverride, inst.Config[client.FeaturesKey])
+
+	serviceImage := inst.Config["user.image_alias"]
+	require.NotEmpty(t, serviceImage)
+
+	alias, _, err := conn.GetImageAlias(ctx, c.IncusProject(), overrideTag, nil)
+	require.NoError(t, err)
+	require.NotEqual(t, inst.Config["volatile.base_image"], alias.Target, "setup: the two tags must be different images")
+
+	op, err := conn.UpdateInstanceState(ctx, c.IncusProject(), "web-1", incusApi.InstanceStatePut{Action: "stop", Timeout: -1, Force: true}, "")
+	require.NoError(t, err)
+	_, err = iclient.WaitOperation(ctx, op)
+	require.NoError(t, err)
+
+	resp, _, err := conn.RawQuery(ctx, http.MethodPost,
+		"/1.0/instances/web-1/rebuild?project="+url.QueryEscape(c.IncusProject()),
+		incusApi.InstanceRebuildPost{Source: incusApi.InstanceSource{Type: "image", Fingerprint: alias.Target}}, "")
+	require.NoError(t, err)
+	rebuild, err := resp.MetadataAsOperation()
+	require.NoError(t, err)
+	done, err := conn.WaitOperationID(ctx, c.IncusProject(), rebuild.ID)
+	require.NoError(t, err)
+	require.Empty(t, done.Err)
+
+	err = conn.PatchInstanceConfig(ctx, c.IncusProject(), "web-1", map[string]string{
+		client.ImageOverrideKey:   overrideTag,
+		client.ImageOverrideOfKey: serviceImage,
+	})
+	require.NoError(t, err)
+
+	op, err = conn.UpdateInstanceState(ctx, c.IncusProject(), "web-1", incusApi.InstanceStatePut{Action: "start", Timeout: -1}, "")
+	require.NoError(t, err)
+	_, err = iclient.WaitOperation(ctx, op)
+	require.NoError(t, err)
+
+	inst, _, err = conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
+	require.NoError(t, err)
+	require.Equal(t, alias.Target, inst.Config["volatile.base_image"], "setup: the rebuild must land the override image")
+	require.Equal(t, serviceImage, inst.Config["user.image_alias"], "a rebuild must keep the user keys")
+	require.NotEmpty(t, inst.Config[client.ConfigHashKey], "a rebuild must keep the config hash")
+
+	return c, alias.Target
+}
+
 // TestE2EUpKeepsImageOverride pins that up, with or without --pull always,
 // leaves an instance an updater rebuilt onto another image, and marked so with
 // an image override, on that image.
@@ -1125,70 +1193,13 @@ func TestE2EUpKeepsImageOverride(t *testing.T) {
 `,
 	})
 	compose := filepath.Join(dir, "compose.yaml")
-	newCompose := filepath.Join(dir, "compose-new.yaml")
 	newTag := "docker.io/library/busybox:1.37-glibc"
 
 	testlib.CleanupCompose(t, pn, "-f", compose, "down", "--project")
 
-	runE2ETests(ctx, t, pn, []e2eTest{
-		{
-			name: "up on the service's image",
-			args: []string{"-f", compose, "up", "--detach"},
-		},
-		{
-			name: "pull the image the updater moves to",
-			args: []string{"-f", newCompose, "pull"},
-		},
-	})
-
-	c := projectClient(ctx, t, pn)
+	c, override := upOnImageOverride(ctx, t, pn, compose, filepath.Join(dir, "compose-new.yaml"), newTag)
 	conn, err := c.Connection()
 	require.NoError(t, err)
-
-	inst, _, err := conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
-	require.NoError(t, err)
-	assert.Equal(t, client.FeatureImageOverride, inst.Config[client.FeaturesKey])
-
-	serviceImage := inst.Config["user.image_alias"]
-	require.NotEmpty(t, serviceImage)
-
-	alias, _, err := conn.GetImageAlias(ctx, c.IncusProject(), newTag, nil)
-	require.NoError(t, err)
-	require.NotEqual(t, inst.Config["volatile.base_image"], alias.Target, "setup: the two tags must be different images")
-
-	// What an updater does: stop, rebuild onto the newer image, set the
-	// override, start.
-	op, err := conn.UpdateInstanceState(ctx, c.IncusProject(), "web-1", incusApi.InstanceStatePut{Action: "stop", Timeout: -1, Force: true}, "")
-	require.NoError(t, err)
-	_, err = iclient.WaitOperation(ctx, op)
-	require.NoError(t, err)
-
-	resp, _, err := conn.RawQuery(ctx, http.MethodPost,
-		"/1.0/instances/web-1/rebuild?project="+url.QueryEscape(c.IncusProject()),
-		incusApi.InstanceRebuildPost{Source: incusApi.InstanceSource{Type: "image", Fingerprint: alias.Target}}, "")
-	require.NoError(t, err)
-	rebuild, err := resp.MetadataAsOperation()
-	require.NoError(t, err)
-	done, err := conn.WaitOperationID(ctx, c.IncusProject(), rebuild.ID)
-	require.NoError(t, err)
-	require.Empty(t, done.Err)
-
-	err = conn.PatchInstanceConfig(ctx, c.IncusProject(), "web-1", map[string]string{
-		client.ImageOverrideKey:   newTag,
-		client.ImageOverrideOfKey: serviceImage,
-	})
-	require.NoError(t, err)
-
-	op, err = conn.UpdateInstanceState(ctx, c.IncusProject(), "web-1", incusApi.InstanceStatePut{Action: "start", Timeout: -1}, "")
-	require.NoError(t, err)
-	_, err = iclient.WaitOperation(ctx, op)
-	require.NoError(t, err)
-
-	inst, _, err = conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
-	require.NoError(t, err)
-	require.Equal(t, alias.Target, inst.Config["volatile.base_image"], "setup: the rebuild must land the newer image")
-	require.Equal(t, serviceImage, inst.Config["user.image_alias"], "a rebuild must keep the user keys")
-	require.NotEmpty(t, inst.Config[client.ConfigHashKey], "a rebuild must keep the config hash")
 
 	for _, args := range [][]string{
 		{"-f", compose, "up", "--detach"},
@@ -1201,12 +1212,149 @@ func TestE2EUpKeepsImageOverride(t *testing.T) {
 			},
 		})
 
-		inst, _, err = conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
+		inst, _, err := conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
 		require.NoError(t, err)
-		assert.Equal(t, alias.Target, inst.Config["volatile.base_image"], "an override in force must not be undone")
+		assert.Equal(t, override, inst.Config["volatile.base_image"], "an override in force must not be undone")
 		assert.Equal(t, newTag, inst.Config[client.ImageOverrideKey])
 		assert.Equal(t, "Running", inst.Status)
 	}
+}
+
+// TestE2EUpRecreatesOnImageOverride pins that a change to the rest of the
+// service recreates an instance with an image override in force on the
+// override, bringing it back if the project lost it, that an override image
+// that cannot be had fails up without tearing the instance down, and that
+// naming another image in the compose file drops the override.
+func TestE2EUpRecreatesOnImageOverride(t *testing.T) {
+	t.Parallel()
+	testlib.SkipE2E(t)
+
+	ctx := t.Context()
+	pn := t.Name()
+
+	dir := testlib.WriteTempFiles(t, map[string]string{
+		"compose.yaml": `services:
+  web:
+    image: docker.io/library/busybox:1.36-glibc
+    environment:
+      STEP: one
+    x-incus:
+      oci.entrypoint: sh
+`,
+		"compose-env.yaml": `services:
+  web:
+    image: docker.io/library/busybox:1.36-glibc
+    environment:
+      STEP: two
+    x-incus:
+      oci.entrypoint: sh
+`,
+		"compose-moved.yaml": `services:
+  web:
+    image: docker.io/library/busybox:1.35-glibc
+    environment:
+      STEP: two
+    x-incus:
+      oci.entrypoint: sh
+`,
+		"compose-new.yaml": `services:
+  web:
+    image: docker.io/library/busybox:1.37-glibc
+    x-incus:
+      oci.entrypoint: sh
+`,
+	})
+	compose := filepath.Join(dir, "compose.yaml")
+	envCompose := filepath.Join(dir, "compose-env.yaml")
+	movedCompose := filepath.Join(dir, "compose-moved.yaml")
+	newTag := "docker.io/library/busybox:1.37-glibc"
+
+	testlib.CleanupCompose(t, pn, "-f", compose, "down", "--project")
+
+	c, override := upOnImageOverride(ctx, t, pn, compose, filepath.Join(dir, "compose-new.yaml"), newTag)
+	conn, err := c.Connection()
+	require.NoError(t, err)
+
+	inst, _, err := conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
+	require.NoError(t, err)
+	serviceImage := inst.Config["user.image_alias"]
+	rebuilt := inst.Config["volatile.uuid"]
+
+	// The recreate has to bring the override back into the project itself.
+	op, err := conn.DeleteImage(ctx, c.IncusProject(), override)
+	require.NoError(t, err)
+	_, err = iclient.WaitOperation(ctx, op)
+	require.NoError(t, err)
+
+	runE2ETests(ctx, t, pn, []e2eTest{
+		{
+			name: "up on a changed environment",
+			args: []string{"-f", envCompose, "up", "--detach"},
+		},
+	})
+
+	ensured, _, err := conn.GetImageAlias(ctx, c.IncusProject(), newTag, nil)
+	require.NoError(t, err, "the recreate must ensure the override image")
+
+	inst, _, err = conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
+	require.NoError(t, err)
+	assert.NotEqual(t, rebuilt, inst.Config["volatile.uuid"], "a changed service must recreate")
+	assert.Equal(t, "two", inst.Config["environment.STEP"])
+	assert.Equal(t, ensured.Target, inst.Config["volatile.base_image"], "the recreate must use the override")
+	assert.Equal(t, newTag, inst.Config[client.ImageOverrideKey])
+	assert.Equal(t, serviceImage, inst.Config[client.ImageOverrideOfKey])
+	assert.Equal(t, serviceImage, inst.Config["user.image_alias"])
+	assert.Equal(t, "Running", inst.Status)
+
+	recreated := inst.Config["volatile.uuid"]
+
+	runE2ETests(ctx, t, pn, []e2eTest{
+		{
+			name: "up again",
+			args: []string{"-f", envCompose, "up", "--detach"},
+		},
+	})
+
+	inst, _, err = conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
+	require.NoError(t, err)
+	assert.Equal(t, recreated, inst.Config["volatile.uuid"], "the carried override must still be in force")
+
+	// An override image that cannot be had fails the batch before the
+	// teardown, so the instance keeps running where it was.
+	err = conn.PatchInstanceConfig(ctx, c.IncusProject(), "web-1", map[string]string{
+		client.ImageOverrideKey: "docker.io/library/busybox:no-such-tag",
+	})
+	require.NoError(t, err)
+
+	runE2ETests(ctx, t, pn, []e2eTest{
+		{
+			name:    "up with an unusable override",
+			args:    []string{"-f", compose, "up", "--detach"},
+			wantErr: true,
+		},
+	})
+
+	inst, _, err = conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
+	require.NoError(t, err)
+	assert.Equal(t, recreated, inst.Config["volatile.uuid"], "a failed override must not tear the instance down")
+	assert.Equal(t, "Running", inst.Status)
+
+	runE2ETests(ctx, t, pn, []e2eTest{
+		{
+			name: "up on another image",
+			args: []string{"-f", movedCompose, "up", "--detach"},
+		},
+	})
+
+	moved, _, err := conn.GetImageAlias(ctx, c.IncusProject(), "docker.io/library/busybox:1.35-glibc", nil)
+	require.NoError(t, err)
+
+	inst, _, err = conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
+	require.NoError(t, err)
+	assert.Equal(t, moved.Target, inst.Config["volatile.base_image"], "the file's new image must win over the override")
+	assert.NotContains(t, inst.Config, client.ImageOverrideKey)
+	assert.NotContains(t, inst.Config, client.ImageOverrideOfKey)
+	assert.Equal(t, "Running", inst.Status)
 }
 
 // TestE2EUpRecreateChanged pins that ps flags a drifted instance and up
