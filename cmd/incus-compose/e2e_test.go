@@ -1124,7 +1124,6 @@ func upOnImageOverride(ctx context.Context, t *testing.T, pn string, compose str
 
 	inst, _, err := conn.GetInstance(ctx, c.IncusProject(), "web-1", nil)
 	require.NoError(t, err)
-	assert.Equal(t, client.FeatureImageOverride, inst.Config[client.FeaturesKey])
 
 	serviceImage := inst.Config["user.image_alias"]
 	require.NotEmpty(t, serviceImage)

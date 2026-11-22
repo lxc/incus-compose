@@ -119,9 +119,7 @@ instance, which keeps running on the override; a rolling update with
 two keys hands the instance back to the compose file; the next `up` recreates
 it.
 
-incus-compose does not write the two keys. It lists `image-override` in
-`user.incus-compose.features` on the instances it creates, so an updater can
-tell whether the incus-compose that made an instance honours the override.
+incus-compose does not write the two keys.
 
 ## down
 

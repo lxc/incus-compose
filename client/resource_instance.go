@@ -69,14 +69,6 @@ const ImageOverrideKey = "user.incus-compose.image-override"
 // the override replaces, as user.image_alias holds it.
 const ImageOverrideOfKey = "user.incus-compose.image-override-of"
 
-// FeaturesKey is the instance key listing, comma separated, the contracts the
-// incus-compose that created the instance honors. create writes every entry at
-// once; an updater looks for its own entry rather than comparing the value.
-const FeaturesKey = "user.incus-compose.features"
-
-// FeatureImageOverride is the FeaturesKey entry for ImageOverrideKey.
-const FeatureImageOverride = "image-override"
-
 // ImageOverridden reports whether an image override in config is in force for
 // a service whose image resource has the IncusName image, the name create
 // writes to user.image_alias. One set against another image is not: the
@@ -782,10 +774,6 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 		config[ImageOverrideKey] = r.Config.ImageOverride
 		config[ImageOverrideOfKey] = service.IncusName()
 	}
-
-	// Not an Extension either: an updater must not take an older instance,
-	// stamped by addMissingConfig, as one whose creator honors the override.
-	config[FeaturesKey] = FeatureImageOverride
 
 	// Deliberately not an Extension: addMissingConfig would stamp it on an
 	// older instance and mark a drifted one current.
