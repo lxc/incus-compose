@@ -170,6 +170,30 @@ Setting `ipv4.dhcp.ranges` or `ipv6.dhcp.ranges` in `x-incus` disables
 auto-calculation for that protocol. Existing networks (already present in Incus
 when `up` runs) are never modified.
 
+## NIC Order
+
+An instance gets one NIC per network it is attached to, in the order Docker
+Compose connects them: highest `priority` first, ties going by network name.
+`eth0` is the first of them.
+
+The order is set when the instance is created and does not change afterwards. An
+instance created before this order was fixed keeps its numbering until it is
+recreated.
+
+```yaml
+services:
+  web:
+    image: docker.io/nginx:alpine
+    networks:
+      backend: # eth1
+      frontend: # eth0
+        priority: 10
+
+networks:
+  backend:
+  frontend:
+```
+
 ## Static IP Assignment
 
 A service can be assigned a fixed IP on a specific network using the standard
@@ -258,9 +282,6 @@ networks:
   backend:
   frontend:
 ```
-
-`priority` is read for this choice only: it does not decide the order of the
-instance's NICs.
 
 > **Warning:** Like a static IP, the address is the same for every replica, so a
 > service running more than one instance (`deploy.replicas` or `up --scale`)
