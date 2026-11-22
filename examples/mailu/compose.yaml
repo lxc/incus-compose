@@ -1,0 +1,186 @@
+x-incus-compose:
+  dns:
+    disabled: true
+
+services:
+  # External dependencies
+  redis:
+    image: redis:alpine
+    restart: always
+    volumes:
+      - redis:/data
+    depends_on:
+      - resolver
+    networks:
+      default:
+        ipv4_address: 192.168.203.253/24
+    dns:
+      - 192.168.203.254
+
+  # Core services
+  front:
+    image: ${DOCKER_ORG:-ghcr.io/mailu}/${DOCKER_PREFIX:-}nginx:${MAILU_VERSION:-2024.06}
+    restart: always
+    env_file: mailu.env
+    ports:
+      - "[::]:25:25"
+      - "[::]:465:465"
+      - "[::]:587:587"
+      - "[::]:110:110"
+      - "[::]:995:995"
+      - "[::]:143:143"
+      - "[::]:993:993"
+      - "[::]:4190:4190"
+    networks:
+      - default
+    volumes:
+      - type: bind
+        source: /var/lib/incus/storage-pools/default/custom/caddy_vol-data
+        target: /certs
+        read_only: true
+        x-incus:
+          security.shifted: "true"
+      - nginx-overrides:/overrides
+    depends_on:
+      - resolver
+    dns:
+      - 192.168.203.254
+    labels:
+      caddy-external.0.domain: "mail.example.com"
+      caddy-external.0.upstream: "80"
+      caddy-external.0.network: "default"
+      caddy-external.0.template: "mailu.caddyfile"
+      caddy-external.1.domain: "webmail.example.com"
+      caddy-external.1.upstream: "80"
+      caddy-external.1.network: "default"
+      caddy-external.1.template: "mailu.caddyfile"
+      caddy-internal.0.domain: "mail.example.com"
+      caddy-internal.0.upstream: "80"
+      caddy-internal.0.network: "default"
+      caddy-internal.0.template: "mailu_internal.caddyfile"
+      caddy-internal.1.domain: "webmail.example.com"
+      caddy-internal.1.upstream: "80"
+      caddy-internal.1.network: "default"
+      caddy-internal.1.template: "mailu_internal.caddyfile"
+
+  resolver:
+    image: ${DOCKER_ORG:-ghcr.io/mailu}/${DOCKER_PREFIX:-}unbound:${MAILU_VERSION:-2024.06}
+    env_file: mailu.env
+    restart: always
+    networks:
+      default:
+        ipv4_address: 192.168.203.254/24
+
+  admin:
+    image: ${DOCKER_ORG:-ghcr.io/mailu}/${DOCKER_PREFIX:-}admin:${MAILU_VERSION:-2024.06}
+    restart: always
+    env_file: mailu.env
+    volumes:
+      - data:/data
+      - dkim:/dkim
+    depends_on:
+      - redis
+      - resolver
+    networks:
+      default:
+        ipv4_address: 192.168.203.252/24
+    dns:
+      - 192.168.203.254
+
+  imap:
+    image: ${DOCKER_ORG:-ghcr.io/mailu}/${DOCKER_PREFIX:-}dovecot:${MAILU_VERSION:-2024.06}
+    restart: always
+    env_file: mailu.env
+    volumes:
+      - mail:/mail
+      - dovecot-overrides:/overrides:ro
+    networks:
+      default:
+        ipv4_address: 192.168.203.248/24
+    depends_on:
+      - front
+      - resolver
+    dns:
+      - 192.168.203.254
+
+  smtp:
+    image: ${DOCKER_ORG:-ghcr.io/mailu}/${DOCKER_PREFIX:-}postfix:${MAILU_VERSION:-2024.06}
+    restart: always
+    env_file: mailu.env
+    volumes:
+      - mailqueue:/queue
+      - postfix-overrides:/overrides:ro
+    depends_on:
+      - front
+      - resolver
+    networks:
+      default:
+        ipv4_address: 192.168.203.249/24
+    dns:
+      - 192.168.203.254
+
+  oletools:
+    image: ${DOCKER_ORG:-ghcr.io/mailu}/${DOCKER_PREFIX:-}oletools:${MAILU_VERSION:-2024.06}
+    hostname: oletools
+    restart: always
+    depends_on:
+      - resolver
+    networks:
+      default:
+        ipv4_address: 192.168.203.247/24
+
+  antispam:
+    image: ${DOCKER_ORG:-ghcr.io/mailu}/${DOCKER_PREFIX:-}rspamd:${MAILU_VERSION:-2024.06}
+    hostname: antispam
+    restart: always
+    env_file: mailu.env
+    networks:
+      default:
+        ipv4_address: 192.168.203.250/24
+    volumes:
+      - rspamd:/var/lib/rspamd
+      - rspamd-overrides:/overrides:ro
+    depends_on:
+      - front
+      - redis
+      - oletools
+      - resolver
+    dns:
+      - 192.168.203.254
+
+  # Optional services
+
+  # Webmail
+  webmail:
+    image: ${DOCKER_ORG:-ghcr.io/mailu}/${DOCKER_PREFIX:-}webmail:${MAILU_VERSION:-2024.06}
+    restart: always
+    env_file: mailu.env
+    volumes:
+      - roundcube:/data
+      - roundcube-overrides:/overrides:ro
+    networks:
+      default:
+        ipv4_address: 192.168.203.251/24
+    depends_on:
+      - front
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 192.168.203.0/24
+          gateway: 192.168.203.1
+
+volumes:
+  redis:
+  nginx-overrides:
+  data:
+  dkim:
+  mail:
+  dovecot-overrides:
+  mailqueue:
+  postfix-overrides:
+  rspamd:
+  rspamd-overrides:
+  roundcube:
+  roundcube-overrides:
