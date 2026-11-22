@@ -301,6 +301,10 @@ func (r *Instance) Ignored() bool {
 // timeout it returns an error: DNSWatcher registers an AAAA-equivalent record
 // for any address family it waited for, so a missing one must not pass silently.
 //
+// An instance with no NIC device returns no addresses and no error at once:
+// with nothing attached, no address is missing. A NIC that is configured but
+// never gets an address still times out.
+//
 // Incus has no lifecycle event for a NIC acquiring an address, so this cannot
 // rely on the event-driven fetch() calls alone - it re-fetches itself on an
 // interval. The device to network map comes from the instance and does not
@@ -332,6 +336,24 @@ func (r *Instance) WaitIPs(ctx context.Context, timeout time.Duration) ([]Interf
 
 		if info.StatusCode != incusApi.Running {
 			return nil, ErrNotRunning.WithText("in ips")
+		}
+
+		// compose-go gives a service with `network_mode` set no networks, so its
+		// instance has no NIC and no address will ever come. Read the
+		// instance's devices rather than r.Config.Devices: a NIC can also
+		// arrive as a raw x-incus-compose device.
+		hasNIC := false
+		for _, device := range info.Devices {
+			if device["type"] == "nic" {
+				hasNIC = true
+				break
+			}
+		}
+
+		if !hasNIC {
+			r.state.Store(curr)
+
+			return nil, nil
 		}
 
 		state := curr.IncusInstanceState
