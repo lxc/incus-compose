@@ -11,7 +11,7 @@ final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced
 form.
 
-## [Unreleased]
+## [v1.4.2] - 2026-11-22
 
 ### Added
 
@@ -46,15 +46,16 @@ form.
   @tallica, #268)
 
 - `up` and `down` of projects running at the same time on one OVN server no
-  longer fail now and then with `object not found` while attaching or
-  detaching ACLs. (by @tallica, #264, #268)
+  longer fail now and then with `object not found` while attaching or detaching
+  ACLs. (by @tallica, #264, #268)
 
 - Error messages link to the getting started guide on incus-compose.org instead
   of a page that no longer exists. (by @snorfalorpagus, #262)
 
 - Starting an instance while another one on the same shared volume is being
-  created no longer fails now and then with `Idmaps of container ... and
-  storage volume ... are not identical`. (by @tallica, #266)
+  created no longer fails now and then with
+  `Idmaps of container ... and storage volume ... are not identical`. (by
+  @tallica, #266)
 
 - `up` recreates the instances whose image was replaced since they were created,
   as Docker Compose does, so `pull` followed by `up` rolls out a moved tag.
@@ -65,23 +66,24 @@ form.
   primary network, the one with the highest `priority`, as in Docker Compose.
   (by @tallica, #272, #277)
 
-- A new instance attached to several networks numbers its NICs in a fixed
-  order: `eth0` is the one with the highest `priority`, ties going by name. The
-  order was random, so replicas of one service could differ. Existing instances
-  keep theirs until recreated. (by @tallica, #278)
+- A new instance attached to several networks numbers its NICs in a fixed order:
+  `eth0` is the one with the highest `priority`, ties going by name. The order
+  was random, so replicas of one service could differ. Existing instances keep
+  theirs until recreated. (by @tallica, #278)
 
 - `up` no longer waits for an IP address on an instance with no NIC, as a
-  service with `network_mode` gets, and then fails with `timeout waiting for an
-  IP address`. `network_mode` values other than `none` are not supported and now
-  warn that the instance gets no network. (by @tallica, #279)
+  service with `network_mode` gets, and then fails with
+  `timeout waiting for an IP address`. `network_mode` values other than `none`
+  are not supported and now warn that the instance gets no network. (by
+  @tallica, #279)
 
 ## [v1.4.1] - 2026-11-15
 
 ### Changed
 
 - The minimum Go version to build incus-compose is now 1.26.9, the same as
-  Incus, so distribution packagers do not need the newest Go. Releases are
-  still built with the latest 1.27.x. (by @tallica, #261)
+  Incus, so distribution packagers do not need the newest Go. Releases are still
+  built with the latest 1.27.x. (by @tallica, #261)
 
 - `ic-healthd` and `ic-dns` now pick up a project marked for them after they
   first saw it, or deleted and created again under the same name. They kept the
