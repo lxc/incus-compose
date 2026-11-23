@@ -11,6 +11,17 @@ final version), and the beta suffix gained a dot (`beta.16`) from beta.16 onward
 for correct semver ordering. Headings below preserve each release's announced
 form.
 
+## [Unreleased]
+
+### Added
+
+- An instance can run another image than its service while
+  `user.incus-compose.image-override` is set; `up` no longer recreates it on the
+  service's image, and recreates it on the override when the rest of the service
+  changes. See
+  [Up and Down](https://incus-compose.org/cli-reference/up-and-down#image-override).
+  (by @tallica)
+
 ## [v1.4.2] - 2026-11-22
 
 ### Added
@@ -25,13 +36,6 @@ form.
 - `--global-project` (env `INCUS_COMPOSE_GLOBAL_PROJECT`) names the Incus
   project that holds the locks, the tools volume and the global-scope sidecars,
   so tenants sharing a server can each have their own. (by @tallica, #265)
-
-- An instance can run another image than its service while
-  `user.incus-compose.image-override` is set; `up` no longer recreates it on the
-  service's image, and recreates it on the override when the rest of the service
-  changes. See
-  [Up and Down](https://incus-compose.org/cli-reference/up-and-down#image-override).
-  (by @tallica)
 
 ### Fixed
 
