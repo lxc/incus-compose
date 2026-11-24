@@ -217,6 +217,7 @@ func TestIsConcurrencyConflict(t *testing.T) {
 	assert.True(t, isConcurrencyConflict(errors.New("detaching network ACLs: Failed removing default routes: object not found")))
 	assert.True(t, isConcurrencyConflict(errors.New("detaching network ACLs: Failed removing internal subnet routes: object not found")))
 	assert.True(t, isConcurrencyConflict(errors.New("detaching network ACLs: Failed removing existing router SNAT rules: object not found")))
+	assert.True(t, isConcurrencyConflict(errors.New("detaching network ACLs: Failed to retrieve currently set routes on network ic-abc")))
 	assert.True(t, isConcurrencyConflict(errors.New(`Failed applying ACL "a-default" rules to port group "incus_acl1_egress": object not found`)))
 	assert.True(t, isConcurrencyConflict(incusApi.StatusErrorf(http.StatusPreconditionFailed, "precondition failed")))
 	assert.True(t, isConcurrencyConflict(incusApi.StatusErrorf(http.StatusConflict, "conflict")))
