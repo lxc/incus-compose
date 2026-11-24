@@ -61,6 +61,22 @@ type InstanceFile struct {
 // ConfigHashKey is the instance label holding the hash of its service.
 const ConfigHashKey = "user.label.incus-compose.config-hash"
 
+// ImageOverrideKey is the instance key an updater sets to the image the
+// instance runs instead of its service's.
+const ImageOverrideKey = "user.incus-compose.image-override"
+
+// ImageOverrideOfKey is the instance key an updater sets to the service image
+// the override replaces, as user.image_alias holds it.
+const ImageOverrideOfKey = "user.incus-compose.image-override-of"
+
+// ImageOverridden reports whether an image override in config is in force for
+// a service whose image resource has the IncusName image, the name create
+// writes to user.image_alias. One set against another image is not: the
+// compose file has moved on since the updater set it.
+func ImageOverridden(config map[string]string, image string) bool {
+	return config[ImageOverrideKey] != "" && config[ImageOverrideOfKey] == image
+}
+
 // InstanceConfig configures instance creation.
 type InstanceConfig struct {
 	// ServiceName represents the compose service name.
@@ -71,6 +87,11 @@ type InstanceConfig struct {
 
 	// Image is the OCI image to create the instance from.
 	Image string
+
+	// ImageOverride, when set, is the image to create the instance from
+	// instead of Image, carried over from the instance this one replaces.
+	// Image stays the service's: the override is recorded against it.
+	ImageOverride string
 
 	// ConfigHash is the service hash, empty for one-offs and internal instances.
 	ConfigHash string
@@ -637,7 +658,12 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 		}
 	}
 
-	imageResource, err := r.client.Resource(KindImage, r.Config.Image, &ImageConfig{})
+	imageName := r.Config.Image
+	if r.Config.ImageOverride != "" {
+		imageName = r.Config.ImageOverride
+	}
+
+	imageResource, err := r.client.Resource(KindImage, imageName, &ImageConfig{})
 	if err != nil {
 		return err
 	}
@@ -736,6 +762,18 @@ func (r *Instance) create(ctx context.Context, opts ...Option) error {
 
 	// Store the image name
 	config["user.image_alias"] = image.IncusName()
+
+	// The service's image even here, so the override stays in force against it.
+	if r.Config.ImageOverride != "" {
+		service, err := r.client.Resource(KindImage, r.Config.Image, nil)
+		if err != nil {
+			return err
+		}
+
+		config["user.image_alias"] = service.IncusName()
+		config[ImageOverrideKey] = r.Config.ImageOverride
+		config[ImageOverrideOfKey] = service.IncusName()
+	}
 
 	// Deliberately not an Extension: addMissingConfig would stamp it on an
 	// older instance and mark a drifted one current.

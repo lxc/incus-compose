@@ -84,6 +84,43 @@ treated as changed. `ps` marks drifted instances `(config changed)`.
 
 _Since: v1.3.0_
 
+### Image override
+
+An instance can run an image other than its service's, for example after an
+updater, a script or a person ran `incus rebuild` on it. Whoever moves it sets
+two keys, and `up` leaves it on its image:
+
+| Key                                    | Value                                                                        |
+| -------------------------------------- | ---------------------------------------------------------------------------- |
+| `user.incus-compose.image-override`    | The image the instance runs instead of its service's                         |
+| `user.incus-compose.image-override-of` | The service image it replaces, as the instance's `user.image_alias` holds it |
+
+```
+incus rebuild <fingerprint of the new image> web-1 --project <project>
+incus config set web-1 --project <project> \
+  user.incus-compose.image-override=docker.io/library/busybox:1.37-glibc \
+  user.incus-compose.image-override-of=<user.image_alias of web-1>
+```
+
+The override is in force while both keys are set and `image-override-of` matches
+the image the compose file names. It is then never a reason to recreate the
+instance, not with `--pull always` and not after a `pull`. `--recreate`, and the
+recreate of a service whose image `--build` rebuilt, take the instance down
+first: it comes back from the compose file's image, without the two keys. Once
+the compose file names another image, the override no longer applies, and the
+change of service config recreates the instance from the file's image without
+the two keys.
+
+A change to the rest of the service config recreates the instance on the
+override, keeping both keys. An override image missing from the project is
+fetched as `--pull` allows. If it cannot be had, `up` fails before it stops the
+instance, which keeps running on the override; a rolling update with
+`failure_action: continue` skips the batch instead. `incus config unset` on the
+two keys hands the instance back to the compose file; the next `up` recreates
+it.
+
+incus-compose does not write the two keys.
+
 ## down
 
 Stop and remove containers. Per-project image copies are removed too; volumes
