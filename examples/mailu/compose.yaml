@@ -181,6 +181,13 @@ services:
     depends_on:
       - front
 
+  fetchmail:
+    image: ${DOCKER_ORG:-ghcr.io/mailu}/${DOCKER_PREFIX:-}fetchmail:${MAILU_VERSION:-2024.06}
+    restart: always
+    env_file: mailu.env
+    depends_on:
+      - admin
+
 networks:
   default:
     ipam:
