@@ -32,7 +32,8 @@ services:
       - "[::]:993:993"
       - "[::]:4190:4190"
     networks:
-      - default
+      default:
+        ipv4_address: 192.168.203.246/24
     volumes:
       - type: bind
         source: /var/lib/incus/storage-pools/default/custom/caddy_vol-data
@@ -54,6 +55,14 @@ services:
       caddy-external.1.upstream: "80"
       caddy-external.1.network: "default"
       caddy-external.1.template: "mailu.caddyfile"
+      caddy-external.2.domain: "autodiscover.example.com"
+      caddy-external.2.upstream: "80"
+      caddy-external.2.network: "default"
+      caddy-external.2.template: "mailu.caddyfile"
+      caddy-external.3.domain: "autoconfig.example.com"
+      caddy-external.3.upstream: "80"
+      caddy-external.3.network: "default"
+      caddy-external.3.template: "mailu.caddyfile"
       caddy-internal.0.domain: "mail.example.com"
       caddy-internal.0.upstream: "80"
       caddy-internal.0.network: "default"
@@ -62,6 +71,14 @@ services:
       caddy-internal.1.upstream: "80"
       caddy-internal.1.network: "default"
       caddy-internal.1.template: "mailu_internal.caddyfile"
+      caddy-internal.2.domain: "autodiscover.example.com"
+      caddy-internal.2.upstream: "80"
+      caddy-internal.2.network: "default"
+      caddy-internal.2.template: "mailu_internal.caddyfile"
+      caddy-internal.3.domain: "autoconfig.example.com"
+      caddy-internal.3.upstream: "80"
+      caddy-internal.3.network: "default"
+      caddy-internal.3.template: "mailu_internal.caddyfile"
 
   resolver:
     image: ${DOCKER_ORG:-ghcr.io/mailu}/${DOCKER_PREFIX:-}unbound:${MAILU_VERSION:-2024.06}
