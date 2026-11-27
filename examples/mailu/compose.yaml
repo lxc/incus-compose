@@ -23,14 +23,14 @@ services:
     restart: always
     env_file: mailu.env
     ports:
-      - "[::]:25:25"
-      - "[::]:465:465"
-      - "[::]:587:587"
-      - "[::]:110:110"
-      - "[::]:995:995"
-      - "[::]:143:143"
-      - "[::]:993:993"
-      - "[::]:4190:4190"
+      - "45.145.226.78:25:25"
+      - "45.145.226.78:465:465"
+      - "45.145.226.78:587:587"
+      - "45.145.226.78:110:110"
+      - "45.145.226.78:995:995"
+      - "45.145.226.78:143:143"
+      - "45.145.226.78:993:993"
+      - "45.145.226.78:4190:4190"
     networks:
       default:
         ipv4_address: 192.168.203.246/24
@@ -106,6 +106,10 @@ services:
 
   imap:
     image: ${DOCKER_ORG:-ghcr.io/mailu}/${DOCKER_PREFIX:-}dovecot:${MAILU_VERSION:-2024.06}
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /mail/usr && mount -t tmpfs -o size=128m tmpfs /mail/usr && exec /start.py"]
+    x-incus-compose:
+      config:
+        security.privileged: "true"
     restart: always
     env_file: mailu.env
     volumes:
@@ -114,6 +118,10 @@ services:
     networks:
       default:
         ipv4_address: 192.168.203.248/24
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 524288
     depends_on:
       - front
       - resolver
