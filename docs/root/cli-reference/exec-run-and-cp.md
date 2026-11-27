@@ -109,6 +109,14 @@ ic-healthd never restarts one.
 Ports are dropped unless `-p` or `-P` is given, because a proxy device would
 fight the running service for the same listener.
 
+On a cluster the one-off runs on the member incus-compose is connected to,
+whichever member its service is placed on: it mounts the tools volume, which a
+member-local storage pool holds only there. A one-off of a service pinned by
+`deploy.placement.constraints`, or
+[co-located](/extras#affinity-and-anti-affinity) with others, can so run apart
+from them, and on a `bridge` network not reach them; connect through their
+member to keep it with them.
+
 ### How the exit code is obtained
 
 Incus reports no exit status for an instance that stopped, and `incus exec`

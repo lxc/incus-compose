@@ -37,6 +37,13 @@ form.
   project that holds the locks, the tools volume and the global-scope sidecars,
   so tenants sharing a server can each have their own. (by @tallica, #265)
 
+- On a cluster, single-replica services that share a `bridge` network run on the
+  same member, following one pinned by `deploy.placement.constraints` or already
+  running, and `x-incus-compose.affinity` / `anti-affinity` co-locate or
+  separate services on any network. See
+  [Extras](https://incus-compose.org/extras#affinity-and-anti-affinity). (by
+  @tallica, #274)
+
 ### Fixed
 
 - A certificate restricted to projects (`incus config trust add --restricted`)

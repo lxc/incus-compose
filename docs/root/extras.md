@@ -366,6 +366,48 @@ services:
       mode: global
 ```
 
+### Affinity and anti-affinity
+
+On an Incus cluster, `x-incus-compose.affinity` places a service on the same
+member as the services it names, and `x-incus-compose.anti-affinity` keeps it
+off every member they run on:
+
+```yaml
+services:
+  app:
+    image: docker.io/nginx:alpine
+  cache:
+    image: docker.io/valkey/valkey:alpine
+    x-incus-compose:
+      affinity: [app]
+  backup:
+    image: docker.io/library/busybox:glibc
+    x-incus-compose:
+      anti-affinity: [app]
+```
+
+Services sharing a `bridge` network are co-located without it (see
+[Co-location](/compose-compatibility/services#co-location)); `affinity` is for
+the rest, such as services on OVN networks, where Incus would otherwise choose
+the member.
+
+- Single-replica services joined by affinity share one member, which satisfies
+  all of their `deploy.placement.constraints`.
+- A service with several replicas that names one in `affinity` follows its
+  members: replica _n_ goes where the named service's replica _n_ runs, wrapping
+  around when it has fewer.
+- Anti-affinity is symmetric. Services are resolved by name, and whichever comes
+  later avoids the members of the other.
+- `up` fails when no member satisfies all of them, when anti-affinity names a
+  service the same member is required for, or when affinity between scaled
+  services forms a cycle.
+
+On a standalone server `affinity` has no effect, and `anti-affinity` logs a
+warning, since there is only one member to run on.
+
+A `run` one-off is the exception: it runs on the connected member whatever its
+service resolved to (see [`run`](/cli-reference/exec-run-and-cp#run)).
+
 ### Backup
 
 Configure `incus-compose backup` with the top-level `x-incus-compose.backup`
