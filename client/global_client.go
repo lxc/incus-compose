@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -205,6 +206,7 @@ type GlobalClient struct {
 	// Read once at connect: GetServer memoizes into the shared *ProtocolIncus,
 	// so calling it per service/network/port both races and re-queries.
 	apiExtensions           []string
+	lxcHookPath             bool
 	httpsAddress            string
 	clustered               bool
 	serverName              string
@@ -476,6 +478,7 @@ func (c *GlobalClient) Connect() error {
 	c.mu.Lock()
 	c.restricted = restricted
 	c.apiExtensions = server.APIExtensions
+	c.lxcHookPath = !slices.Contains(server.APIExtensions, shared.Incus76Extension) && lxcRuntimeHooks(server.Environment)
 	c.httpsAddress = httpsAddress
 	c.clustered = server.Environment.ServerClustered
 	if server.Environment.ServerClustered {
@@ -1348,6 +1351,46 @@ func (c *GlobalClient) HasExtension(ext string) bool {
 	defer c.mu.Unlock()
 
 	return slices.Contains(c.apiExtensions, ext)
+}
+
+// LXCHookPath reports whether containers need the raw.lxc PATH shim: Incus
+// before 7.6 does not set lxc.environment.hooks itself, and LXC before 7.0
+// rejects the key.
+func (c *GlobalClient) LXCHookPath() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.lxcHookPath
+}
+
+// lxcRuntimeHooks reports whether the server's LXC knows lxc.environment.hooks.
+// A listed feature is authoritative: a distro build before Incus 7.6 can carry
+// the backported feature list. Otherwise fall back to the LXC version; an
+// unknown or unparsable one counts as unsupported, because a rejected key stops
+// every container while a missing shim only costs PATH.
+func lxcRuntimeHooks(env incusApi.ServerEnvironment) bool {
+	feature, ok := env.LXCFeatures["environment_runtime_hooks"]
+	if ok {
+		return feature == "true"
+	}
+
+	drivers := strings.Split(env.Driver, " | ")
+	versions := strings.Split(env.DriverVersion, " | ")
+
+	i := slices.Index(drivers, "lxc")
+	if i < 0 || i >= len(versions) {
+		return false
+	}
+
+	version, _, _ := strings.Cut(versions[i], "~")
+	if strings.Contains(version, "(devel)") {
+		return true
+	}
+
+	major, _, _ := strings.Cut(version, ".")
+	n, err := strconv.Atoi(major)
+
+	return err == nil && n >= 7
 }
 
 // IsClustered reports whether the server is part of an Incus cluster.
