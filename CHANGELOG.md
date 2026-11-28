@@ -22,6 +22,16 @@ form.
   [Up and Down](https://incus-compose.org/cli-reference/up-and-down#image-override).
   (by @tallica)
 
+### Fixed
+
+- Containers on Incus before 7.6 with LXC older than 7.0 start again: the
+  `lxc.environment.hooks` line added to `raw.lxc` for them is now only set when
+  LXC supports it. On such hosts, instances created by an earlier version keep
+  the line and must be recreated with `up --recreate`, which also recreates
+  project-scoped sidecars. Delete the shared ones first, whichever exist:
+  `incus --project incus-compose delete --force ic-healthd ic-dns` (or the
+  project `--global-project` names). (by @tallica, #290)
+
 ## [v1.4.2] - 2026-11-22
 
 ### Added

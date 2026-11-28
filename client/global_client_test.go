@@ -313,3 +313,35 @@ func TestConnectCAIssuedCertificate(t *testing.T) {
 		})
 	}
 }
+
+func TestLXCRuntimeHooks(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		env  incusApi.ServerEnvironment
+		want bool
+	}{
+		{"feature true", incusApi.ServerEnvironment{LXCFeatures: map[string]string{"environment_runtime_hooks": "true"}}, true},
+		{"feature false beats version", incusApi.ServerEnvironment{
+			LXCFeatures: map[string]string{"environment_runtime_hooks": "false"},
+			Driver:      "lxc", DriverVersion: "7.0.0",
+		}, false},
+		{"lxc 6", incusApi.ServerEnvironment{Driver: "lxc | qemu", DriverVersion: "6.0.6 | 9.2.0"}, false},
+		{"lxc 7", incusApi.ServerEnvironment{Driver: "lxc | qemu", DriverVersion: "7.0.0 | 10.0.0"}, true},
+		{"lxc second", incusApi.ServerEnvironment{Driver: "qemu | lxc", DriverVersion: "10.0.0 | 6.0.4"}, false},
+		{"git suffix", incusApi.ServerEnvironment{Driver: "lxc", DriverVersion: "7.0.1~git1234"}, true},
+		{"devel", incusApi.ServerEnvironment{Driver: "lxc", DriverVersion: "6.0.0 (devel)"}, true},
+		{"no lxc", incusApi.ServerEnvironment{Driver: "qemu", DriverVersion: "10.0.0"}, false},
+		{"empty", incusApi.ServerEnvironment{}, false},
+		{"garbage", incusApi.ServerEnvironment{Driver: "lxc", DriverVersion: "abc"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tt.want, lxcRuntimeHooks(tt.env))
+		})
+	}
+}
